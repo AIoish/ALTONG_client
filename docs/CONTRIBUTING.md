@@ -22,7 +22,15 @@ feat: add focus session timer
 fix: prevent duplicate tray icons
 ```
 
-PR 제목과 본문은 한국어로 자유롭게 작성한다. 변경 내용, 확인 결과, 다른 모듈에 미치는 영향을 짧게 적는다. 공통 데이터 형태나 다른 모듈의 사용법을 변경할 때는 관련 팀원과 먼저 확인한다.
+PR 제목은 `<type>: <한국어 제목>` 형식으로 작성한다. type은 커밋과 동일하게 `feat`, `fix`, `docs`, `refactor`, `test`, `chore`를 사용한다.
+
+```text
+feat: 집중 모드 타이머 추가
+fix: 트레이 아이콘 중복 생성 문제 수정
+docs: 협업 규칙 문서 추가
+```
+
+PR 본문은 한국어로 자유롭게 작성한다. 변경 내용, 확인 결과, 다른 모듈에 미치는 영향을 짧게 적는다. 공통 데이터 형태나 다른 모듈의 사용법을 변경할 때는 관련 팀원과 먼저 확인한다.
 
 GitHub Issues, Issue Template, PR Template은 사용하지 않는다.
 
