@@ -46,3 +46,6 @@ Thumbs.db
 *.log
 .cache/
 .pytest_cache/
+
+# Gemini Agents
+.agents/rules/
