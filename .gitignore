@@ -35,6 +35,7 @@ ENV/
 # IDE & OS
 .vscode/
 .idea/
+.agents/
 *.swp
 *.swo
 *~
@@ -46,6 +47,10 @@ Thumbs.db
 *.log
 .cache/
 .pytest_cache/
+
+# .NET build output
+**/bin/
+**/obj/
 
 # Gemini Agents
 .agents/rules/
