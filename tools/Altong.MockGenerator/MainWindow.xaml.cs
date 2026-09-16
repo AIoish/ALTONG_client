@@ -45,9 +45,49 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 실제 Windows 토스트 알림을 시스템에 전송합니다.
+    /// 즉시 알림을 전송합니다.
     /// </summary>
     private void SendNotification_Click(object sender, RoutedEventArgs e)
+    {
+        ExecuteSend();
+    }
+
+    /// <summary>
+    /// 3초 카운트다운 후 알림을 전송하여 사용자가 작업 창을 전환할 수 있도록 합니다.
+    /// </summary>
+    private async void DelaySendNotification_Click(object sender, RoutedEventArgs e)
+    {
+        var title = TitleTextBox.Text.Trim();
+        if (string.IsNullOrEmpty(title))
+        {
+            ShowStatus("⚠️ 제목을 입력해주세요.", isError: true);
+            return;
+        }
+
+        SendButton.IsEnabled = false;
+        DelaySendButton.IsEnabled = false;
+
+        try
+        {
+            for (int i = 3; i > 0; i--)
+            {
+                ShowStatus($"⏳ {i}초 뒤 발송됩니다... 테스트할 작업 창(VS Code 등)으로 전환하세요!");
+                await Task.Delay(1000);
+            }
+
+            ExecuteSend();
+        }
+        finally
+        {
+            SendButton.IsEnabled = true;
+            DelaySendButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>
+    /// 실제 Windows 토스트 알림을 시스템에 전송합니다.
+    /// </summary>
+    private void ExecuteSend()
     {
         var appName = AppNameComboBox.Text.Trim();
         var senderName = SenderTextBox.Text.Trim();

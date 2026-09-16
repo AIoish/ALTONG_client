@@ -54,10 +54,16 @@
             <Setter Property="Background" Value="#89B4FA"/>
             <Setter Property="Foreground" Value="#1E1E2E"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="24,12"/>
-            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <!-- 지연 전송 버튼 스타일 -->
+        <Style x:Key="DelayButtonStyle" TargetType="Button" BasedOn="{StaticResource SendButtonStyle}">
+            <Setter Property="Background" Value="#FAB387"/>
+            <Setter Property="Foreground" Value="#1E1E2E"/>
         </Style>
     </Window.Resources>
 
@@ -119,13 +125,23 @@
             </StackPanel>
         </Border>
 
-        <!-- 전송 버튼 -->
-        <Button Grid.Row="3" x:Name="SendButton"
-                Style="{StaticResource SendButtonStyle}"
-                Content="📤 알림 전송"
-                Click="SendNotification_Click"
-                Margin="0,0,0,16"
-                HorizontalAlignment="Stretch"/>
+        <!-- 전송 버튼 영역 -->
+        <Grid Grid.Row="3" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0" x:Name="SendButton"
+                    Style="{StaticResource SendButtonStyle}"
+                    Content="📤 즉시 전송"
+                    Click="SendNotification_Click"
+                    Margin="0,0,6,0"/>
+            <Button Grid.Column="1" x:Name="DelaySendButton"
+                    Style="{StaticResource DelayButtonStyle}"
+                    Content="⏱️ 3초 뒤 전송 (창 전환용)"
+                    Click="DelaySendNotification_Click"
+                    Margin="6,0,0,0"/>
+        </Grid>
 
         <!-- 상태 메시지 -->
         <TextBlock Grid.Row="4" x:Name="StatusText"
