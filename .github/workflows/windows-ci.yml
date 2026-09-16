@@ -1,0 +1,44 @@
+name: Windows CI
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-test-publish:
+    name: Restore, build, test, and publish
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up .NET 9 SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.318'
+
+      - name: Restore dependencies
+        run: dotnet restore Altong.Client.sln
+
+      - name: Build solution
+        run: dotnet build Altong.Client.sln --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test Altong.Client.sln --configuration Release --no-build --no-restore
+
+      - name: Publish WPF application
+        run: dotnet publish src/Altong.Client/Altong.Client.csproj --configuration Release --no-build --no-restore --output "${{ runner.temp }}\Altong.Client"
