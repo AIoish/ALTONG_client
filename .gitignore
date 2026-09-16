@@ -46,3 +46,7 @@ Thumbs.db
 *.log
 .cache/
 .pytest_cache/
+
+# .NET build output
+**/bin/
+**/obj/
