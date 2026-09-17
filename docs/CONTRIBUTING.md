@@ -3,8 +3,8 @@
 ## 브랜치와 병합
 
 - `main`: 발표·제출 가능한 안정 버전. 직접 push하지 않는다.
-- `develop`: 기능 통합 브랜치. 간단한 수정과 문서 변경은 직접 push할 수 있다.
-- 큰 기능이나 다른 모듈에 영향을 주는 작업은 `develop`에서 작업 브랜치를 만들고 PR로 `develop`에 병합한다.
+- `develop`: 기능 통합 브랜치. 직접 push하지 않는다.
+- 모든 변경은 `develop`에서 작업 브랜치를 만들고 PR로 `develop`에 병합한다. Windows CI가 성공해야 병합할 수 있다.
 - 안정된 버전은 `develop`에서 `main`으로 PR을 만들어 반영한다.
 - 병합 방식은 **Create a merge commit**이다. 병합된 작업 브랜치는 삭제하며 `main`과 `develop`은 유지한다.
 
@@ -40,7 +40,7 @@ GitHub Issues, Issue Template, PR Template은 사용하지 않는다.
 - CI가 구성된 뒤에는 PR 검사 결과도 확인한다.
 - 확인하지 못한 내용이나 알려진 문제는 PR에 적는다.
 
-Windows CI는 `.github/workflows/windows-ci.yml` 하나로 구성할 예정이다. 기본 앱 골격과 [README의 설치·테스트·빌드 명령](../README.md#설치실행확인)이 준비된 뒤 작성한다.
+Windows CI는 `.github/workflows/windows-ci.yml` 하나로 구성되어 있다.
 
 실행 조건:
 
@@ -57,4 +57,4 @@ Windows 실행 환경 준비 → .NET 환경 준비
 
 검사 도구와 명령은 앱 골격에 맞춰 확정한다. CI는 깨끗한 Windows 환경에서 C# 앱의 테스트·빌드와 Fake AI 기반 연동을 확인한다. Fake는 합의된 데이터 계약을 따르며, 실제 AI의 품질·성능 검증을 대신하지 않는다. 실제 알림 수집도 Fake로 대체하고, 트레이·말풍선·모니터별 UI는 로컬에서 확인한다. 빌드 성공만으로 모든 PC에서의 실행을 보장하지는 않는다.
 
-`develop` 직접 push의 CI는 반영 후 실행된다. 실패하면 로그를 확인해 수정한다.
+`develop`에 PR이 병합되면 push 조건으로 CI가 다시 실행된다. 실패하면 로그를 확인해 수정한다.
