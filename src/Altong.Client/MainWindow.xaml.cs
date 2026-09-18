@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using Altong.Client.Services;
 
@@ -11,9 +12,20 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        _focusModeService = ((App)Application.Current).FocusModeService;
+        _focusModeService = ((App)System.Windows.Application.Current).FocusModeService;
         _focusModeService.StateChanged += FocusModeService_StateChanged;
         UpdateFocusModeView();
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (System.Windows.Application.Current is App { IsShuttingDown: false })
+        {
+            e.Cancel = true;
+            Hide();
+        }
+
+        base.OnClosing(e);
     }
 
     protected override void OnClosed(EventArgs e)
