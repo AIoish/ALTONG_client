@@ -16,6 +16,13 @@
                        Margin="0,0,0,12"
                        HorizontalAlignment="Center"
                        FontSize="16" />
+            <TextBlock x:Name="WindowsNotificationModeText"
+                       Width="520"
+                       Margin="0,0,0,16"
+                       HorizontalAlignment="Center"
+                       Foreground="#5F6368"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap" />
             <Button x:Name="FocusModeToggleButton"
                     MinWidth="160"
                     Padding="16,8"

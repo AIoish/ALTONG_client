@@ -11,25 +11,43 @@ public partial class App : System.Windows.Application
 
     private MainWindow? _mainWindow;
     private NotificationDockWindow? _notificationDockWindow;
+    private WindowsDndGuidanceWindow? _windowsDndGuidanceWindow;
     private TrayIconService? _trayIconService;
+    private FocusModeCoordinator? _focusModeCoordinator;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        _mainWindow = new MainWindow();
+        _focusModeCoordinator = new FocusModeCoordinator(
+            FocusModeService,
+            new WindowsNotificationModeObserver(),
+            new WindowsNotificationSettingsLauncher(),
+            new WpfUiDispatcher(Dispatcher));
+
+        _mainWindow = new MainWindow(FocusModeService, _focusModeCoordinator);
         MainWindow = _mainWindow;
 
         _notificationDockWindow = new NotificationDockWindow();
-        _notificationDockWindow.OpenRequested += NotificationDockWindow_OpenRequested;
+        _notificationDockWindow.ToggleMainWindowRequested +=
+            NotificationDockWindow_ToggleMainWindowRequested;
+
+        _windowsDndGuidanceWindow = new WindowsDndGuidanceWindow();
+        _windowsDndGuidanceWindow.CancelRequested +=
+            WindowsDndGuidanceWindow_CancelRequested;
+        _windowsDndGuidanceWindow.OpenSettingsRequested +=
+            WindowsDndGuidanceWindow_OpenSettingsRequested;
 
         _trayIconService = new TrayIconService(
             ShowMainWindow,
-            ToggleFocusMode,
+            RequestFocusModeChange,
             RequestShutdown);
 
         FocusModeService.StateChanged += FocusModeService_StateChanged;
+        _focusModeCoordinator.StateChanged += FocusModeCoordinator_StateChanged;
+        _focusModeCoordinator.Start();
         UpdateFocusModeShell();
+        UpdateWindowsDndGuidance();
 
         _mainWindow.Show();
     }
@@ -38,9 +56,25 @@ public partial class App : System.Windows.Application
     {
         FocusModeService.StateChanged -= FocusModeService_StateChanged;
 
+        if (_focusModeCoordinator is not null)
+        {
+            _focusModeCoordinator.StateChanged -= FocusModeCoordinator_StateChanged;
+            _focusModeCoordinator.Dispose();
+            _focusModeCoordinator = null;
+        }
+
         if (_notificationDockWindow is not null)
         {
-            _notificationDockWindow.OpenRequested -= NotificationDockWindow_OpenRequested;
+            _notificationDockWindow.ToggleMainWindowRequested -=
+                NotificationDockWindow_ToggleMainWindowRequested;
+        }
+
+        if (_windowsDndGuidanceWindow is not null)
+        {
+            _windowsDndGuidanceWindow.CancelRequested -=
+                WindowsDndGuidanceWindow_CancelRequested;
+            _windowsDndGuidanceWindow.OpenSettingsRequested -=
+                WindowsDndGuidanceWindow_OpenSettingsRequested;
         }
 
         _trayIconService?.Dispose();
@@ -69,9 +103,9 @@ public partial class App : System.Windows.Application
         });
     }
 
-    private void ToggleFocusMode()
+    private void RequestFocusModeChange()
     {
-        RunOnUiThread(FocusModeService.Toggle);
+        RunOnUiThread(() => _focusModeCoordinator?.RequestToggle());
     }
 
     private void RequestShutdown()
@@ -83,6 +117,7 @@ public partial class App : System.Windows.Application
             _trayIconService?.Dispose();
             _trayIconService = null;
 
+            _windowsDndGuidanceWindow?.CloseForShutdown();
             _notificationDockWindow?.Close();
             _mainWindow?.Close();
             Shutdown();
@@ -91,12 +126,58 @@ public partial class App : System.Windows.Application
 
     private void FocusModeService_StateChanged(object? sender, EventArgs e)
     {
-        RunOnUiThread(UpdateFocusModeShell);
+        RunOnUiThread(() =>
+        {
+            if (FocusModeService.IsEnabled)
+            {
+                _mainWindow?.Hide();
+            }
+
+            UpdateFocusModeShell();
+        });
     }
 
-    private void NotificationDockWindow_OpenRequested(object? sender, EventArgs e)
+    private void ToggleMainWindowVisibility()
     {
-        ShowMainWindow();
+        RunOnUiThread(() =>
+        {
+            if (_mainWindow is null)
+            {
+                return;
+            }
+
+            if (_mainWindow.IsVisible)
+            {
+                _mainWindow.Hide();
+                return;
+            }
+
+            ShowMainWindow();
+        });
+    }
+
+    private void FocusModeCoordinator_StateChanged(object? sender, EventArgs e)
+    {
+        RunOnUiThread(UpdateWindowsDndGuidance);
+    }
+
+    private void NotificationDockWindow_ToggleMainWindowRequested(
+        object? sender,
+        EventArgs e)
+    {
+        ToggleMainWindowVisibility();
+    }
+
+    private void WindowsDndGuidanceWindow_CancelRequested(object? sender, EventArgs e)
+    {
+        _focusModeCoordinator?.CancelGuidance();
+    }
+
+    private void WindowsDndGuidanceWindow_OpenSettingsRequested(
+        object? sender,
+        EventArgs e)
+    {
+        _focusModeCoordinator?.OpenSettingsAgain();
     }
 
     private void UpdateFocusModeShell()
@@ -108,11 +189,13 @@ public partial class App : System.Windows.Application
 
         if (FocusModeService.IsEnabled)
         {
+            var wasVisible = _notificationDockWindow.IsVisible;
             _notificationDockWindow.PositionOnPrimaryWorkArea();
 
-            if (!_notificationDockWindow.IsVisible)
+            if (!wasVisible)
             {
                 _notificationDockWindow.Show();
+                _notificationDockWindow.PlayActivationAnimation();
             }
         }
         else
@@ -121,6 +204,23 @@ public partial class App : System.Windows.Application
         }
 
         _trayIconService?.UpdateFocusModeState(FocusModeService.IsEnabled);
+    }
+
+    private void UpdateWindowsDndGuidance()
+    {
+        if (_windowsDndGuidanceWindow is null || _focusModeCoordinator is null)
+        {
+            return;
+        }
+
+        if (_focusModeCoordinator.Guidance is { } guidance)
+        {
+            _windowsDndGuidanceWindow.Present(guidance);
+        }
+        else
+        {
+            _windowsDndGuidanceWindow.Dismiss();
+        }
     }
 
     private void RunOnUiThread(Action action)
