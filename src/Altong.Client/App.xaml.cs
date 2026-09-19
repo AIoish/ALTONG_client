@@ -1,3 +1,5 @@
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using Altong.Client.Services;
 
@@ -5,7 +7,12 @@ namespace Altong.Client;
 
 public partial class App : System.Windows.Application
 {
+    [DllImport("kernel32.dll")]
+    private static extern bool AttachConsole(int dwProcessId);
+    private const int AttachParentProcess = -1;
+
     public FocusModeService FocusModeService { get; } = new();
+    public IActiveWindowTracker ActiveWindowTracker { get; } = new ActiveWindowTracker();
 
     internal bool IsShuttingDown { get; private set; }
 
@@ -18,6 +25,14 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // WinExe(GUI 앱)에서 dotnet run을 실행한 부모 터미널로 콘솔 출력 연결
+        if (AttachConsole(AttachParentProcess))
+        {
+            var stdOut = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
+            Console.SetOut(stdOut);
+            Console.WriteLine("\n[Altong] 터미널 콘솔 로그 연결 완료 (ActiveWindow 실시간 추적 시작)");
+        }
 
         _focusModeCoordinator = new FocusModeCoordinator(
             FocusModeService,
@@ -46,6 +61,7 @@ public partial class App : System.Windows.Application
         FocusModeService.StateChanged += FocusModeService_StateChanged;
         _focusModeCoordinator.StateChanged += FocusModeCoordinator_StateChanged;
         _focusModeCoordinator.Start();
+        ActiveWindowTracker.Start();
         UpdateFocusModeShell();
         UpdateWindowsDndGuidance();
 
@@ -55,6 +71,7 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         FocusModeService.StateChanged -= FocusModeService_StateChanged;
+        ActiveWindowTracker.Dispose();
 
         if (_focusModeCoordinator is not null)
         {
