@@ -9,6 +9,8 @@ public partial class MainWindow : Window
     private readonly FocusModeService _focusModeService;
     private readonly FocusModeCoordinator _focusModeCoordinator;
 
+    private DebugConsoleWindow? _debugConsoleWindow;
+
     public MainWindow(
         FocusModeService focusModeService,
         FocusModeCoordinator focusModeCoordinator)
@@ -35,9 +37,33 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _debugConsoleWindow?.Close();
+        _debugConsoleWindow = null;
+
         _focusModeService.StateChanged -= FocusModeService_StateChanged;
         _focusModeCoordinator.StateChanged -= FocusModeCoordinator_StateChanged;
         base.OnClosed(e);
+    }
+
+    private void OpenDebugConsoleButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (System.Windows.Application.Current is not App app)
+        {
+            return;
+        }
+
+        if (_debugConsoleWindow is null)
+        {
+            _debugConsoleWindow = new DebugConsoleWindow(app.ActiveWindowTracker);
+        }
+
+        _debugConsoleWindow.Show();
+        if (_debugConsoleWindow.WindowState == WindowState.Minimized)
+        {
+            _debugConsoleWindow.WindowState = WindowState.Normal;
+        }
+
+        _debugConsoleWindow.Activate();
     }
 
     private void FocusModeToggleButton_Click(object sender, RoutedEventArgs e)
