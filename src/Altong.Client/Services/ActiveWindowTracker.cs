@@ -242,6 +242,14 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     {
         DateTimeOffset currentNow = now ?? enteredAt;
 
+        // 직전 안정 창이 존재하고, 다른 창으로 전환되는 경우 직전 세션 종료 [OUT] 선출력
+        if (_stableWindow is not null &&
+            (_stableWindow.Handle != window.Handle || _stableWindow.WindowTitle != window.WindowTitle))
+        {
+            int previousTotalDuration = Math.Max(0, (int)(enteredAt - _stableEnteredAt).TotalSeconds);
+            Console.WriteLine($"[{currentNow.ToLocalTime():HH:mm:ss}] [OUT]     {_stableWindow.ProcessName} ('{TruncateTitle(_stableWindow.WindowTitle)}') 최종 체류: {previousTotalDuration}s");
+        }
+
         _stableWindow = window;
         _stableEnteredAt = enteredAt;
         _candidateWindow = null;
@@ -302,13 +310,19 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
                previous.WindowTitle != current.WindowTitle;
     }
 
-    private static string TruncateTitle(string title, int maxLength = 45)
+    private static string TruncateTitle(string title, int maxLength = 65)
     {
-        if (string.IsNullOrEmpty(title))
+        if (string.IsNullOrEmpty(title) || title.Length <= maxLength)
         {
-            return string.Empty;
+            return title ?? string.Empty;
         }
 
-        return title.Length <= maxLength ? title : string.Concat(title.AsSpan(0, maxLength - 3), "...");
+        int prefixLength = (maxLength - 3) / 2 + 1;
+        int suffixLength = (maxLength - 3) / 2;
+
+        return string.Concat(
+            title.AsSpan(0, prefixLength),
+            "...",
+            title.AsSpan(title.Length - suffixLength, suffixLength));
     }
 }
