@@ -118,8 +118,8 @@ public sealed class FocusModeCoordinator : IDisposable
     private void OpenSettingsFor(FocusModeGuidanceKind kind)
     {
         var message = kind == FocusModeGuidanceKind.EnableWindowsDnd
-            ? "Windows에서 ‘방해 금지’를 켜 주세요. 확인되면 집중 모드가 시작됩니다."
-            : "Windows에서 ‘방해 금지’를 꺼 주세요. 확인되면 집중 모드가 종료됩니다.";
+            ? "Windows에서 ‘방해 금지’를 켜 주세요.\n확인되면 집중 모드가 시작됩니다."
+            : "Windows에서 ‘방해 금지’를 꺼 주세요.\n확인되면 집중 모드가 종료됩니다.";
 
         if (!_settingsLauncher.TryOpen(out var errorMessage))
         {
