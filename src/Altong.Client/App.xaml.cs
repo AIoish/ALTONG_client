@@ -1,6 +1,9 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
+using Altong.Client.Data;
+using Altong.Client.Data.Models;
+using Altong.Client.Data.Repositories;
 using Altong.Client.Services;
 
 namespace Altong.Client;
@@ -13,6 +16,11 @@ public partial class App : System.Windows.Application
 
     public FocusModeService FocusModeService { get; } = new();
     public IActiveWindowTracker ActiveWindowTracker { get; } = new ActiveWindowTracker();
+
+    public IAltongDatabase Database { get; private set; } = null!;
+    public INotificationRepository NotificationRepository { get; private set; } = null!;
+    public IWindowSessionRepository WindowSessionRepository { get; private set; } = null!;
+    public IFocusSessionRepository FocusSessionRepository { get; private set; } = null!;
 
     internal bool IsShuttingDown { get; private set; }
 
@@ -33,6 +41,30 @@ public partial class App : System.Windows.Application
             Console.SetOut(stdOut);
             Console.WriteLine("\n[Altong] 터미널 콘솔 로그 연결 완료 (ActiveWindow 실시간 추적 시작)");
         }
+
+        // 로컬 SQLite 데이터베이스 초기화 및 저장소 바인딩
+        Database = new SqliteDatabase();
+        Database.Initialize();
+
+        NotificationRepository = new SqliteNotificationRepository(Database);
+        WindowSessionRepository = new SqliteWindowSessionRepository(Database);
+        FocusSessionRepository = new SqliteFocusSessionRepository(Database);
+
+        // ActiveWindowTracker의 세션 종료([OUT]) 이벤트를 수신하여 window_sessions에 자동 적재
+        ActiveWindowTracker.WindowSessionEnded += async (_, e) =>
+        {
+            try
+            {
+                var record = new WindowSessionRecord(
+                    0, e.ProcessName, e.WindowTitle,
+                    e.StartedAt.UtcDateTime, e.EndedAt.UtcDateTime, e.DurationSeconds);
+                await WindowSessionRepository.InsertAsync(record).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Database] 세션 저장 실패: {ex.Message}");
+            }
+        };
 
         _focusModeCoordinator = new FocusModeCoordinator(
             FocusModeService,

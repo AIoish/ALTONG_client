@@ -45,6 +45,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     }
 
     public event EventHandler<CurrentContext>? ContextChanged;
+    public event EventHandler<WindowSessionEndedEventArgs>? WindowSessionEnded;
 
     public ActiveWindowTracker()
         : this(new LiveWindowInfoProvider(), DefaultPollingInterval, DefaultStabilizationThreshold)
@@ -242,12 +243,21 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     {
         DateTimeOffset currentNow = now ?? enteredAt;
 
-        // 직전 안정 창이 존재하고, 다른 창으로 전환되는 경우 직전 세션 종료 [OUT] 선출력
+        // 직전 안정 창이 존재하고, 다른 창으로 전환되는 경우 직전 세션 종료 [OUT] 선출력 및 이벤트 발행
         if (_stableWindow is not null &&
             (_stableWindow.Handle != window.Handle || _stableWindow.WindowTitle != window.WindowTitle))
         {
             int previousTotalDuration = Math.Max(0, (int)(enteredAt - _stableEnteredAt).TotalSeconds);
             Console.WriteLine($"[{currentNow.ToLocalTime():HH:mm:ss}] [OUT]     {_stableWindow.ProcessName} ('{TruncateTitle(_stableWindow.WindowTitle)}') 최종 체류: {previousTotalDuration}s");
+
+            var sessionEnded = new WindowSessionEndedEventArgs(
+                _stableWindow.ProcessName,
+                _stableWindow.WindowTitle,
+                _stableEnteredAt,
+                enteredAt,
+                previousTotalDuration);
+
+            WindowSessionEnded?.Invoke(this, sessionEnded);
         }
 
         _stableWindow = window;

@@ -202,7 +202,9 @@ ALTONG_client/
   {
     "active_process": "Code.exe",
     "window_title": "auth_controller.py - AI Alarm - Visual Studio Code",
-    "last_updated": "2026-09-13T18:04:55"
+    "last_updated": "2026-09-13T18:04:55",
+    "duration_seconds": 186,
+    "recent_processes": ["Code.exe", "chrome.exe", "explorer.exe"]
   }
   ```
 * **C# Record (`CurrentContext.cs`):**
@@ -210,7 +212,9 @@ ALTONG_client/
   public record CurrentContext(
       string ActiveProcess,
       string WindowTitle,
-      DateTime LastUpdated);
+      DateTime LastUpdated,
+      int DurationSeconds = 0,
+      IReadOnlyList<string>? RecentProcesses = null);
   ```
 
 ### 7.3 실시간 필터 판단 결과 (`FilterResult`)
@@ -231,9 +235,10 @@ ALTONG_client/
 
 ```mermaid
 graph LR
-    M1[팀원 1: OS 코어] -->|Context / Raw Noti| M2[팀원 2: 실시간 필터 AI]
+    M1[팀원 1: OS 코어 & 로컬 DB] -->|Context / Raw Noti| M2[팀원 2: 실시간 필터 AI]
     M2 -->|Filter Result| M4[팀원 4: UI/UX 토스트]
-    M2 -->|Log Data| M5[팀원 5: SQLite DB]
+    M1 -->|Session Log / SQLite| M5[로컬 SQLite DB]
+    M2 -->|Filter Result Log| M5
     M5 -->|Session Raw Data| M3[팀원 3: 요약 브리핑 AI]
     M3 -->|Clustered Summary| M5
     M5 -->|Report Data| M4
@@ -241,11 +246,11 @@ graph LR
 
 | 담당자 | 포지션 & 역할 | 주요 개발 산출물 및 담당 태스크 |
 | :--- | :--- | :--- |
-| **팀원 1** | **클라이언트 시스템 엔지니어 (OS 코어)** | • WinRT 기반 Windows 알림 수신 리스너 구축<br/>• Win32 기반 활성 창/프로세스 주기적 추적기<br/>• Windows 집중 지원(방해 금지) 상태 제어/가이드 모듈 |
+| **팀원 1** | **클라이언트 시스템 엔지니어 (OS 코어 & 로컬 DB)** | • WinRT 기반 Windows 알림 수신 리스너 구축<br/>• Win32 기반 활성 창/프로세스 주기적 추적기 & 5초 룰 안정화<br/>• **로컬 SQLite DB 스키마 설계 및 데이터 액세스 레이어(Repository) 구축**<br/>• Windows 집중 지원(방해 금지) 상태 제어/가이드 모듈 |
 | **팀원 2** | **AI 엔지니어 (데이터셋 & 실시간 필터링)** | • 알림-맥락 긴급도 데이터셋 수집, 증강 및 전처리<br/>• 경량 SLM(Qwen 2.5 0.5B/1.5B) LoRA 파인튜닝 및 양자화<br/>• 100% JSON 스키마 강제 파이프라인 및 벤치마크 평가 |
 | **팀원 3** | **AI 엔지니어 (요약 및 브리핑)** | • 세션 차단 알림 임베딩 및 비지도 클러스터링 모듈<br/>• 클러스터별 3줄 요약 및 To-Do / 일정 추출 프롬프트<br/>• **창 추적 로그 + 알림 결합 마크다운 업무 일지(TIL) 자동 생성 파이프라인** |
 | **팀원 4** | **데스크톱 UI/UX 개발자** | • 시스템 트레이 백그라운드 상주 앱 (WPF)<br/>• 다이내믹 포커스 HUD (화면 상단 반투명 캡슐 오버레이 & 방어 애니메이션)<br/>• 세련된 커스텀 토스트 알림 팝업 및 집중 타이머 UI |
-| **팀원 5** | **풀스택 / 데이터 & 대시보드 (통합 PL)** | • 로컬 SQLite 스키마 설계 및 데이터 액세스 레이어(DAO)<br/>• 세션 종료 후 요약 리포트 대시보드 (스마트 답장, 캘린더 연동, **TIL 원클릭 복사**)<br/>• 5개 모듈 결합 E2E 테스트 및 최종 시연 시나리오 총괄 |
+| **팀원 5** | **풀스택 / 대시보드 (통합 PL)** | • 세션 종료 후 요약 리포트 대시보드 (스마트 답장, 캘린더 연동, **TIL 원클릭 복사**)<br/>• 5개 모듈 결합 E2E 테스트 및 최종 시연 시나리오 총괄 |
 
 ---
 
