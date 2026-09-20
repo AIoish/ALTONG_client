@@ -9,4 +9,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Resource Include="Fonts\BMJUA_ttf.ttf" />
+  </ItemGroup>
+
 </Project>
