@@ -25,6 +25,7 @@ public partial class App : System.Windows.Application
     internal bool IsShuttingDown { get; private set; }
 
     private MainWindow? _mainWindow;
+    private DashboardWindow? _dashboardWindow;
     private NotificationDockWindow? _notificationDockWindow;
     private WindowsDndGuidanceWindow? _windowsDndGuidanceWindow;
     private TrayIconService? _trayIconService;
@@ -89,6 +90,7 @@ public partial class App : System.Windows.Application
             ShowMainWindow,
             RequestFocusModeChange,
             RequestShutdown);
+        _trayIconService.SetDashboardAction(ShowDashboard);
 
         FocusModeService.StateChanged += FocusModeService_StateChanged;
         _focusModeCoordinator.StateChanged += FocusModeCoordinator_StateChanged;
@@ -98,6 +100,7 @@ public partial class App : System.Windows.Application
         UpdateWindowsDndGuidance();
 
         _mainWindow.Show();
+        _mainWindow.Hide();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -128,6 +131,8 @@ public partial class App : System.Windows.Application
 
         _trayIconService?.Dispose();
         _trayIconService = null;
+        _dashboardWindow?.Close();
+        _dashboardWindow = null;
 
         base.OnExit(e);
     }
@@ -152,6 +157,37 @@ public partial class App : System.Windows.Application
         });
     }
 
+    internal void ShowDashboard()
+    {
+        RunOnUiThread(() =>
+        {
+            if (_dashboardWindow is null)
+            {
+                _dashboardWindow = new DashboardWindow();
+                _dashboardWindow.Closed += DashboardWindow_Closed;
+            }
+
+            _dashboardWindow.Show();
+
+            if (_dashboardWindow.WindowState == WindowState.Minimized)
+            {
+                _dashboardWindow.WindowState = WindowState.Normal;
+            }
+
+            _dashboardWindow.Activate();
+        });
+    }
+
+    private void DashboardWindow_Closed(object? sender, EventArgs e)
+    {
+        if (_dashboardWindow is not null)
+        {
+            _dashboardWindow.Closed -= DashboardWindow_Closed;
+        }
+
+        _dashboardWindow = null;
+    }
+
     private void RequestFocusModeChange()
     {
         RunOnUiThread(() => _focusModeCoordinator?.RequestToggle());
@@ -168,6 +204,7 @@ public partial class App : System.Windows.Application
 
             _windowsDndGuidanceWindow?.CloseForShutdown();
             _notificationDockWindow?.Close();
+            _dashboardWindow?.Close();
             _mainWindow?.Close();
             Shutdown();
         });
@@ -180,6 +217,10 @@ public partial class App : System.Windows.Application
             if (FocusModeService.IsEnabled)
             {
                 _mainWindow?.Hide();
+            }
+            else
+            {
+                ShowDashboard();
             }
 
             UpdateFocusModeShell();
