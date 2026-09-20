@@ -11,6 +11,7 @@ public sealed class TrayIconService : IDisposable
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _contextMenu;
     private readonly ToolStripMenuItem _focusModeMenuItem;
+    private Action? _openDashboard;
     private bool _isDisposed;
 
     public TrayIconService(
@@ -36,7 +37,35 @@ public sealed class TrayIconService : IDisposable
             Text = "Altong",
             Visible = true,
         };
+        _notifyIcon.MouseClick += NotifyIcon_MouseClick;
         _notifyIcon.DoubleClick += (_, _) => openApplication();
+    }
+
+    /// <summary>
+    /// 트레이 아이콘을 왼쪽 클릭했을 때 열 대시보드 동작을 연결한다.
+    /// 기존 생성자 계약은 유지하여 다른 호출부와의 호환성을 보존한다.
+    /// </summary>
+    public void SetDashboardAction(Action openDashboard)
+    {
+        _openDashboard = openDashboard ?? throw new ArgumentNullException(nameof(openDashboard));
+    }
+
+    /// <summary>
+    /// 집중 시간과 차단 알림 수가 준비되면 트레이 hover 툴팁을 갱신한다.
+    /// </summary>
+    public void UpdateSessionSummary(TimeSpan elapsed, int blockedNotificationCount)
+    {
+        int totalMinutes = Math.Max(0, (int)elapsed.TotalMinutes);
+        int safeBlockedCount = Math.Max(0, blockedNotificationCount);
+        _notifyIcon.Text = $"Altong - 집중 {totalMinutes}분 | 차단 {safeBlockedCount}건";
+    }
+
+    private void NotifyIcon_MouseClick(object? sender, MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left)
+        {
+            _openDashboard?.Invoke();
+        }
     }
 
     public void UpdateFocusModeState(bool isEnabled)
@@ -58,6 +87,7 @@ public sealed class TrayIconService : IDisposable
         }
 
         _isDisposed = true;
+        _notifyIcon.MouseClick -= NotifyIcon_MouseClick;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _contextMenu.Dispose();
