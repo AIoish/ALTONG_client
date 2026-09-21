@@ -1,0 +1,74 @@
+<Window x:Class="Altong.Client.SessionResultWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:services="clr-namespace:Altong.Client.Services"
+        Title="ALTONG · 집중 결과" Width="820" Height="660" MinWidth="600" MinHeight="420"
+        WindowStartupLocation="CenterOwner" Background="#F4F7FB" Foreground="#202B3D"
+        FontFamily="맑은 고딕" FontSize="13">
+    <Window.Resources>
+        <services:AppIconConverter x:Key="AppIcon" />
+        <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /></Style>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="#EFFFFFFF" /><Setter Property="BorderBrush" Value="#DDE5EF" />
+            <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="18" />
+            <Setter Property="Padding" Value="20" /><Setter Property="Margin" Value="0,0,0,16" />
+        </Style>
+    </Window.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="28">
+            <TextBlock Text="집중을 마쳤어요" FontSize="26" FontWeight="Bold" />
+            <TextBlock Text="{Binding PeriodText}" Foreground="#68758A" Margin="0,8,0,24" />
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="세션 시간" Foreground="#68758A" />
+                    <TextBlock Text="{Binding DurationText}" FontSize="30" FontWeight="SemiBold" Foreground="#16776F" Margin="0,6,0,18" />
+                    <UniformGrid Columns="3">
+                        <StackPanel><TextBlock Text="차단한 알림" Foreground="#68758A" /><TextBlock Text="{Binding BlockedCount}" FontSize="24" Margin="0,6,0,0" /></StackPanel>
+                        <StackPanel><TextBlock Text="통과한 알림" Foreground="#68758A" /><TextBlock Text="{Binding PassedCount}" FontSize="24" Margin="0,6,0,0" /></StackPanel>
+                        <StackPanel><TextBlock Text="사용한 앱" Foreground="#68758A" /><TextBlock Text="{Binding ApplicationCount}" FontSize="24" Margin="0,6,0,0" /></StackPanel>
+                    </UniformGrid>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="앱별 사용 시간" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+                    <ItemsControl x:Name="AppItems" ItemsSource="{Binding Apps}">
+                        <ItemsControl.ItemTemplate><DataTemplate>
+                            <DockPanel Margin="0,8">
+                                <TextBlock Text="{Binding DurationText}" DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="#68758A" />
+                                <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="28" Height="28" Margin="0,0,12,0" DockPanel.Dock="Left" />
+                                <TextBlock Text="{Binding AppName}" VerticalAlignment="Center" />
+                            </DockPanel>
+                        </DataTemplate></ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="이 세션에 기록된 앱 사용 내역이 없어요." Foreground="#68758A">
+                        <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers><DataTrigger Binding="{Binding ApplicationCount}" Value="0"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                        </Style></TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="세션 알림" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+                    <ItemsControl x:Name="NotificationRows">
+                        <ItemsControl.ItemTemplate><DataTemplate>
+                            <Grid Margin="0,8">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="52" /><ColumnDefinition Width="38" /><ColumnDefinition Width="*" /><ColumnDefinition Width="60" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding TimeText}" VerticalAlignment="Center" Foreground="#68758A" />
+                                <Image Grid.Column="1" Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="28" Height="28" HorizontalAlignment="Left" />
+                                <StackPanel Grid.Column="2" Margin="0,0,12,0"><TextBlock Text="{Binding AppName}" /><TextBlock Text="{Binding Title}" Foreground="#68758A" FontSize="11" /></StackPanel>
+                                <TextBlock Grid.Column="3" Text="{Binding StatusText}" Foreground="{Binding StatusColor}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            </Grid>
+                        </DataTemplate></ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="이 세션에 수신한 알림이 없어요." Foreground="#68758A">
+                        <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers><DataTrigger Binding="{Binding NotificationCount}" Value="0"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                        </Style></TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Window>

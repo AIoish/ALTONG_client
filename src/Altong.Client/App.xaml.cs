@@ -15,6 +15,13 @@ public partial class App : System.Windows.Application
     private const int AttachParentProcess = -1;
 
     public FocusModeService FocusModeService { get; } = new();
+    public FocusSettingsStore FocusSettings { get; } = new();
+    public FocusRoutineService FocusRoutine { get; private set; } = null!;
+    public SessionResultsService SessionResults { get; private set; } = null!;
+    private readonly System.Windows.Threading.DispatcherTimer _routineTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(1)
+    };
     public IActiveWindowTracker ActiveWindowTracker { get; } = new ActiveWindowTracker();
 
     public IAltongDatabase Database { get; private set; } = null!;
@@ -28,8 +35,10 @@ public partial class App : System.Windows.Application
     private DashboardWindow? _dashboardWindow;
     private NotificationDockWindow? _notificationDockWindow;
     private WindowsDndGuidanceWindow? _windowsDndGuidanceWindow;
+    private BreakReminderWindow? _breakReminderWindow;
     private TrayIconService? _trayIconService;
     private FocusModeCoordinator? _focusModeCoordinator;
+    private readonly List<Task> _windowWrites = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -50,21 +59,22 @@ public partial class App : System.Windows.Application
         NotificationRepository = new SqliteNotificationRepository(Database);
         WindowSessionRepository = new SqliteWindowSessionRepository(Database);
         FocusSessionRepository = new SqliteFocusSessionRepository(Database);
+        SessionResults = new SessionResultsService(Database, FocusSessionRepository);
 
         // ActiveWindowTracker의 세션 종료([OUT]) 이벤트를 수신하여 window_sessions에 자동 적재
-        ActiveWindowTracker.WindowSessionEnded += async (_, e) =>
+        ActiveWindowTracker.WindowSessionEnded += (_, e) =>
         {
-            try
+            var record = new WindowSessionRecord(
+                0, e.ProcessName, e.WindowTitle,
+                e.StartedAt.UtcDateTime, e.EndedAt.UtcDateTime, e.DurationSeconds);
+            var write = WindowSessionRepository.InsertAsync(record);
+            lock (_windowWrites)
             {
-                var record = new WindowSessionRecord(
-                    0, e.ProcessName, e.WindowTitle,
-                    e.StartedAt.UtcDateTime, e.EndedAt.UtcDateTime, e.DurationSeconds);
-                await WindowSessionRepository.InsertAsync(record).ConfigureAwait(false);
+                _windowWrites.RemoveAll(task => task.IsCompletedSuccessfully);
+                _windowWrites.Add(write);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Database] 세션 저장 실패: {ex.Message}");
-            }
+            _ = write.ContinueWith(t => Console.WriteLine($"[Database] 세션 저장 실패: {t.Exception?.GetBaseException().Message}"),
+                TaskContinuationOptions.OnlyOnFaulted);
         };
 
         _focusModeCoordinator = new FocusModeCoordinator(
@@ -72,6 +82,11 @@ public partial class App : System.Windows.Application
             new WindowsNotificationModeObserver(),
             new WindowsNotificationSettingsLauncher(),
             new WpfUiDispatcher(Dispatcher));
+
+        FocusRoutine = new FocusRoutineService(FocusModeService, FocusSettings);
+        _routineTimer.Tick += RoutineTimer_Tick;
+        FocusRoutine.PhaseChanged += FocusRoutine_PhaseChanged;
+        _routineTimer.Start();
 
         _mainWindow = new MainWindow(FocusModeService, _focusModeCoordinator);
         MainWindow = _mainWindow;
@@ -85,6 +100,8 @@ public partial class App : System.Windows.Application
             WindowsDndGuidanceWindow_CancelRequested;
         _windowsDndGuidanceWindow.OpenSettingsRequested +=
             WindowsDndGuidanceWindow_OpenSettingsRequested;
+
+        _breakReminderWindow = new BreakReminderWindow();
 
         _trayIconService = new TrayIconService(
             ShowMainWindow,
@@ -106,6 +123,10 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         FocusModeService.StateChanged -= FocusModeService_StateChanged;
+        _routineTimer.Stop();
+        _routineTimer.Tick -= RoutineTimer_Tick;
+        if (FocusRoutine is not null)
+            FocusRoutine.PhaseChanged -= FocusRoutine_PhaseChanged;
         ActiveWindowTracker.Dispose();
 
         if (_focusModeCoordinator is not null)
@@ -128,6 +149,9 @@ public partial class App : System.Windows.Application
             _windowsDndGuidanceWindow.OpenSettingsRequested -=
                 WindowsDndGuidanceWindow_OpenSettingsRequested;
         }
+
+        _breakReminderWindow?.CloseForShutdown();
+        _breakReminderWindow = null;
 
         _trayIconService?.Dispose();
         _trayIconService = null;
@@ -163,7 +187,7 @@ public partial class App : System.Windows.Application
         {
             if (_dashboardWindow is null)
             {
-                _dashboardWindow = new DashboardWindow();
+                _dashboardWindow = new DashboardWindow(FocusSettings, FocusRoutine, SessionResults, ActiveWindowTracker);
                 _dashboardWindow.Closed += DashboardWindow_Closed;
             }
 
@@ -203,6 +227,8 @@ public partial class App : System.Windows.Application
             _trayIconService = null;
 
             _windowsDndGuidanceWindow?.CloseForShutdown();
+            _breakReminderWindow?.CloseForShutdown();
+            _breakReminderWindow = null;
             _notificationDockWindow?.Close();
             _dashboardWindow?.Close();
             _mainWindow?.Close();
@@ -214,17 +240,48 @@ public partial class App : System.Windows.Application
     {
         RunOnUiThread(() =>
         {
+            FocusRoutine.Refresh();
             if (FocusModeService.IsEnabled)
             {
+                SessionResults.Begin(DateTime.UtcNow, FocusSettings.Current.FocusMinutes);
                 _mainWindow?.Hide();
             }
             else
             {
+                var lastContext = ActiveWindowTracker.CaptureNow();
+                Task pendingWrites;
+                lock (_windowWrites) pendingWrites = Task.WhenAll(_windowWrites);
+                SessionResults.End(DateTime.UtcNow, lastContext, pendingWrites);
+                _ = SessionResults.RefreshAsync();
                 ShowDashboard();
             }
 
             UpdateFocusModeShell();
+            UpdateRoutineView();
         });
+    }
+
+    private void RoutineTimer_Tick(object? sender, EventArgs e)
+    {
+        FocusRoutine.Refresh();
+        UpdateRoutineView();
+        _ = SessionResults.RefreshAsync();
+    }
+
+    private void UpdateRoutineView()
+    {
+        if (FocusRoutine.Phase != FocusRoutinePhase.Idle)
+            _trayIconService?.UpdateRoutineStatus(FocusRoutine.StatusText);
+        _mainWindow?.UpdateRoutineStatus(FocusRoutine.StatusText);
+    }
+
+    private void FocusRoutine_PhaseChanged(object? sender, EventArgs e)
+    {
+        if (FocusRoutine.Phase == FocusRoutinePhase.Idle) return;
+        if (FocusRoutine.Phase == FocusRoutinePhase.Break)
+            _breakReminderWindow?.Present(FocusRoutine.StatusText);
+        else
+            _trayIconService?.ShowRoutineReminder("집중할 시간이에요.", FocusRoutine.StatusText);
     }
 
     private void ToggleMainWindowVisibility()
