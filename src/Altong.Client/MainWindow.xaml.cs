@@ -24,6 +24,8 @@ public partial class MainWindow : Window
         UpdateFocusModeView();
     }
 
+    internal void UpdateRoutineStatus(string status) => FocusRoutineStatusText.Text = status;
+
     protected override void OnClosing(CancelEventArgs e)
     {
         if (System.Windows.Application.Current is App { IsShuttingDown: false })

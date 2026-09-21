@@ -79,6 +79,16 @@ public sealed class TrayIconService : IDisposable
             : "Altong";
     }
 
+    public void UpdateRoutineStatus(string status)
+    {
+        _notifyIcon.Text = $"Altong - {status}";
+    }
+
+    public void ShowRoutineReminder(string title, string message)
+    {
+        _notifyIcon.ShowBalloonTip(5000, title, message, ToolTipIcon.Info);
+    }
+
     public void Dispose()
     {
         if (_isDisposed)

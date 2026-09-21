@@ -1,6 +1,9 @@
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Globalization;
+using System.IO;
+using Altong.Client.Services;
 
 namespace Altong.Client;
 
@@ -14,10 +17,31 @@ public partial class DashboardWindow : Window
     private bool _ambientMotionRunning;
     private bool _motionSettingsSubscribed;
     private readonly System.Windows.Threading.DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly FocusSettingsStore _focusSettings;
+    private readonly FocusRoutineService _focusRoutine;
+    private readonly IActiveWindowTracker _activeWindowTracker;
+    private bool _settingsReady;
+    public SessionResultsService Results { get; }
+    private bool _dashboardDataLoading;
+    private DateTime _lastNotificationsRefresh = DateTime.MinValue;
+    private SessionResultWindow? _resultWindow;
 
-    public DashboardWindow()
+    public DashboardWindow(
+        FocusSettingsStore focusSettings,
+        FocusRoutineService focusRoutine,
+        SessionResultsService results,
+        IActiveWindowTracker activeWindowTracker)
     {
+        Results = results;
+        _focusSettings = focusSettings;
+        _focusRoutine = focusRoutine;
+        _activeWindowTracker = activeWindowTracker;
         InitializeComponent();
+        FocusSessionDurationSetting.Text = _focusSettings.Current.FocusMinutes.ToString(CultureInfo.InvariantCulture);
+        BreakDurationSetting.Text = _focusSettings.Current.BreakMinutes.ToString(CultureInfo.InvariantCulture);
+        _settingsReady = true;
+        if (_focusSettings.LoadWarning is { } warning)
+            SetSettingsFeedback(warning, true);
         _clockTimer.Tick += (_, _) => UpdateClock();
         UpdateClock();
         AppVersionText.Text = $"ALTONG · {typeof(DashboardWindow).Assembly.GetName().Version}";
@@ -51,6 +75,7 @@ public partial class DashboardWindow : Window
             _motionSettingsSubscribed = false;
             StopMotion();
             _motionSurfaces.Clear();
+            _resultWindow?.Close();
         };
     }
 
@@ -59,6 +84,127 @@ public partial class DashboardWindow : Window
     {
         DashboardClockText.Text = DateTime.Now.ToString("HH:mm");
         DashboardDateText.Text = DateTime.Now.ToString("M월 d일 dddd");
+        FocusRoutineSettingsText.Text = _focusRoutine.StatusText;
+        FocusRoutineOverviewText.Text = _focusRoutine.Phase == FocusRoutinePhase.Idle
+            ? $"집중 {_focusSettings.Current.FocusMinutes}분 · 휴식 {_focusSettings.Current.BreakMinutes}분"
+            : _focusRoutine.StatusText;
+        var context = _activeWindowTracker.CurrentContext;
+        CurrentApplicationText.Text = string.IsNullOrWhiteSpace(context.ActiveProcess)
+            ? "추적 대기 중"
+            : context.ActiveProcess;
+        if (IsVisible &&
+            DateTime.UtcNow - _lastNotificationsRefresh >= TimeSpan.FromSeconds(5))
+            _ = RefreshDashboardDataAsync();
+    }
+
+    private async Task RefreshDashboardDataAsync()
+    {
+        if (_dashboardDataLoading) return;
+        _dashboardDataLoading = true;
+        _lastNotificationsRefresh = DateTime.UtcNow;
+        try
+        {
+            var from = DateTime.Today.ToUniversalTime();
+            var to = DateTime.UtcNow;
+            var context = _activeWindowTracker.CaptureNow();
+            var notificationTask = Results.ReadNotificationsAsync(from, to);
+            var usageTask = Results.ReadAppUsageAsync(from, to, context);
+            var workAppsTask = Results.ReadFocusedAppNamesAsync(
+                from, to, _focusRoutine.Phase == FocusRoutinePhase.Idle ? null : context);
+            await Task.WhenAll(notificationTask, usageTask, workAppsTask);
+            var records = await notificationTask;
+            var rows = records.Select(record => new NotificationDisplayItem(record)).ToArray();
+            var blocked = rows.Where(row => row.Record.IsPassed == false).Reverse().ToArray();
+            var passed = rows.Where(row => row.Record.IsPassed == true).Reverse().ToArray();
+            BlockedNotificationItemsControl.ItemsSource = blocked;
+            NotificationItemsControl.ItemsSource = passed;
+            BlockedNotificationCountText.Text = blocked.Length.ToString(CultureInfo.InvariantCulture);
+            PassedNotificationCountText.Text = passed.Length.ToString(CultureInfo.InvariantCulture);
+
+            var usage = await usageTask;
+            double maximum = usage.Count == 0 ? 1 : usage.Max(item => item.Seconds);
+            AppUsageItemsControl.ItemsSource = usage
+                .Select(item => item with { Percentage = item.Seconds / maximum * 100 })
+                .ToArray();
+            TodayWorkAppsItemsControl.ItemsSource = await workAppsTask;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Dashboard] {ex.Message}");
+        }
+        finally { _dashboardDataLoading = false; }
+    }
+
+    private void OpenBlockedNotifications_Click(object sender, RoutedEventArgs e)
+    {
+        DashboardTabs.SelectedIndex = 1;
+        _ = RefreshDashboardDataAsync();
+        Dispatcher.BeginInvoke(() => BlockedNotificationsSection.BringIntoView());
+    }
+
+    private void OpenSessionResult_Click(object sender, RoutedEventArgs e)
+    {
+        if (Results.Latest is not { } result) return;
+        if (_resultWindow is not null && !ReferenceEquals(_resultWindow.DataContext, result))
+            _resultWindow.Close();
+        if (_resultWindow is null)
+        {
+            _resultWindow = new SessionResultWindow(result) { Owner = this };
+            _resultWindow.Closed += (_, _) => _resultWindow = null;
+        }
+        _resultWindow.Show();
+        if (_resultWindow.WindowState == WindowState.Minimized)
+            _resultWindow.WindowState = WindowState.Normal;
+        _resultWindow.Activate();
+    }
+
+    private bool TryReadTimerSettings(out FocusTimerSettings settings)
+    {
+        settings = new();
+        if (!int.TryParse(FocusSessionDurationSetting.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int focus) ||
+            !int.TryParse(BreakDurationSetting.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int rest))
+            return false;
+        settings = new FocusTimerSettings(focus, rest);
+        return settings.IsValid;
+    }
+
+    private void TimerSetting_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (!_settingsReady) return;
+        bool valid = TryReadTimerSettings(out var settings);
+        SetSettingsFeedback(valid
+            ? settings == _focusSettings.Current
+                ? "저장한 시간은 다음 집중 모드 시작부터 적용됩니다."
+                : $"집중 {settings.FocusMinutes}분 · 휴식 {settings.BreakMinutes}분 — 저장하면 다음 집중 모드부터 적용됩니다."
+            : "1분 이상의 정수로 입력해 주세요. 집중은 최대 180분, 휴식은 최대 60분입니다.", !valid);
+    }
+
+    private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryReadTimerSettings(out var settings))
+        {
+            SetSettingsFeedback("1분 이상의 정수로 입력해 주세요. 집중은 최대 180분, 휴식은 최대 60분입니다.", true);
+            return;
+        }
+
+        try
+        {
+            _focusSettings.Save(settings);
+            SetSettingsFeedback($"집중 {settings.FocusMinutes}분 · 휴식 {settings.BreakMinutes}분을 저장했어요. 다음 집중 모드부터 적용됩니다.", false);
+            UpdateClock();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            SetSettingsFeedback("설정을 저장하지 못했어요. 기존 시간은 유지됩니다. 잠시 후 다시 시도해 주세요.", true);
+        }
+    }
+
+    private void SetSettingsFeedback(string message, bool isError)
+    {
+        TimerSettingsFeedbackText.Text = message;
+        TimerSettingsFeedbackText.Foreground = isError
+            ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(182, 57, 67))
+            : (System.Windows.Media.Brush)FindResource("MutedText");
     }
 
     private void OpenReport_Click(object sender, RoutedEventArgs e) => DashboardTabs.SelectedIndex = 2;
@@ -95,7 +241,7 @@ public partial class DashboardWindow : Window
         }
         else
         {
-            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(kind == "Overview" ? 1.15 : 1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(kind == "Settings" ? .42 : 1, GridUnitType.Star) });
         }
         for (int i = 0; i < grid.Children.Count; i++)
@@ -103,8 +249,7 @@ public partial class DashboardWindow : Window
             if (grid.Children[i] is not FrameworkElement card) continue;
             int row = 0, column = 0, span = 1, rowSpan = 1;
             if (narrow) row = i;
-            else if (kind == "Overview") { row = i < 3 ? 0 : 1; column = i < 3 ? i : i - 3; span = i == 4 ? 2 : 1; }
-            else if (kind == "Notifications") { row = i < 2 ? 0 : 1; column = i < 2 ? i : i - 2; span = i == 1 ? 2 : 1; }
+            else if (kind is "Overview" or "Notifications") { column = i; rowSpan = 2; }
             else if (kind == "Report") { column = i; rowSpan = 2; }
             else { row = i < 2 ? 0 : 1; column = i < 2 ? i : 0; span = i == 2 ? 2 : 1; }
             System.Windows.Controls.Grid.SetRow(card, row);
@@ -139,6 +284,8 @@ public partial class DashboardWindow : Window
             return;
 
         UpdateMotion();
+        if (DashboardTabs.SelectedIndex is 0 or 1)
+            _ = RefreshDashboardDataAsync();
         if (DashboardTabs.SelectedContent is UIElement selectedContent && MotionAllowed)
             FadeIn(selectedContent, 200);
     }

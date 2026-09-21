@@ -23,6 +23,11 @@
                        Foreground="#5F6368"
                        TextAlignment="Center"
                        TextWrapping="Wrap" />
+            <TextBlock x:Name="FocusRoutineStatusText"
+                       Text="집중 모드를 켜면 타이머가 시작됩니다."
+                       HorizontalAlignment="Center"
+                       Foreground="#16776F"
+                       Margin="0,0,0,16" />
             <Button x:Name="FocusModeToggleButton"
                     MinWidth="160"
                     Padding="16,8"
