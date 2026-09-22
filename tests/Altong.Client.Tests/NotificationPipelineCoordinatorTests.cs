@@ -4,6 +4,7 @@ using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
 using Altong.Client.Services;
 using Altong.Client.Services.Notifications;
+using Altong.Client.Tests.Mocks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Altong.Client.Tests;
