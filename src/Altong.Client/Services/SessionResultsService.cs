@@ -38,6 +38,7 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
     public SessionResult? Latest { get; private set; }
     public bool IsCollecting { get; private set; }
     public string Status { get; private set; } = "";
+    public string? CurrentSessionId => _session is { EndedAt: null } ? _session.SessionId : null;
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public void Begin(DateTime startedAt, int targetMinutes)

@@ -5,6 +5,7 @@ using Altong.Client.Data;
 using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Services;
+using Altong.Client.Services.Notifications;
 
 namespace Altong.Client;
 
@@ -28,6 +29,7 @@ public partial class App : System.Windows.Application
     public INotificationRepository NotificationRepository { get; private set; } = null!;
     public IWindowSessionRepository WindowSessionRepository { get; private set; } = null!;
     public IFocusSessionRepository FocusSessionRepository { get; private set; } = null!;
+    public NotificationPipelineCoordinator NotificationPipeline { get; private set; } = null!;
 
     internal bool IsShuttingDown { get; private set; }
 
@@ -66,7 +68,8 @@ public partial class App : System.Windows.Application
         {
             var record = new WindowSessionRecord(
                 0, e.ProcessName, e.WindowTitle,
-                e.StartedAt.UtcDateTime, e.EndedAt.UtcDateTime, e.DurationSeconds);
+                e.StartedAt.UtcDateTime, e.EndedAt.UtcDateTime, e.DurationSeconds,
+                SessionResults?.CurrentSessionId);
             var write = WindowSessionRepository.InsertAsync(record);
             lock (_windowWrites)
             {
@@ -76,6 +79,18 @@ public partial class App : System.Windows.Application
             _ = write.ContinueWith(t => Console.WriteLine($"[Database] 세션 저장 실패: {t.Exception?.GetBaseException().Message}"),
                 TaskContinuationOptions.OnlyOnFaulted);
         };
+
+        // 실시간 알림 수신 및 AI 필터링 파이프라인 가동
+        var notificationListener = new WinRtNotificationListener();
+        var filterEngine = new RuleBasedFilterEngine();
+        NotificationPipeline = new NotificationPipelineCoordinator(
+            notificationListener,
+            ActiveWindowTracker,
+            NotificationRepository,
+            filterEngine,
+            () => FocusModeService.IsEnabled,
+            () => SessionResults.CurrentSessionId);
+        _ = NotificationPipeline.StartAsync();
 
         _focusModeCoordinator = new FocusModeCoordinator(
             FocusModeService,
@@ -128,6 +143,7 @@ public partial class App : System.Windows.Application
         if (FocusRoutine is not null)
             FocusRoutine.PhaseChanged -= FocusRoutine_PhaseChanged;
         ActiveWindowTracker.Dispose();
+        NotificationPipeline?.Dispose();
 
         if (_focusModeCoordinator is not null)
         {
