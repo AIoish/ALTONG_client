@@ -31,11 +31,9 @@ public partial class App : System.Windows.Application
 
     internal bool IsShuttingDown { get; private set; }
 
-    private MainWindow? _mainWindow;
     private DashboardWindow? _dashboardWindow;
     private NotificationDockWindow? _notificationDockWindow;
     private WindowsDndGuidanceWindow? _windowsDndGuidanceWindow;
-    private BreakReminderWindow? _breakReminderWindow;
     private TrayIconService? _trayIconService;
     private FocusModeCoordinator? _focusModeCoordinator;
     private readonly List<Task> _windowWrites = new();
@@ -88,12 +86,9 @@ public partial class App : System.Windows.Application
         FocusRoutine.PhaseChanged += FocusRoutine_PhaseChanged;
         _routineTimer.Start();
 
-        _mainWindow = new MainWindow(FocusModeService, _focusModeCoordinator);
-        MainWindow = _mainWindow;
-
         _notificationDockWindow = new NotificationDockWindow();
-        _notificationDockWindow.ToggleMainWindowRequested +=
-            NotificationDockWindow_ToggleMainWindowRequested;
+        _notificationDockWindow.ToggleDashboardRequested +=
+            NotificationDockWindow_ToggleDashboardRequested;
 
         _windowsDndGuidanceWindow = new WindowsDndGuidanceWindow();
         _windowsDndGuidanceWindow.CancelRequested +=
@@ -101,13 +96,8 @@ public partial class App : System.Windows.Application
         _windowsDndGuidanceWindow.OpenSettingsRequested +=
             WindowsDndGuidanceWindow_OpenSettingsRequested;
 
-        _breakReminderWindow = new BreakReminderWindow();
-
-        _trayIconService = new TrayIconService(
-            ShowMainWindow,
-            RequestFocusModeChange,
-            RequestShutdown);
-        _trayIconService.SetDashboardAction(ShowDashboard);
+        _trayIconService = new TrayIconService(ShowDashboard);
+        _trayIconService.SetDashboardAction(ToggleDashboard);
 
         FocusModeService.StateChanged += FocusModeService_StateChanged;
         _focusModeCoordinator.StateChanged += FocusModeCoordinator_StateChanged;
@@ -116,8 +106,7 @@ public partial class App : System.Windows.Application
         UpdateFocusModeShell();
         UpdateWindowsDndGuidance();
 
-        _mainWindow.Show();
-        _mainWindow.Hide();
+        ShowDashboard();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -138,8 +127,8 @@ public partial class App : System.Windows.Application
 
         if (_notificationDockWindow is not null)
         {
-            _notificationDockWindow.ToggleMainWindowRequested -=
-                NotificationDockWindow_ToggleMainWindowRequested;
+            _notificationDockWindow.ToggleDashboardRequested -=
+                NotificationDockWindow_ToggleDashboardRequested;
         }
 
         if (_windowsDndGuidanceWindow is not null)
@@ -150,8 +139,6 @@ public partial class App : System.Windows.Application
                 WindowsDndGuidanceWindow_OpenSettingsRequested;
         }
 
-        _breakReminderWindow?.CloseForShutdown();
-        _breakReminderWindow = null;
 
         _trayIconService?.Dispose();
         _trayIconService = null;
@@ -161,34 +148,23 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
-    internal void ShowMainWindow()
-    {
-        RunOnUiThread(() =>
-        {
-            if (_mainWindow is null)
-            {
-                return;
-            }
-
-            _mainWindow.Show();
-
-            if (_mainWindow.WindowState == WindowState.Minimized)
-            {
-                _mainWindow.WindowState = WindowState.Normal;
-            }
-
-            _mainWindow.Activate();
-        });
-    }
-
     internal void ShowDashboard()
     {
         RunOnUiThread(() =>
         {
             if (_dashboardWindow is null)
             {
-                _dashboardWindow = new DashboardWindow(FocusSettings, FocusRoutine, SessionResults, ActiveWindowTracker);
+                _dashboardWindow = new DashboardWindow(
+                    FocusSettings,
+                    FocusRoutine,
+                    SessionResults,
+                    ActiveWindowTracker,
+                    FocusModeService,
+                    _focusModeCoordinator,
+                    ShowCurrentRoutineReminder,
+                    RequestShutdown);
                 _dashboardWindow.Closed += DashboardWindow_Closed;
+                MainWindow = _dashboardWindow;
             }
 
             _dashboardWindow.Show();
@@ -212,12 +188,7 @@ public partial class App : System.Windows.Application
         _dashboardWindow = null;
     }
 
-    private void RequestFocusModeChange()
-    {
-        RunOnUiThread(() => _focusModeCoordinator?.RequestToggle());
-    }
-
-    private void RequestShutdown()
+    internal void RequestShutdown()
     {
         RunOnUiThread(() =>
         {
@@ -227,11 +198,8 @@ public partial class App : System.Windows.Application
             _trayIconService = null;
 
             _windowsDndGuidanceWindow?.CloseForShutdown();
-            _breakReminderWindow?.CloseForShutdown();
-            _breakReminderWindow = null;
             _notificationDockWindow?.Close();
             _dashboardWindow?.Close();
-            _mainWindow?.Close();
             Shutdown();
         });
     }
@@ -244,7 +212,6 @@ public partial class App : System.Windows.Application
             if (FocusModeService.IsEnabled)
             {
                 SessionResults.Begin(DateTime.UtcNow, FocusSettings.Current.FocusMinutes);
-                _mainWindow?.Hide();
             }
             else
             {
@@ -261,6 +228,20 @@ public partial class App : System.Windows.Application
         });
     }
 
+    private void ToggleDashboard()
+    {
+        RunOnUiThread(() =>
+        {
+            if (_dashboardWindow?.IsVisible == true)
+            {
+                _dashboardWindow.Hide();
+                return;
+            }
+
+            ShowDashboard();
+        });
+    }
+
     private void RoutineTimer_Tick(object? sender, EventArgs e)
     {
         FocusRoutine.Refresh();
@@ -272,34 +253,47 @@ public partial class App : System.Windows.Application
     {
         if (FocusRoutine.Phase != FocusRoutinePhase.Idle)
             _trayIconService?.UpdateRoutineStatus(FocusRoutine.StatusText);
-        _mainWindow?.UpdateRoutineStatus(FocusRoutine.StatusText);
     }
 
     private void FocusRoutine_PhaseChanged(object? sender, EventArgs e)
     {
-        if (FocusRoutine.Phase == FocusRoutinePhase.Idle) return;
-        if (FocusRoutine.Phase == FocusRoutinePhase.Break)
-            _breakReminderWindow?.Present(FocusRoutine.StatusText);
-        else
-            _trayIconService?.ShowRoutineReminder("집중할 시간이에요.", FocusRoutine.StatusText);
+        switch (FocusRoutine.Phase)
+        {
+            case FocusRoutinePhase.Focus:
+                _notificationDockWindow?.ShowRoutineReminder(
+                    "집중 시간이 시작됐어요.",
+                    () => FocusRoutine.StatusText,
+                    "집중에 필요한 작업을 시작해보세요.");
+                break;
+
+            case FocusRoutinePhase.Break:
+                _notificationDockWindow?.ShowRoutineReminder(
+                    "휴식 시간이 시작됐어요.",
+                    () => FocusRoutine.StatusText,
+                    "잠시 쉬어가세요. 방해 금지 모드는 직접 조절할 수 있어요.");
+                break;
+
+            case FocusRoutinePhase.Idle:
+                _notificationDockWindow?.ShowRoutineReminder(
+                    "집중 모드가 종료됐어요.",
+                    () => "세션 종료",
+                    "세션 통계를 정리하고 있어요. 대시보드에서 결과를 확인할 수 있어요.");
+                break;
+        }
     }
 
-    private void ToggleMainWindowVisibility()
+    internal void ShowCurrentRoutineReminder()
     {
         RunOnUiThread(() =>
         {
-            if (_mainWindow is null)
-            {
+            if (_notificationDockWindow is null || FocusRoutine.Phase == FocusRoutinePhase.Idle)
                 return;
-            }
 
-            if (_mainWindow.IsVisible)
-            {
-                _mainWindow.Hide();
-                return;
-            }
-
-            ShowMainWindow();
+            bool isBreak = FocusRoutine.Phase == FocusRoutinePhase.Break;
+            _notificationDockWindow.ShowRoutineReminder(
+                isBreak ? "휴식 시간이 진행 중이에요." : "집중 시간이 진행 중이에요.",
+                () => FocusRoutine.StatusText,
+                isBreak ? "충분히 쉬고 다음 집중을 준비해보세요." : "현재 작업에 집중해보세요.");
         });
     }
 
@@ -308,11 +302,11 @@ public partial class App : System.Windows.Application
         RunOnUiThread(UpdateWindowsDndGuidance);
     }
 
-    private void NotificationDockWindow_ToggleMainWindowRequested(
+    private void NotificationDockWindow_ToggleDashboardRequested(
         object? sender,
         EventArgs e)
     {
-        ToggleMainWindowVisibility();
+        ToggleDashboard();
     }
 
     private void WindowsDndGuidanceWindow_CancelRequested(object? sender, EventArgs e)
@@ -337,17 +331,13 @@ public partial class App : System.Windows.Application
         if (FocusModeService.IsEnabled)
         {
             var wasVisible = _notificationDockWindow.IsVisible;
-            _notificationDockWindow.PositionOnPrimaryWorkArea();
-
+            _notificationDockWindow.KeepVisible();
             if (!wasVisible)
-            {
-                _notificationDockWindow.Show();
                 _notificationDockWindow.PlayActivationAnimation();
-            }
         }
         else
         {
-            _notificationDockWindow.Hide();
+            _notificationDockWindow.HideAfterCurrentReminder();
         }
 
         _trayIconService?.UpdateFocusModeState(FocusModeService.IsEnabled);

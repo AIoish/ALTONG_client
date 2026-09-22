@@ -9,8 +9,11 @@ namespace Altong.Client.Services;
 /// </summary>
 public sealed class ActiveWindowTracker : IActiveWindowTracker
 {
-    private static readonly TimeSpan DefaultPollingInterval = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan DefaultStabilizationThreshold = TimeSpan.FromSeconds(5);
+    // Keep the tracker responsive enough for the dashboard to feel live.  The
+    // threshold still filters out brief task-switches, while the shorter
+    // interval avoids making every transition wait for a multi-second poll.
+    private static readonly TimeSpan DefaultPollingInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan DefaultStabilizationThreshold = TimeSpan.FromSeconds(1);
     private const int MaxRecentProcesses = 3;
 
     private readonly IWindowInfoProvider _windowInfoProvider;

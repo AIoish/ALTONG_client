@@ -577,13 +577,18 @@
             </Grid.RowDefinitions>
 
             <Grid Margin="0,0,0,12">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <WrapPanel VerticalAlignment="Center">
                     <Border Style="{StaticResource StatusPillStyle}"><DockPanel><Border Background="#38C86A" Style="{StaticResource StatusDotStyle}"><TextBlock Text="●" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><StackPanel><TextBlock x:Name="SessionStatusBadgeText" Text="기록 대기 중" FontSize="12"/><TextBlock Text="집중 세션" FontSize="10" Foreground="{StaticResource MutedText}"/></StackPanel></DockPanel></Border>
                     <Border Style="{StaticResource StatusPillStyle}"><DockPanel><Border Background="#F18B46" Style="{StaticResource StatusDotStyle}"><TextBlock Text="↗" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><StackPanel><TextBlock x:Name="SessionStartTimeText" Text="시작 --:--" FontSize="12"/><TextBlock Text="세션 시작 시각" FontSize="10" Foreground="{StaticResource MutedText}"/></StackPanel></DockPanel></Border>
                     <Border Style="{StaticResource StatusPillStyle}"><DockPanel><Border Background="#599EFA" Style="{StaticResource StatusDotStyle}"><TextBlock Text="✓" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><StackPanel><TextBlock x:Name="SessionEndTimeText" Text="종료 --:--" FontSize="12"/><TextBlock Text="세션 종료 시각" FontSize="10" Foreground="{StaticResource MutedText}"/></StackPanel></DockPanel></Border>
                 </WrapPanel>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0">
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,4,0">
+                    <TextBlock x:Name="FocusModeStatusText" Text="집중 모드 꺼짐" FontSize="11" Foreground="{StaticResource MutedText}" HorizontalAlignment="Center" Margin="0,0,0,5" />
+                    <Button x:Name="FocusModeToggleButton" Content="집중 모드 켜기" Click="FocusModeToggleButton_Click"
+                            Style="{StaticResource ActionButtonStyle}" Padding="16,8" MinWidth="126" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0">
                     <TextBlock x:Name="DashboardClockText" Text="--:--" FontFamily="{StaticResource DashboardDisplayFontFamily}" FontSize="36" FontWeight="Light" HorizontalAlignment="Right"/>
                     <TextBlock x:Name="DashboardDateText" FontSize="11" Foreground="{StaticResource MutedText}" HorizontalAlignment="Right"/>
                 </StackPanel>
@@ -620,7 +625,7 @@
 <Path x:Name="SessionOrbit" Data="M15,95 A80,80 0 0 1 80,15" Stroke="#FFD4AA" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Opacity=".65" RenderTransformOrigin=".5,.5" IsHitTestVisible="False"/>
 <Ellipse Width="180" Height="180" Stroke="#9CCAD7E7"><Ellipse.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#EFFFFFFF"/><GradientStop Color="#CDEAF2F9" Offset=".5"/><GradientStop Color="#D9DDEBF6" Offset="1"/></LinearGradientBrush></Ellipse.Fill></Ellipse>
 <Ellipse Width="150" Height="150" Stroke="#A8C1D8"><Ellipse.Fill><RadialGradientBrush><GradientStop Color="#F8FFFFFF"/><GradientStop Color="#D6E2EDF7" Offset="1"/></RadialGradientBrush></Ellipse.Fill></Ellipse>
-<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="나의 집중 시간" Foreground="{StaticResource Accent}"/><TextBlock x:Name="FocusDurationText" Text="--:--" FontSize="42" TextAlignment="Center" Margin="0,8"/><TextBlock Text="총 집중 시간" Foreground="{StaticResource MutedText}" TextAlignment="Center"/><TextBlock x:Name="FocusRoutineOverviewText" FontSize="11" Margin="0,8,0,0" Foreground="{StaticResource Accent}" TextAlignment="Center"/></StackPanel>
+<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock x:Name="FocusTimerTitleText" Text="집중 시간" Foreground="{StaticResource Accent}" TextAlignment="Center"/><TextBlock x:Name="FocusDurationText" Text="25:00" FontSize="42" TextAlignment="Center" Margin="0,8"/><TextBlock x:Name="FocusTimerCaptionText" Text="설정된 집중 시간" Foreground="{StaticResource MutedText}" TextAlignment="Center"/><TextBlock x:Name="FocusRoutineOverviewText" FontSize="11" Margin="0,8,0,0" Foreground="{StaticResource Accent}" TextAlignment="Center"/></StackPanel>
 </Grid></StackPanel></ScrollViewer></Border>
 <Border Style="{StaticResource PanelStyle}"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
 <TextBlock Text="오늘의 업무 일지" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,16"/>
@@ -643,11 +648,12 @@
                         <Grid x:Name="NotificationsPageGrid" Tag="Notifications" Margin="0" SizeChanged="DashboardPageGrid_SizeChanged">
 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
 <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="*"/><RowDefinition Height="0"/></Grid.RowDefinitions>
-<Border Style="{StaticResource PanelStyle}"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
+<Border Style="{StaticResource PanelStyle}"><Grid>
+<Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
 <ContentControl Content="앱별 사용 시간" Style="{StaticResource SectionHeaderStyle}"/>
-<Grid MinHeight="150"><ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="AppUsageItemsControl" ItemTemplate="{StaticResource AppUsageTemplate}"/></ScrollViewer>
+<Grid Grid.Row="1" MinHeight="150"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0"><ItemsControl x:Name="AppUsageItemsControl" ItemTemplate="{StaticResource AppUsageTemplate}"/></ScrollViewer>
 <TextBlock Text="아직 앱 사용 기록이 없어요." Foreground="{StaticResource MutedText}" HorizontalAlignment="Center" VerticalAlignment="Center"><TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding HasItems, ElementName=AppUsageItemsControl}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid>
-</StackPanel></ScrollViewer></Border>
+</Grid></Border>
 <Border x:Name="BlockedNotificationsSection" Style="{StaticResource PanelStyle}"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
 <ContentControl Content="차단된 알림 목록" Style="{StaticResource SectionHeaderStyle}"/>
 <Grid MinHeight="150"><ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="BlockedNotificationItemsControl" ItemTemplate="{StaticResource BlockedNotificationTemplate}"/></ScrollViewer>
@@ -822,6 +828,17 @@
                                                Text="Windows 방해 금지 상태 연결 예정"
                                                Foreground="{StaticResource MutedText}"
                                                Margin="0,6,0,16" />
+                                    <WrapPanel Margin="0,0,0,16">
+                                        <Button x:Name="ShowRoutineReminderButton"
+                                                Content="현재 루틴 알림 보기"
+                                                Click="ShowRoutineReminderButton_Click"
+                                                Style="{StaticResource ActionButtonStyle}"
+                                                Margin="0,0,8,8" />
+                                        <Button Content="Altong 종료"
+                                                Click="ExitApplicationButton_Click"
+                                                Style="{StaticResource ActionButtonStyle}"
+                                                Margin="0,0,0,8" />
+                                    </WrapPanel>
                                     <TextBlock x:Name="AppVersionText" Text="ALTONG · 버전 확인 중" Foreground="{StaticResource MutedText}" />
                                 </StackPanel>
                             </ScrollViewer>
@@ -850,6 +867,45 @@
 </Border>
 </Grid>
                     </ScrollViewer>
+                </TabItem>
+
+                <TabItem Visibility="Collapsed">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⌁" FontFamily="Segoe UI Symbol" FontSize="17" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+                            <TextBlock Text="디버그 모니터" Margin="7,0,0,0" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}" />
+                        </StackPanel>
+                    </TabItem.Header>
+                    <Grid Margin="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource PanelStyle}" Margin="0,0,0,12" Padding="18,14">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock x:Name="DebugProcessText" Text="활성 프로세스: 대기 중..." FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+                                    <TextBlock x:Name="DebugTitleText" Text="창 제목: -" Margin="0,7,0,0" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock x:Name="DebugRecentProcessesText" Text="최근 앱 큐: [없음]" Margin="0,5,0,0" Foreground="{StaticResource MutedText}" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" x:Name="DebugDurationText" Text="⏱ 0초 지속" Foreground="#C76F34" VerticalAlignment="Top" Margin="16,0,0,0" />
+                            </Grid>
+                        </Border>
+                        <Border Grid.Row="1" Style="{StaticResource PanelStyle}" Padding="18,14">
+                            <Grid>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                <Grid Margin="0,0,0,10">
+                                    <TextBlock Text="실시간 활성 창 전환 로그" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <Button Content="로그 비우기" Click="ClearDebugLogsButton_Click" Style="{StaticResource ActionButtonStyle}" HorizontalAlignment="Right" Padding="12,6" />
+                                </Grid>
+                                <TextBox Grid.Row="1" x:Name="DebugLogTextBox" IsReadOnly="True" AcceptsReturn="True"
+                                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                         FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"
+                                         Background="#F3F7FA" Foreground="#27364A" BorderBrush="#C9D5E2" BorderThickness="1" Padding="12" />
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </TabItem>
             </TabControl>
 

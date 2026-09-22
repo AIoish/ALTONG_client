@@ -3,6 +3,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Globalization;
 using System.IO;
+using Altong.Client.Models;
 using Altong.Client.Services;
 
 namespace Altong.Client;
@@ -20,6 +21,12 @@ public partial class DashboardWindow : Window
     private readonly FocusSettingsStore _focusSettings;
     private readonly FocusRoutineService _focusRoutine;
     private readonly IActiveWindowTracker _activeWindowTracker;
+    private readonly FocusModeService? _focusModeService;
+    private readonly FocusModeCoordinator? _focusModeCoordinator;
+    private readonly Action? _showRoutineReminder;
+    private readonly Action? _shutdownApplication;
+    private CurrentContext? _lastDebugContext;
+    private DateTimeOffset _lastDebugContextEnteredAt = DateTimeOffset.UtcNow;
     private bool _settingsReady;
     public SessionResultsService Results { get; }
     private bool _dashboardDataLoading;
@@ -30,13 +37,26 @@ public partial class DashboardWindow : Window
         FocusSettingsStore focusSettings,
         FocusRoutineService focusRoutine,
         SessionResultsService results,
-        IActiveWindowTracker activeWindowTracker)
+        IActiveWindowTracker activeWindowTracker,
+        FocusModeService? focusModeService = null,
+        FocusModeCoordinator? focusModeCoordinator = null,
+        Action? showRoutineReminder = null,
+        Action? shutdownApplication = null)
     {
         Results = results;
         _focusSettings = focusSettings;
         _focusRoutine = focusRoutine;
         _activeWindowTracker = activeWindowTracker;
+        _focusModeService = focusModeService;
+        _focusModeCoordinator = focusModeCoordinator;
+        _showRoutineReminder = showRoutineReminder;
+        _shutdownApplication = shutdownApplication;
         InitializeComponent();
+        _activeWindowTracker.ContextChanged += ActiveWindowTracker_ContextChanged;
+        if (_focusModeService is not null)
+            _focusModeService.StateChanged += FocusMode_StateChanged;
+        if (_focusModeCoordinator is not null)
+            _focusModeCoordinator.StateChanged += FocusMode_StateChanged;
         FocusSessionDurationSetting.Text = _focusSettings.Current.FocusMinutes.ToString(CultureInfo.InvariantCulture);
         BreakDurationSetting.Text = _focusSettings.Current.BreakMinutes.ToString(CultureInfo.InvariantCulture);
         _settingsReady = true;
@@ -45,6 +65,9 @@ public partial class DashboardWindow : Window
         _clockTimer.Tick += (_, _) => UpdateClock();
         UpdateClock();
         AppVersionText.Text = $"ALTONG · {typeof(DashboardWindow).Assembly.GetName().Version}";
+        UpdateFocusModeView();
+        UpdateDebugContextView(_activeWindowTracker.CurrentContext);
+        AppendDebugLog($"[시스템] 디버그 모니터 연결됨. 초기 맥락: {_activeWindowTracker.CurrentContext.ActiveProcess}");
         SourceInitialized += (_, _) => FitToWorkArea();
         StateChanged += (_, _) =>
         {
@@ -75,8 +98,43 @@ public partial class DashboardWindow : Window
             _motionSettingsSubscribed = false;
             StopMotion();
             _motionSurfaces.Clear();
+            _activeWindowTracker.ContextChanged -= ActiveWindowTracker_ContextChanged;
+            if (_focusModeService is not null)
+                _focusModeService.StateChanged -= FocusMode_StateChanged;
+            if (_focusModeCoordinator is not null)
+                _focusModeCoordinator.StateChanged -= FocusMode_StateChanged;
             _resultWindow?.Close();
         };
+    }
+
+    private void ActiveWindowTracker_ContextChanged(object? sender, Altong.Client.Models.CurrentContext context)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(() => ActiveWindowTracker_ContextChanged(sender, context));
+            return;
+        }
+
+        CurrentApplicationText.Text = string.IsNullOrWhiteSpace(context.ActiveProcess)
+            ? "추적 대기 중"
+            : context.ActiveProcess;
+        UpdateDebugContextView(context);
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (_lastDebugContext is not null && !string.IsNullOrEmpty(_lastDebugContext.ActiveProcess) &&
+            (_lastDebugContext.ActiveProcess != context.ActiveProcess ||
+             _lastDebugContext.WindowTitle != context.WindowTitle))
+        {
+            int duration = Math.Max(0, (int)(now - _lastDebugContextEnteredAt).TotalSeconds);
+            AppendDebugLog($"[{DateTime.Now:HH:mm:ss}] [OUT] {_lastDebugContext.ActiveProcess} ('{TruncateDebugTitle(_lastDebugContext.WindowTitle)}') 최종 체류: {duration}s");
+        }
+
+        _lastDebugContext = context;
+        _lastDebugContextEnteredAt = now;
+        string recent = context.RecentProcesses is { Count: > 0 }
+            ? string.Join(", ", context.RecentProcesses)
+            : "없음";
+        AppendDebugLog($"[{DateTime.Now:HH:mm:ss}] [CONFIRM] {context.ActiveProcess} ('{TruncateDebugTitle(context.WindowTitle)}') | 콤비: [{recent}]");
     }
 
     // Only presentation concerns belong here; session/DB/AI contracts remain unchanged.
@@ -85,16 +143,50 @@ public partial class DashboardWindow : Window
         DashboardClockText.Text = DateTime.Now.ToString("HH:mm");
         DashboardDateText.Text = DateTime.Now.ToString("M월 d일 dddd");
         FocusRoutineSettingsText.Text = _focusRoutine.StatusText;
-        FocusRoutineOverviewText.Text = _focusRoutine.Phase == FocusRoutinePhase.Idle
-            ? $"집중 {_focusSettings.Current.FocusMinutes}분 · 휴식 {_focusSettings.Current.BreakMinutes}분"
-            : _focusRoutine.StatusText;
+        UpdateFocusTimerView();
         var context = _activeWindowTracker.CurrentContext;
         CurrentApplicationText.Text = string.IsNullOrWhiteSpace(context.ActiveProcess)
             ? "추적 대기 중"
             : context.ActiveProcess;
+        DebugDurationText.Text = string.IsNullOrWhiteSpace(context.ActiveProcess)
+            ? "⏱ 0초 지속"
+            : $"⏱ {context.DurationSeconds}초 지속";
         if (IsVisible &&
             DateTime.UtcNow - _lastNotificationsRefresh >= TimeSpan.FromSeconds(5))
             _ = RefreshDashboardDataAsync();
+    }
+
+    private void UpdateFocusTimerView()
+    {
+        switch (_focusRoutine.Phase)
+        {
+            case FocusRoutinePhase.Focus:
+                FocusTimerTitleText.Text = "집중 시간";
+                FocusDurationText.Text = FormatRemaining(_focusRoutine.Remaining);
+                FocusTimerCaptionText.Text = "집중 진행 중";
+                FocusRoutineOverviewText.Text = $"집중 · {FormatRemaining(_focusRoutine.Remaining)} 남음";
+                break;
+
+            case FocusRoutinePhase.Break:
+                FocusTimerTitleText.Text = "휴식 시간";
+                FocusDurationText.Text = FormatRemaining(_focusRoutine.Remaining);
+                FocusTimerCaptionText.Text = "휴식 진행 중";
+                FocusRoutineOverviewText.Text = $"휴식 · {FormatRemaining(_focusRoutine.Remaining)} 남음";
+                break;
+
+            default:
+                FocusTimerTitleText.Text = "집중 시간";
+                FocusDurationText.Text = $"{_focusSettings.Current.FocusMinutes:00}:00";
+                FocusTimerCaptionText.Text = "설정된 집중 시간";
+                FocusRoutineOverviewText.Text = $"집중 {_focusSettings.Current.FocusMinutes}분 · 휴식 {_focusSettings.Current.BreakMinutes}분";
+                break;
+        }
+    }
+
+    private static string FormatRemaining(TimeSpan remaining)
+    {
+        long seconds = Math.Max(0, (long)Math.Ceiling(remaining.TotalSeconds));
+        return $"{seconds / 60:00}:{seconds % 60:00}";
     }
 
     private async Task RefreshDashboardDataAsync()
@@ -205,6 +297,92 @@ public partial class DashboardWindow : Window
         TimerSettingsFeedbackText.Foreground = isError
             ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(182, 57, 67))
             : (System.Windows.Media.Brush)FindResource("MutedText");
+    }
+
+    private void FocusModeToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        _focusModeCoordinator?.RequestToggle();
+    }
+
+    private void ShowRoutineReminderButton_Click(object sender, RoutedEventArgs e)
+    {
+        _showRoutineReminder?.Invoke();
+    }
+
+    private void ExitApplicationButton_Click(object sender, RoutedEventArgs e)
+    {
+        _shutdownApplication?.Invoke();
+    }
+
+    private void FocusMode_StateChanged(object? sender, EventArgs e)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(UpdateFocusModeView);
+            return;
+        }
+        UpdateFocusModeView();
+    }
+
+    private void UpdateFocusModeView()
+    {
+        bool enabled = _focusModeService?.IsEnabled == true;
+        FocusModeStatusText.Text = enabled ? "집중 모드 켜짐" : "집중 모드 꺼짐";
+        FocusModeToggleButton.Content = enabled ? "집중 모드 끄기" : "집중 모드 켜기";
+        FocusModeToggleButton.IsEnabled = _focusModeCoordinator is not null;
+        ShowRoutineReminderButton.IsEnabled = enabled && _showRoutineReminder is not null;
+        WindowsDndStatusText.Text = _focusModeCoordinator is null
+            ? "Windows 방해 금지 상태를 확인할 수 없습니다."
+            : GetWindowsNotificationModeDescription(_focusModeCoordinator.WindowsState);
+    }
+
+    private static string GetWindowsNotificationModeDescription(WindowsNotificationModeState state)
+    {
+        return state.Kind switch
+        {
+            WindowsNotificationModeKind.Unrestricted => "Windows 방해 금지: 꺼짐",
+            WindowsNotificationModeKind.PriorityOnly or WindowsNotificationModeKind.AlarmsOnly => "Windows 방해 금지: 켜짐",
+            WindowsNotificationModeKind.Unsupported => "현재 Windows에서는 방해 금지 연동을 지원하지 않습니다.",
+            WindowsNotificationModeKind.Error => "Windows 방해 금지 상태를 확인할 수 없습니다.",
+            _ => "Windows 방해 금지 상태를 확인하는 중입니다.",
+        };
+    }
+
+    private void UpdateDebugContextView(CurrentContext context)
+    {
+        if (string.IsNullOrEmpty(context.ActiveProcess))
+        {
+            DebugProcessText.Text = "활성 프로세스: 대기 중...";
+            DebugTitleText.Text = "창 제목: -";
+            DebugDurationText.Text = "⏱ 0초 지속";
+            DebugRecentProcessesText.Text = "최근 앱 큐: [없음]";
+            return;
+        }
+
+        DebugProcessText.Text = $"활성 프로세스: {context.ActiveProcess}";
+        DebugTitleText.Text = $"창 제목: {context.WindowTitle}";
+        DebugDurationText.Text = $"⏱ {context.DurationSeconds}초 지속";
+        string recent = context.RecentProcesses is { Count: > 0 }
+            ? string.Join(", ", context.RecentProcesses)
+            : "없음";
+        DebugRecentProcessesText.Text = $"최근 앱 큐: [{recent}]";
+    }
+
+    private void AppendDebugLog(string message)
+    {
+        DebugLogTextBox.AppendText(message + Environment.NewLine);
+        DebugLogTextBox.ScrollToEnd();
+    }
+
+    private void ClearDebugLogsButton_Click(object sender, RoutedEventArgs e) => DebugLogTextBox.Clear();
+
+    private static string TruncateDebugTitle(string title, int maxLength = 65)
+    {
+        if (string.IsNullOrEmpty(title) || title.Length <= maxLength)
+            return title ?? string.Empty;
+        int prefixLength = (maxLength - 3) / 2 + 1;
+        int suffixLength = (maxLength - 3) / 2;
+        return string.Concat(title.AsSpan(0, prefixLength), "...", title.AsSpan(title.Length - suffixLength, suffixLength));
     }
 
     private void OpenReport_Click(object sender, RoutedEventArgs e) => DashboardTabs.SelectedIndex = 2;
