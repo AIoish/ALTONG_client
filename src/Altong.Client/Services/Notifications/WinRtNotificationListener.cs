@@ -49,23 +49,36 @@ public sealed class WinRtNotificationListener : IWindowsNotificationListener
 
         try
         {
+            try
+            {
+                var pkgId = Windows.ApplicationModel.Package.Current?.Id?.FullName;
+                AppLogger.Info($"[WinRtNotificationListener] Package Identity 확인됨: {pkgId}");
+            }
+            catch
+            {
+                AppLogger.Warn("[WinRtNotificationListener] Package Identity 없음 (Unpackaged Win32)");
+            }
+
             // 1. 이미 허용되어 있는지 현재 권한 상태 먼저 확인 (unpackaged Win32에서 불필요한 UWP 다이얼로그 호출 방지)
             var accessStatus = _listener.GetAccessStatus();
+            AppLogger.Info($"[WinRtNotificationListener] 현재 알림 권한 상태: {accessStatus}");
+
             if (accessStatus != UserNotificationListenerAccessStatus.Allowed)
             {
                 try
                 {
                     accessStatus = await _listener.RequestAccessAsync();
+                    AppLogger.Info($"[WinRtNotificationListener] RequestAccessAsync 결과: {accessStatus}");
                 }
                 catch (Exception reqEx)
                 {
-                    Console.WriteLine($"[WinRtNotificationListener] RequestAccessAsync 호출 생략/예외: {reqEx.GetType().Name} (0x{reqEx.HResult:X8})");
+                    AppLogger.Warn($"[WinRtNotificationListener] RequestAccessAsync 호출 생략/예외: {reqEx.GetType().Name} (0x{reqEx.HResult:X8})");
                 }
             }
 
             if (accessStatus != UserNotificationListenerAccessStatus.Allowed)
             {
-                Console.WriteLine($"[WinRtNotificationListener] 알림 접근 권한 미허용: {accessStatus}");
+                AppLogger.Warn($"[WinRtNotificationListener] 알림 접근 권한 미허용: {accessStatus}");
                 return false;
             }
 
@@ -76,14 +89,13 @@ public sealed class WinRtNotificationListener : IWindowsNotificationListener
                 _isRunning = true;
             }
 
-            Console.WriteLine("[WinRtNotificationListener] Windows 알림 리스너 시작 완료 (수신 대기 중)");
+            AppLogger.Info("[WinRtNotificationListener] Windows 알림 리스너 시작 완료 (수신 대기 중)");
             return true;
         }
         catch (System.Runtime.InteropServices.COMException ex) when (ex.HResult == unchecked((int)0x80070490))
         {
-            Console.WriteLine("[WinRtNotificationListener] ⚠️ Win32 언패키징 환경 감지 (0x80070490: Package Identity 부재)");
-            Console.WriteLine("[WinRtNotificationListener] 💡 Windows 보안 정책상 일반 Win32 실행에서는 OS 알림 직접 수신이 차단됩니다 (MSIX 패키징 필요).");
-            Console.WriteLine("[WinRtNotificationListener] ➡️ 개발/시연을 위해 'Altong.MockGenerator' 전용 로컬 파이프 리스너로 자동 전환합니다.");
+            AppLogger.Warn("[WinRtNotificationListener] ⚠️ Win32 언패키징 환경 감지 (0x80070490: Package Identity 부재)");
+            AppLogger.Info("[WinRtNotificationListener] ➡️ 개발/시연을 위해 'Altong.MockGenerator' 전용 로컬 파이프 리스너로 자동 전환합니다.");
 
             _fallbackPipeListener = new LocalPipeNotificationListener();
             _fallbackPipeListener.NotificationReceived += (s, raw) => NotificationReceived?.Invoke(this, raw);
@@ -98,7 +110,7 @@ public sealed class WinRtNotificationListener : IWindowsNotificationListener
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[WinRtNotificationListener] 리스너 시작 실패: {ex.GetType().Name} - {ex.Message} (0x{ex.HResult:X8})");
+            AppLogger.Error($"[WinRtNotificationListener] 리스너 시작 실패: {ex.GetType().Name} - {ex.Message} (0x{ex.HResult:X8})", ex);
             return false;
         }
     }

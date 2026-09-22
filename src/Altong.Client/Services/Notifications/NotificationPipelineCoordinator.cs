@@ -94,16 +94,16 @@ public sealed class NotificationPipelineCoordinator : IDisposable
                 : "[RECV]";
             string activeApp = string.IsNullOrEmpty(context.ActiveProcess) ? "None" : context.ActiveProcess;
 
-            Console.WriteLine(
-                $"[{DateTime.Now:HH:mm:ss}] [NOTI] {modeTag,-7} {notification.AppName}{senderPart}: " +
-                $"'{Truncate(notification.Title, 30)}' | 현재: {activeApp} ({context.DurationSeconds}s) -> DB 저장 완료");
+            string logMsg = $"[NOTI] {modeTag,-7} {notification.AppName}{senderPart}: " +
+                $"'{Truncate(notification.Title, 30)}' | 현재: {activeApp} ({context.DurationSeconds}s) -> DB 저장 완료";
+            AppLogger.Info(logMsg);
 
             // 6. UI 구독자에게 이벤트 발행
             NotificationProcessed?.Invoke(this, record);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[NotificationPipeline] 알림 파이프라인 처리 오류: {ex.Message}");
+            AppLogger.Error($"[NotificationPipeline] 알림 파이프라인 처리 오류: {ex.Message}", ex);
         }
     }
 

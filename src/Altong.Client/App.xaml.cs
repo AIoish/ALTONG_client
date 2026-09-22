@@ -51,7 +51,7 @@ public partial class App : System.Windows.Application
         {
             var stdOut = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
             Console.SetOut(stdOut);
-            Console.WriteLine("\n[Altong] 터미널 콘솔 로그 연결 완료 (ActiveWindow 실시간 추적 시작)");
+            AppLogger.Info("[Altong] 터미널 콘솔 로그 연결 완료 (ActiveWindow 실시간 추적 시작)");
         }
 
         // 로컬 SQLite 데이터베이스 초기화 및 저장소 바인딩
@@ -76,7 +76,7 @@ public partial class App : System.Windows.Application
                 _windowWrites.RemoveAll(task => task.IsCompletedSuccessfully);
                 _windowWrites.Add(write);
             }
-            _ = write.ContinueWith(t => Console.WriteLine($"[Database] 세션 저장 실패: {t.Exception?.GetBaseException().Message}"),
+            _ = write.ContinueWith(t => AppLogger.Error($"[Database] 세션 저장 실패: {t.Exception?.GetBaseException().Message}", t.Exception),
                 TaskContinuationOptions.OnlyOnFaulted);
         };
 

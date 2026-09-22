@@ -1,6 +1,7 @@
 using Altong.Client.Models;
+using Altong.Client.Services.Notifications;
 
-namespace Altong.Client.Services.Notifications;
+namespace Altong.Client.Tests.Mocks;
 
 /// <summary>
 /// 단위 테스트 및 CI 환경에서 실제 WinRT API 없이 동작하는 모의 알림 리스너.
