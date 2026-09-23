@@ -114,6 +114,21 @@ public sealed class SqliteDatabase : IAltongDatabase
                 created_at TEXT DEFAULT (datetime('now', 'utc')),
                 FOREIGN KEY(notification_id) REFERENCES notifications(id) ON DELETE CASCADE
             );
+
+            -- 5. 사용자가 명시적으로 시작하고 마친 활동 기록 범위
+            CREATE TABLE IF NOT EXISTS activity_sessions (
+                activity_session_id TEXT PRIMARY KEY,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                status TEXT NOT NULL CHECK(status IN ('active', 'completed')),
+                last_seen_at TEXT,
+                created_at TEXT DEFAULT (datetime('now', 'utc'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_activity_sessions_started_at
+                ON activity_sessions(started_at);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_sessions_single_active
+                ON activity_sessions(status) WHERE status = 'active';
             """;
 
         command.ExecuteNonQuery();

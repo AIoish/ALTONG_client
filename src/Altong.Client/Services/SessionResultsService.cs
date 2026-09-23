@@ -53,21 +53,25 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
         Changed();
     }
 
-    public void End(DateTime endedAt, CurrentContext lastContext, Task? windowWrites = null)
+    public void End(
+        DateTime endedAt,
+        CurrentContext lastContext,
+        Task? windowWrites = null,
+        bool collectResult = true)
     {
         if (_session is null || _session.EndedAt is not null) return;
         _session = _session with { EndedAt = endedAt };
         _lastContext = lastContext;
         _windowWrites = windowWrites ?? Task.CompletedTask;
-        // Persist the end even if another focus session starts before aggregation finishes.
-        _saveStarted = SaveEndAsync(_session, _saveStarted);
+        // 집중 세션은 항상 저장하되, 화면 결과는 활동 기록을 마칠 때만 집계할 수 있다.
+        _saveStarted = SaveEndAsync(_session, _saveStarted, isCompleted: !collectResult);
         _ = _saveStarted.ContinueWith(t => { _ = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
-        IsCollecting = true;
-        Status = "집중 결과를 집계하고 있어요.";
+        IsCollecting = collectResult;
+        Status = collectResult ? "집중 결과를 집계하고 있어요." : "";
         Changed();
     }
 
-    private async Task SaveEndAsync(FocusSessionRecord session, Task started)
+    private async Task SaveEndAsync(FocusSessionRecord session, Task started, bool isCompleted = false)
     {
         try { await started; }
         catch
@@ -75,7 +79,7 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
             if (await sessions.GetByIdAsync(session.SessionId) is null)
                 await sessions.StartSessionAsync(session with { EndedAt = null });
         }
-        await sessions.EndSessionAsync(session.SessionId, session.EndedAt!.Value, false);
+        await sessions.EndSessionAsync(session.SessionId, session.EndedAt!.Value, isCompleted);
     }
 
     public async Task RefreshAsync()
@@ -113,6 +117,49 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
             Changed();
         }
         finally { _refreshing = false; }
+    }
+
+    public void ClearResult()
+    {
+        Latest = null;
+        IsCollecting = false;
+        Status = "";
+        Changed();
+    }
+
+    public async Task<SessionResult> BuildActivityResultAsync(
+        DateTime startedAt,
+        DateTime endedAt,
+        CurrentContext lastContext,
+        Task? windowWrites = null)
+    {
+        IsCollecting = true;
+        Status = "활동 결과를 집계하고 있어요.";
+        Changed();
+        try
+        {
+            if (windowWrites is not null)
+                await windowWrites;
+            var notificationsTask = ReadNotificationsAsync(startedAt, endedAt);
+            var appsTask = ReadAppsAsync(startedAt, endedAt, lastContext);
+            await Task.WhenAll(notificationsTask, appsTask);
+            Latest = new SessionResult(
+                startedAt,
+                endedAt,
+                await notificationsTask,
+                await appsTask);
+            IsCollecting = false;
+            Status = "";
+            Changed();
+            return Latest;
+        }
+        catch
+        {
+            IsCollecting = false;
+            Status = "활동 결과를 불러오지 못했어요. 다시 시도해 주세요.";
+            Changed();
+            throw;
+        }
     }
 
     public async Task<IReadOnlyList<NotificationRecord>> ReadNotificationsAsync(DateTime from, DateTime to)
@@ -165,6 +212,15 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
         if (currentContext is not null && !string.IsNullOrWhiteSpace(currentContext.ActiveProcess))
             names.Add(currentContext.ActiveProcess);
         return names.OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase).ToArray();
+    }
+
+    public async Task<IReadOnlyList<string>> ReadAppNamesAsync(
+        DateTime from, DateTime to, CurrentContext? currentContext = null)
+    {
+        var usage = await ReadAppsAsync(from, to, currentContext);
+        return usage.Select(item => item.AppName)
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
     }
 
     private async Task<IReadOnlyList<SessionAppUsage>> ReadAppsAsync(DateTime from, DateTime to, CurrentContext? context)

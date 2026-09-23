@@ -23,6 +23,9 @@ public partial class DashboardWindow : Window
     private readonly IActiveWindowTracker _activeWindowTracker;
     private readonly FocusModeService? _focusModeService;
     private readonly FocusModeCoordinator? _focusModeCoordinator;
+    private readonly ActivitySessionService? _activitySession;
+    private readonly Func<Task>? _startActivity;
+    private readonly Func<Task>? _completeActivity;
     private readonly Action? _showRoutineReminder;
     private readonly Action? _shutdownApplication;
     private CurrentContext? _lastDebugContext;
@@ -40,6 +43,9 @@ public partial class DashboardWindow : Window
         IActiveWindowTracker activeWindowTracker,
         FocusModeService? focusModeService = null,
         FocusModeCoordinator? focusModeCoordinator = null,
+        ActivitySessionService? activitySession = null,
+        Func<Task>? startActivity = null,
+        Func<Task>? completeActivity = null,
         Action? showRoutineReminder = null,
         Action? shutdownApplication = null)
     {
@@ -49,6 +55,9 @@ public partial class DashboardWindow : Window
         _activeWindowTracker = activeWindowTracker;
         _focusModeService = focusModeService;
         _focusModeCoordinator = focusModeCoordinator;
+        _activitySession = activitySession;
+        _startActivity = startActivity;
+        _completeActivity = completeActivity;
         _showRoutineReminder = showRoutineReminder;
         _shutdownApplication = shutdownApplication;
         InitializeComponent();
@@ -57,6 +66,8 @@ public partial class DashboardWindow : Window
             _focusModeService.StateChanged += FocusMode_StateChanged;
         if (_focusModeCoordinator is not null)
             _focusModeCoordinator.StateChanged += FocusMode_StateChanged;
+        if (_activitySession is not null)
+            _activitySession.StateChanged += ActivitySession_StateChanged;
         FocusSessionDurationSetting.Text = _focusSettings.Current.FocusMinutes.ToString(CultureInfo.InvariantCulture);
         BreakDurationSetting.Text = _focusSettings.Current.BreakMinutes.ToString(CultureInfo.InvariantCulture);
         _settingsReady = true;
@@ -66,6 +77,7 @@ public partial class DashboardWindow : Window
         UpdateClock();
         AppVersionText.Text = $"ALTONG · {typeof(DashboardWindow).Assembly.GetName().Version}";
         UpdateFocusModeView();
+        UpdateActivitySessionView();
         UpdateDebugContextView(_activeWindowTracker.CurrentContext);
         AppendDebugLog($"[시스템] 디버그 모니터 연결됨. 초기 맥락: {_activeWindowTracker.CurrentContext.ActiveProcess}");
         SourceInitialized += (_, _) => FitToWorkArea();
@@ -103,6 +115,8 @@ public partial class DashboardWindow : Window
                 _focusModeService.StateChanged -= FocusMode_StateChanged;
             if (_focusModeCoordinator is not null)
                 _focusModeCoordinator.StateChanged -= FocusMode_StateChanged;
+            if (_activitySession is not null)
+                _activitySession.StateChanged -= ActivitySession_StateChanged;
             _resultWindow?.Close();
         };
     }
@@ -142,6 +156,7 @@ public partial class DashboardWindow : Window
     {
         DashboardClockText.Text = DateTime.Now.ToString("HH:mm");
         DashboardDateText.Text = DateTime.Now.ToString("M월 d일 dddd");
+        UpdateActivitySessionView();
         FocusRoutineSettingsText.Text = _focusRoutine.StatusText;
         UpdateFocusTimerView();
         var context = _activeWindowTracker.CurrentContext;
@@ -196,13 +211,18 @@ public partial class DashboardWindow : Window
         _lastNotificationsRefresh = DateTime.UtcNow;
         try
         {
-            var from = DateTime.Today.ToUniversalTime();
+            if (_activitySession?.Current is not { } activity)
+            {
+                ClearActivityDashboardData();
+                return;
+            }
+
+            var from = activity.StartedAt;
             var to = DateTime.UtcNow;
             var context = _activeWindowTracker.CaptureNow();
             var notificationTask = Results.ReadNotificationsAsync(from, to);
             var usageTask = Results.ReadAppUsageAsync(from, to, context);
-            var workAppsTask = Results.ReadFocusedAppNamesAsync(
-                from, to, _focusRoutine.Phase == FocusRoutinePhase.Idle ? null : context);
+            var workAppsTask = Results.ReadAppNamesAsync(from, to, context);
             await Task.WhenAll(notificationTask, usageTask, workAppsTask);
             var records = await notificationTask;
             var rows = records.Select(record => new NotificationDisplayItem(record)).ToArray();
@@ -227,6 +247,16 @@ public partial class DashboardWindow : Window
         finally { _dashboardDataLoading = false; }
     }
 
+    private void ClearActivityDashboardData()
+    {
+        BlockedNotificationItemsControl.ItemsSource = Array.Empty<NotificationDisplayItem>();
+        NotificationItemsControl.ItemsSource = Array.Empty<NotificationDisplayItem>();
+        AppUsageItemsControl.ItemsSource = Array.Empty<SessionAppUsage>();
+        TodayWorkAppsItemsControl.ItemsSource = Array.Empty<string>();
+        BlockedNotificationCountText.Text = "0";
+        PassedNotificationCountText.Text = "0";
+    }
+
     private void OpenBlockedNotifications_Click(object sender, RoutedEventArgs e)
     {
         DashboardTabs.SelectedIndex = 1;
@@ -235,6 +265,11 @@ public partial class DashboardWindow : Window
     }
 
     private void OpenSessionResult_Click(object sender, RoutedEventArgs e)
+    {
+        OpenLatestResult();
+    }
+
+    private void OpenLatestResult()
     {
         if (Results.Latest is not { } result) return;
         if (_resultWindow is not null && !ReferenceEquals(_resultWindow.DataContext, result))
@@ -302,6 +337,75 @@ public partial class DashboardWindow : Window
     private void FocusModeToggleButton_Click(object sender, RoutedEventArgs e)
     {
         _focusModeCoordinator?.RequestToggle();
+    }
+
+    private async void ActivityToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activitySession is null || _startActivity is null || _completeActivity is null)
+            return;
+
+        ActivityToggleButton.IsEnabled = false;
+        try
+        {
+            if (_activitySession.IsRecording)
+            {
+                await _completeActivity();
+                await RefreshDashboardDataAsync();
+                OpenLatestResult();
+            }
+            else
+            {
+                await _startActivity();
+                _lastNotificationsRefresh = DateTime.MinValue;
+                await RefreshDashboardDataAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            ActivityStatusText.Text = $"기록 처리 실패: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            UpdateActivitySessionView();
+            ActivityToggleButton.IsEnabled = true;
+        }
+    }
+
+    private void ActivitySession_StateChanged(object? sender, EventArgs e)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(UpdateActivitySessionView);
+            return;
+        }
+        UpdateActivitySessionView();
+    }
+
+    private void UpdateActivitySessionView()
+    {
+        if (_activitySession?.Current is { } activity)
+        {
+            TimeSpan elapsed = DateTime.UtcNow - activity.StartedAt;
+            string elapsedText = $"{(int)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}";
+            ActivityStatusText.Text = $"활동 기록 중 · {elapsedText}";
+            ActivityToggleButton.Content = "기록 마치기";
+            SessionStatusBadgeText.Text = "기록 중";
+            SessionStartTimeText.Text = $"시작 {activity.StartedAt.ToLocalTime():HH:mm}";
+            SessionEndTimeText.Text = $"경과 {elapsedText}";
+        }
+        else
+        {
+            ActivityStatusText.Text = "기록을 시작하면 앱 사용시간과 활동 일지를 수집합니다.";
+            ActivityToggleButton.Content = "기록 시작";
+            SessionStatusBadgeText.Text = "기록 대기 중";
+            SessionStartTimeText.Text = "시작 --:--";
+            SessionEndTimeText.Text = Results.Latest is { } result
+                ? $"종료 {result.EndedAt.ToLocalTime():HH:mm}"
+                : "종료 --:--";
+        }
+        ActivityToggleButton.IsEnabled = _activitySession is not null &&
+                                         _startActivity is not null &&
+                                         _completeActivity is not null;
     }
 
     private void ShowRoutineReminderButton_Click(object sender, RoutedEventArgs e)

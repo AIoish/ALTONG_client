@@ -312,8 +312,8 @@
                             <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="2,18,2,0">
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                     <TabPanel x:Name="HeaderPanel" IsItemsHost="True" />
-                                    <Button x:Name="SessionResultButton" Click="OpenSessionResult_Click" ToolTip="완료된 집중 결과 보기"
-                                            AutomationProperties.Name="집중 결과 보기" Margin="8,0,0,0">
+                                    <Button x:Name="SessionResultButton" Click="OpenSessionResult_Click" ToolTip="완료된 활동 결과 보기"
+                                            AutomationProperties.Name="활동 결과 보기" Margin="8,0,0,0">
                                         <Button.Style>
                                             <Style TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
                                                 <Setter Property="Visibility" Value="Visible" />
@@ -577,18 +577,23 @@
             </Grid.RowDefinitions>
 
             <Grid Margin="0,0,0,12">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <WrapPanel VerticalAlignment="Center">
-                    <Border Style="{StaticResource StatusPillStyle}"><DockPanel><Border Background="#38C86A" Style="{StaticResource StatusDotStyle}"><TextBlock Text="●" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><StackPanel><TextBlock x:Name="SessionStatusBadgeText" Text="기록 대기 중" FontSize="12"/><TextBlock Text="집중 세션" FontSize="10" Foreground="{StaticResource MutedText}"/></StackPanel></DockPanel></Border>
-                    <Border Style="{StaticResource StatusPillStyle}"><DockPanel><Border Background="#F18B46" Style="{StaticResource StatusDotStyle}"><TextBlock Text="↗" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><StackPanel><TextBlock x:Name="SessionStartTimeText" Text="시작 --:--" FontSize="12"/><TextBlock Text="세션 시작 시각" FontSize="10" Foreground="{StaticResource MutedText}"/></StackPanel></DockPanel></Border>
-                    <Border Style="{StaticResource StatusPillStyle}"><DockPanel><Border Background="#599EFA" Style="{StaticResource StatusDotStyle}"><TextBlock Text="✓" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><StackPanel><TextBlock x:Name="SessionEndTimeText" Text="종료 --:--" FontSize="12"/><TextBlock Text="세션 종료 시각" FontSize="10" Foreground="{StaticResource MutedText}"/></StackPanel></DockPanel></Border>
+                    <Border Style="{StaticResource StatusPillStyle}"><DockPanel><Border Background="#38C86A" Style="{StaticResource StatusDotStyle}"><TextBlock Text="●" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><StackPanel><TextBlock x:Name="SessionStatusBadgeText" Text="기록 대기 중" FontSize="12"/><TextBlock Text="활동 기록" FontSize="10" Foreground="{StaticResource MutedText}"/></StackPanel></DockPanel></Border>
+                    <Border Style="{StaticResource StatusPillStyle}"><DockPanel><Border Background="#F18B46" Style="{StaticResource StatusDotStyle}"><TextBlock Text="↗" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><StackPanel><TextBlock x:Name="SessionStartTimeText" Text="시작 --:--" FontSize="12"/><TextBlock Text="기록 시작 시각" FontSize="10" Foreground="{StaticResource MutedText}"/></StackPanel></DockPanel></Border>
+                    <Border Style="{StaticResource StatusPillStyle}"><DockPanel><Border Background="#599EFA" Style="{StaticResource StatusDotStyle}"><TextBlock Text="✓" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><StackPanel><TextBlock x:Name="SessionEndTimeText" Text="종료 --:--" FontSize="12"/><TextBlock Text="활동 기록 시간" FontSize="10" Foreground="{StaticResource MutedText}"/></StackPanel></DockPanel></Border>
                 </WrapPanel>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,4,0">
+                    <TextBlock x:Name="ActivityStatusText" Text="기록을 시작하면 활동을 수집합니다." FontSize="10" Foreground="{StaticResource MutedText}" HorizontalAlignment="Center" Margin="0,0,0,5" TextTrimming="CharacterEllipsis" MaxWidth="190" />
+                    <Button x:Name="ActivityToggleButton" Content="기록 시작" Click="ActivityToggleButton_Click"
+                            Style="{StaticResource ActionButtonStyle}" Padding="16,8" MinWidth="126" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="8,0,4,0">
                     <TextBlock x:Name="FocusModeStatusText" Text="집중 모드 꺼짐" FontSize="11" Foreground="{StaticResource MutedText}" HorizontalAlignment="Center" Margin="0,0,0,5" />
                     <Button x:Name="FocusModeToggleButton" Content="집중 모드 켜기" Click="FocusModeToggleButton_Click"
                             Style="{StaticResource ActionButtonStyle}" Padding="16,8" MinWidth="126" />
                 </StackPanel>
-                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0">
+                <StackPanel Grid.Column="3" VerticalAlignment="Center" Margin="12,0,0,0">
                     <TextBlock x:Name="DashboardClockText" Text="--:--" FontFamily="{StaticResource DashboardDisplayFontFamily}" FontSize="36" FontWeight="Light" HorizontalAlignment="Right"/>
                     <TextBlock x:Name="DashboardDateText" FontSize="11" Foreground="{StaticResource MutedText}" HorizontalAlignment="Right"/>
                 </StackPanel>
@@ -628,10 +633,10 @@
 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock x:Name="FocusTimerTitleText" Text="집중 시간" Foreground="{StaticResource Accent}" TextAlignment="Center"/><TextBlock x:Name="FocusDurationText" Text="25:00" FontSize="42" TextAlignment="Center" Margin="0,8"/><TextBlock x:Name="FocusTimerCaptionText" Text="설정된 집중 시간" Foreground="{StaticResource MutedText}" TextAlignment="Center"/><TextBlock x:Name="FocusRoutineOverviewText" FontSize="11" Margin="0,8,0,0" Foreground="{StaticResource Accent}" TextAlignment="Center"/></StackPanel>
 </Grid></StackPanel></ScrollViewer></Border>
 <Border Style="{StaticResource PanelStyle}"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
-<TextBlock Text="오늘의 업무 일지" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,16"/>
-<TextBlock Text="집중 시간에 사용한 프로그램" FontSize="11" Foreground="{StaticResource MutedText}" Margin="0,0,0,10"/>
+<TextBlock Text="오늘의 활동 일지" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,16"/>
+<TextBlock Text="현재 활동 기록에서 사용한 프로그램" FontSize="11" Foreground="{StaticResource MutedText}" Margin="0,0,0,10"/>
 <ItemsControl x:Name="TodayWorkAppsItemsControl" ItemTemplate="{StaticResource TextItemTemplate}"/>
-<TextBlock Text="집중 모드에서 사용한 프로그램이 여기에 기록됩니다." Foreground="{StaticResource MutedText}" Margin="0,16"><TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding HasItems, ElementName=TodayWorkAppsItemsControl}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+<TextBlock Text="기록을 시작하면 사용한 프로그램이 여기에 표시됩니다." Foreground="{StaticResource MutedText}" Margin="0,16"><TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding HasItems, ElementName=TodayWorkAppsItemsControl}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
 </StackPanel></ScrollViewer></Border>
 </Grid>
                     </ScrollViewer>

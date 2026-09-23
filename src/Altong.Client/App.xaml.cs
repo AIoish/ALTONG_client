@@ -4,6 +4,7 @@ using System.Windows;
 using Altong.Client.Data;
 using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
+using Altong.Client.Models;
 using Altong.Client.Services;
 
 namespace Altong.Client;
@@ -18,6 +19,7 @@ public partial class App : System.Windows.Application
     public FocusSettingsStore FocusSettings { get; } = new();
     public FocusRoutineService FocusRoutine { get; private set; } = null!;
     public SessionResultsService SessionResults { get; private set; } = null!;
+    public ActivitySessionService ActivitySession { get; private set; } = null!;
     private readonly System.Windows.Threading.DispatcherTimer _routineTimer = new()
     {
         Interval = TimeSpan.FromSeconds(1)
@@ -28,6 +30,7 @@ public partial class App : System.Windows.Application
     public INotificationRepository NotificationRepository { get; private set; } = null!;
     public IWindowSessionRepository WindowSessionRepository { get; private set; } = null!;
     public IFocusSessionRepository FocusSessionRepository { get; private set; } = null!;
+    public SqliteActivitySessionRepository ActivitySessionRepository { get; private set; } = null!;
 
     internal bool IsShuttingDown { get; private set; }
 
@@ -57,11 +60,16 @@ public partial class App : System.Windows.Application
         NotificationRepository = new SqliteNotificationRepository(Database);
         WindowSessionRepository = new SqliteWindowSessionRepository(Database);
         FocusSessionRepository = new SqliteFocusSessionRepository(Database);
+        ActivitySessionRepository = new SqliteActivitySessionRepository(Database);
         SessionResults = new SessionResultsService(Database, FocusSessionRepository);
+        ActivitySession = new ActivitySessionService(ActivitySessionRepository);
+        ActivitySession.RestoreAsync().GetAwaiter().GetResult();
 
         // ActiveWindowTracker의 세션 종료([OUT]) 이벤트를 수신하여 window_sessions에 자동 적재
         ActiveWindowTracker.WindowSessionEnded += (_, e) =>
         {
+            if (!ActivitySession.IsRecording)
+                return;
             var record = new WindowSessionRecord(
                 0, e.ProcessName, e.WindowTitle,
                 e.StartedAt.UtcDateTime, e.EndedAt.UtcDateTime, e.DurationSeconds);
@@ -116,6 +124,7 @@ public partial class App : System.Windows.Application
         _routineTimer.Tick -= RoutineTimer_Tick;
         if (FocusRoutine is not null)
             FocusRoutine.PhaseChanged -= FocusRoutine_PhaseChanged;
+        PersistActivityStateForExit();
         ActiveWindowTracker.Dispose();
 
         if (_focusModeCoordinator is not null)
@@ -148,6 +157,23 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
+    private void PersistActivityStateForExit()
+    {
+        if (ActivitySession?.Current is not { } active)
+            return;
+        try
+        {
+            DateTime endedAt = DateTime.UtcNow;
+            CurrentContext context = ActiveWindowTracker.CaptureNow();
+            PersistCurrentWindowSnapshotAsync(active.StartedAt, endedAt, context).GetAwaiter().GetResult();
+            ActivitySession.TouchIfDueAsync(endedAt, TimeSpan.Zero).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Database] 종료 상태 저장 실패: {ex.GetBaseException().Message}");
+        }
+    }
+
     internal void ShowDashboard()
     {
         RunOnUiThread(() =>
@@ -161,6 +187,9 @@ public partial class App : System.Windows.Application
                     ActiveWindowTracker,
                     FocusModeService,
                     _focusModeCoordinator,
+                    ActivitySession,
+                    StartActivityAsync,
+                    CompleteActivityAsync,
                     ShowCurrentRoutineReminder,
                     RequestShutdown);
                 _dashboardWindow.Closed += DashboardWindow_Closed;
@@ -186,6 +215,58 @@ public partial class App : System.Windows.Application
         }
 
         _dashboardWindow = null;
+    }
+
+    private async Task StartActivityAsync()
+    {
+        await ActivitySession.StartAsync(DateTime.UtcNow);
+        SessionResults.ClearResult();
+    }
+
+    private async Task CompleteActivityAsync()
+    {
+        if (ActivitySession.Current is not { } active)
+            return;
+
+        DateTime endedAt = DateTime.UtcNow;
+        CurrentContext context = ActiveWindowTracker.CaptureNow();
+        Task finalWindowWrite = PersistCurrentWindowSnapshotAsync(active.StartedAt, endedAt, context);
+        var completed = await ActivitySession.CompleteAsync(endedAt);
+        if (completed is null)
+            return;
+
+        Task pendingWrites;
+        lock (_windowWrites)
+            pendingWrites = Task.WhenAll(_windowWrites.Append(finalWindowWrite));
+        await SessionResults.BuildActivityResultAsync(
+            completed.StartedAt,
+            completed.EndedAt!.Value,
+            context,
+            pendingWrites);
+    }
+
+    private Task PersistCurrentWindowSnapshotAsync(
+        DateTime activityStartedAt,
+        DateTime endedAt,
+        CurrentContext context)
+    {
+        if (string.IsNullOrWhiteSpace(context.ActiveProcess) || context.DurationSeconds <= 0)
+            return Task.CompletedTask;
+
+        DateTime startedAt = context.LastUpdated.AddSeconds(-context.DurationSeconds);
+        if (startedAt < activityStartedAt)
+            startedAt = activityStartedAt;
+        if (endedAt <= startedAt)
+            return Task.CompletedTask;
+
+        var record = new WindowSessionRecord(
+            0,
+            context.ActiveProcess,
+            context.WindowTitle,
+            startedAt,
+            endedAt,
+            Math.Max(1, (int)Math.Ceiling((endedAt - startedAt).TotalSeconds)));
+        return WindowSessionRepository.InsertAsync(record);
     }
 
     internal void RequestShutdown()
@@ -218,9 +299,7 @@ public partial class App : System.Windows.Application
                 var lastContext = ActiveWindowTracker.CaptureNow();
                 Task pendingWrites;
                 lock (_windowWrites) pendingWrites = Task.WhenAll(_windowWrites);
-                SessionResults.End(DateTime.UtcNow, lastContext, pendingWrites);
-                _ = SessionResults.RefreshAsync();
-                ShowDashboard();
+                SessionResults.End(DateTime.UtcNow, lastContext, pendingWrites, collectResult: false);
             }
 
             UpdateFocusModeShell();
@@ -247,6 +326,9 @@ public partial class App : System.Windows.Application
         FocusRoutine.Refresh();
         UpdateRoutineView();
         _ = SessionResults.RefreshAsync();
+        _ = ActivitySession.TouchIfDueAsync(DateTime.UtcNow).ContinueWith(
+            t => Console.WriteLine($"[Database] 활동 상태 갱신 실패: {t.Exception?.GetBaseException().Message}"),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 
     private void UpdateRoutineView()
@@ -277,7 +359,9 @@ public partial class App : System.Windows.Application
                 _notificationDockWindow?.ShowRoutineReminder(
                     "집중 모드가 종료됐어요.",
                     () => "세션 종료",
-                    "세션 통계를 정리하고 있어요. 대시보드에서 결과를 확인할 수 있어요.");
+                    ActivitySession.IsRecording
+                        ? "집중 기록을 저장했어요. 활동 기록은 계속됩니다."
+                        : "집중 기록을 저장했어요.");
                 break;
         }
     }
