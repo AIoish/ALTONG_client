@@ -168,6 +168,94 @@ public sealed class NotificationPipelineCoordinatorTests
         Assert.AreEqual("sess_focus_999", fromDb.SessionId);
     }
 
+    [TestMethod]
+    public async Task NotificationPipeline_WithKakaoInterceptor_EndToEnd_HidesAndClosesBlockedKakaoNotification()
+    {
+        bool isFocusMode = true;
+        string? sessionId = "sess_kakao_01";
+        nint kakaoHwnd = 112233;
+
+        var fakeOp = new FakeKakaoWindowOperator();
+        fakeOp.NotificationWindows.Add(kakaoHwnd);
+        fakeOp.TextExtractor = _ => new KakaoNotificationText("친구", "친구", "야 주말에 뭐하냐 롤이나 하자");
+
+        using var kakaoInterceptor = new KakaoNotificationInterceptor(() => isFocusMode, fakeOp);
+        using var compositeListener = new CompositeNotificationListener(kakaoInterceptor);
+
+        using var coordinator = new NotificationPipelineCoordinator(
+            compositeListener,
+            _fakeTracker,
+            _notificationRepo,
+            _filterEngine,
+            () => isFocusMode,
+            () => sessionId);
+
+        coordinator.NotificationProcessed += (_, r) => kakaoInterceptor.OnNotificationProcessed(r);
+
+        await coordinator.StartAsync();
+
+        var tcs = new TaskCompletionSource<NotificationRecord>();
+        coordinator.NotificationProcessed += (_, r) => tcs.TrySetResult(r);
+
+        // 카카오톡 알림 팝업 창 등장 (EVENT_OBJECT_SHOW 시뮬레이션)
+        kakaoInterceptor.HandleWindowShowEvent(kakaoHwnd);
+
+        // 1. 즉시 숨김(SW_HIDE) 검증
+        Assert.IsTrue(fakeOp.HiddenWindows.Contains(kakaoHwnd), "포착 즉시 스텔스 숨김 처리되어야 합니다.");
+
+        // 2. 파이프라인 처리 완료 대기
+        var record = await tcs.Task;
+        Assert.AreEqual(false, record.IsPassed, "잡담 알림은 집중 모드 중 차단되어야 합니다.");
+
+        // 3. 차단 후 완전 소멸(WM_CLOSE) 검증
+        Assert.IsTrue(fakeOp.ClosedWindows.Contains(kakaoHwnd), "차단 판정 후 윈도우가 조용히 닫혀야 합니다.");
+        Assert.AreEqual(0, fakeOp.ShownWindows.Count, "차단 알림은 다시 표시되지 않아야 합니다.");
+    }
+
+    [TestMethod]
+    public async Task NotificationPipeline_WithKakaoInterceptor_EndToEnd_HidesAndRestoresUrgentKakaoNotification()
+    {
+        bool isFocusMode = true;
+        string? sessionId = "sess_kakao_02";
+        nint kakaoHwnd = 445566;
+
+        var fakeOp = new FakeKakaoWindowOperator();
+        fakeOp.NotificationWindows.Add(kakaoHwnd);
+        fakeOp.TextExtractor = _ => new KakaoNotificationText("교수님", "교수님", "[긴급] 프로젝트 피드백 확인 바랍니다.");
+
+        using var kakaoInterceptor = new KakaoNotificationInterceptor(() => isFocusMode, fakeOp);
+        using var compositeListener = new CompositeNotificationListener(kakaoInterceptor);
+
+        using var coordinator = new NotificationPipelineCoordinator(
+            compositeListener,
+            _fakeTracker,
+            _notificationRepo,
+            _filterEngine,
+            () => isFocusMode,
+            () => sessionId);
+
+        coordinator.NotificationProcessed += (_, r) => kakaoInterceptor.OnNotificationProcessed(r);
+
+        await coordinator.StartAsync();
+
+        var tcs = new TaskCompletionSource<NotificationRecord>();
+        coordinator.NotificationProcessed += (_, r) => tcs.TrySetResult(r);
+
+        // 카카오톡 알림 팝업 창 등장
+        kakaoInterceptor.HandleWindowShowEvent(kakaoHwnd);
+
+        // 1. 즉시 숨김(SW_HIDE)
+        Assert.IsTrue(fakeOp.HiddenWindows.Contains(kakaoHwnd));
+
+        // 2. 파이프라인 처리 완료 대기
+        var record = await tcs.Task;
+        Assert.AreEqual(true, record.IsPassed, "교수님 긴급 알림은 통과되어야 합니다.");
+
+        // 3. 통과 후 화면 복원(SW_SHOWNOACTIVATE) 검증
+        Assert.IsTrue(fakeOp.ShownWindows.Contains(kakaoHwnd), "통과된 알림은 화면에 다시 표시되어야 합니다.");
+        Assert.AreEqual(0, fakeOp.ClosedWindows.Count);
+    }
+
     private sealed class FakeActiveWindowTracker : IActiveWindowTracker
     {
         public CurrentContext CurrentContext { get; set; } = CurrentContext.Empty;

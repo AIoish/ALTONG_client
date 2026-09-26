@@ -30,6 +30,7 @@ public partial class App : System.Windows.Application
     public IWindowSessionRepository WindowSessionRepository { get; private set; } = null!;
     public IFocusSessionRepository FocusSessionRepository { get; private set; } = null!;
     public NotificationPipelineCoordinator NotificationPipeline { get; private set; } = null!;
+    public KakaoNotificationInterceptor KakaoInterceptor { get; private set; } = null!;
 
     internal bool IsShuttingDown { get; private set; }
 
@@ -80,16 +81,26 @@ public partial class App : System.Windows.Application
                 TaskContinuationOptions.OnlyOnFaulted);
         };
 
-        // 실시간 알림 수신 및 AI 필터링 파이프라인 가동
-        var notificationListener = new WinRtNotificationListener();
+        // 실시간 알림 수신 및 AI 필터링 파이프라인 가동 (OS 표준 토스트 + 카카오톡 전용 인터셉터 복합 구성)
+        var winRtListener = new WinRtNotificationListener();
+        KakaoInterceptor = new KakaoNotificationInterceptor(() => FocusModeService.IsEnabled);
+        var compositeListener = new CompositeNotificationListener(winRtListener, KakaoInterceptor);
+
         var filterEngine = new RuleBasedFilterEngine();
         NotificationPipeline = new NotificationPipelineCoordinator(
-            notificationListener,
+            compositeListener,
             ActiveWindowTracker,
             NotificationRepository,
             filterEngine,
             () => FocusModeService.IsEnabled,
             () => SessionResults.CurrentSessionId);
+
+        // 카카오톡 알림 평가 후 스텔스 복원 또는 완전 소멸 후속 제어 연동
+        NotificationPipeline.NotificationProcessed += (_, record) =>
+        {
+            KakaoInterceptor.OnNotificationProcessed(record);
+        };
+
         _ = NotificationPipeline.StartAsync();
 
         _focusModeCoordinator = new FocusModeCoordinator(

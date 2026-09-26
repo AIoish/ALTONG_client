@@ -166,11 +166,12 @@ public sealed class WinRtNotificationListener : IWindowsNotificationListener
             }
 
             RawNotification raw = ExtractRawNotification(userNotification);
+            AppLogger.Info($"[WinRtNotificationListener] 🔔 WinRT 알림 수신: {raw.AppName} - '{raw.Title}': '{raw.Body}'");
             NotificationReceived?.Invoke(this, raw);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[WinRtNotificationListener] 알림(Id: {notificationId}) 수신 처리 중 오류: {ex.Message}");
+            AppLogger.Error($"[WinRtNotificationListener] 알림(Id: {notificationId}) 수신 처리 중 오류: {ex.Message}", ex);
         }
     }
 
