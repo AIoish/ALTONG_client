@@ -385,9 +385,11 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
                 {
                     candidate = ocrText;
                     // 발신자와 본문이 모두 온전히 추출되었으면 즉시 확정
-                    if (!string.IsNullOrWhiteSpace(ocrText.Body) && ocrText.Body != "(새 메시지)")
+                    if (!string.IsNullOrWhiteSpace(ocrText.Body) &&
+                        ocrText.Body != "(새 메시지)" &&
+                        ocrText.Body != "(이모티콘 또는 미디어)")
                     {
-                        AppLogger.Info($"[KakaoInterceptor] ✅ OCR 텍스트 완벽 추출 성공 (시도 {attempt + 1}): 발신자='{ocrText.Sender}', 본문='{ocrText.Body}'");
+                        AppLogger.Info($"[KakaoInterceptor] ✅ OCR 텍스트 완벽 추출 성공 (시도 {attempt + 1}): 방제='{ocrText.Title}', 발신자='{ocrText.Sender}', 본문='{ocrText.Body}'");
                         return ocrText;
                     }
                 }
@@ -397,7 +399,7 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
 
             if (candidate != null)
             {
-                AppLogger.Info($"[KakaoInterceptor] ✅ OCR 텍스트 추출 완료 (단일/후보): 발신자='{candidate.Sender}', 본문='{candidate.Body}'");
+                AppLogger.Info($"[KakaoInterceptor] ✅ OCR 텍스트 추출 완료 (후보): 방제='{candidate.Title}', 발신자='{candidate.Sender}', 본문='{candidate.Body}'");
                 return candidate;
             }
 
@@ -478,16 +480,22 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
                 return new KakaoNotificationText(windowTitle, windowTitle, body);
             }
 
-            if (texts.Count >= 2)
+            if (texts.Count >= 3)
             {
-                string sender = texts[0];
-                string body = string.Join("\n", texts.Skip(1));
-                AppLogger.Info($"[KakaoInterceptor] 텍스트 추출 성공: 발신자='{sender}', 본문='{body}'");
-                return new KakaoNotificationText(sender, sender, body);
+                string chatTitle = texts[0];
+                string senderName = texts[1];
+                string body = string.Join("\n", texts.Skip(2));
+                AppLogger.Info($"[KakaoInterceptor] UIA 텍스트 추출 성공: 방제='{chatTitle}', 발신자='{senderName}', 본문='{body}'");
+                return new KakaoNotificationText(senderName, chatTitle, body);
+            }
+            else if (texts.Count == 2)
+            {
+                AppLogger.Info($"[KakaoInterceptor] UIA 2줄 텍스트 추출: 방제='{texts[0]}', 발신자='{texts[1]}'");
+                return new KakaoNotificationText(texts[1], texts[0], "(새 메시지)");
             }
             else if (texts.Count == 1)
             {
-                AppLogger.Info($"[KakaoInterceptor] 단일 텍스트 추출: '{texts[0]}'");
+                AppLogger.Info($"[KakaoInterceptor] UIA 단일 텍스트 추출: '{texts[0]}'");
                 return new KakaoNotificationText(null, "카카오톡", texts[0]);
             }
             else
@@ -502,6 +510,8 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
 
         return new KakaoNotificationText(null, "카카오톡", "(새 메시지가 도착했습니다)");
     }
+
+    private record ParsedOcrLine(string Text, double X, double Y, double Width, double Height);
 
     private static KakaoNotificationText? TryExtractViaOcr(nint hWnd, string? windowTitle = null)
     {
@@ -599,29 +609,103 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
                 return null;
             }
 
-            var validLines = result.Lines
-                .Select(l => l.Text.Trim())
-                .Where(IsValidTextItem)
-                .ToList();
+            float scale = GetWindowDpiScale(hWnd);
+            var parsedLines = new List<ParsedOcrLine>();
 
-            if (!string.IsNullOrWhiteSpace(windowTitle) && validLines.Count > 0)
+            foreach (var line in result.Lines)
             {
-                var bodyLines = validLines.Where(l => !l.Equals(windowTitle, StringComparison.OrdinalIgnoreCase)).ToList();
-                string body = bodyLines.Count > 0 ? string.Join("\n", bodyLines) : "(새 메시지)";
-                return new KakaoNotificationText(windowTitle, windowTitle, body);
+                string text = line.Text.Trim();
+                if (string.IsNullOrWhiteSpace(text)) continue;
+
+                double minX = line.Words.Count > 0 ? line.Words.Min(w => w.BoundingRect.X) : 0;
+                double minY = line.Words.Count > 0 ? line.Words.Min(w => w.BoundingRect.Y) : 0;
+                double maxX = line.Words.Count > 0 ? line.Words.Max(w => w.BoundingRect.X + w.BoundingRect.Width) : 0;
+                double maxY = line.Words.Count > 0 ? line.Words.Max(w => w.BoundingRect.Y + w.BoundingRect.Height) : 0;
+
+                // 1. 우상단 툴바 영역 (알림 음소거 벨 아이콘 '0'/'O', 닫기 'X' 버튼) 배제
+                // 카카오톡 토스트 우측 상단(X > 전체 너비의 70%, Y < 전체 높이의 35%)에 위치한 UI 아이콘 배제
+                if (minX > width * 0.70 && minY < height * 0.35)
+                {
+                    continue;
+                }
+
+                // 2. 단독 기호 및 불필요한 컨트롤 라벨(전송, 메시지 입력 등) 배제
+                if (!IsValidTextItem(text))
+                {
+                    continue;
+                }
+
+                // 3. 단일 숫자(0, 1 등) 또는 단일 영문 기호(o, x 등) 오인식 배제
+                if (text.Length == 1 && (char.IsDigit(text[0]) || text.Equals("o", StringComparison.OrdinalIgnoreCase) || text.Equals("x", StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                parsedLines.Add(new ParsedOcrLine(text, minX, minY, maxX - minX, maxY - minY));
             }
 
-            if (validLines.Count >= 2)
+            if (parsedLines.Count == 0)
             {
-                string sender = validLines[0];
-                string body = string.Join("\n", validLines.Skip(1));
-                return new KakaoNotificationText(sender, sender, body);
+                return null;
             }
-            else if (validLines.Count == 1)
+
+            // 상단부터 순서대로 정렬 (헤더 -> 발신자 -> 본문 순서)
+            parsedLines.Sort((a, b) => a.Y.CompareTo(b.Y));
+            var validTexts = parsedLines.Select(p => p.Text).ToList();
+
+            // 1) 3줄 이상: 단톡방 / 일반 메시지 표준 구조
+            // Line 0: 채팅방 이름 (Header)
+            // Line 1: 실제 발신자 (Sender)
+            // Line 2..N: 메시지 본문 (Body)
+            if (validTexts.Count >= 3)
             {
-                // 단일 라인만 검출된 경우: 1차적으로 발신자/방이름으로 취급
-                string single = validLines[0];
-                return new KakaoNotificationText(single, single, "(새 메시지)");
+                string chatTitle = validTexts[0];
+                string senderName = validTexts[1];
+                string messageBody = string.Join("\n", validTexts.Skip(2));
+
+                return new KakaoNotificationText(
+                    Sender: senderName,
+                    Title: chatTitle,
+                    Body: messageBody);
+            }
+            // 2) 2줄 검출: 1:1 대화 또는 본문 없는 이모티콘/미디어
+            else if (validTexts.Count == 2)
+            {
+                double logY1 = parsedLines[1].Y / scale;
+
+                // Line 0과 Line 1이 같거나(1:1 톡), 두 번째 라인이 본문 위치(logY >= 58)인 경우
+                if (validTexts[0].Equals(validTexts[1], StringComparison.OrdinalIgnoreCase))
+                {
+                    return new KakaoNotificationText(
+                        Sender: validTexts[0],
+                        Title: validTexts[0],
+                        Body: "(새 메시지)");
+                }
+                else if (logY1 >= 58)
+                {
+                    // 1:1 톡에서 헤더(상대방) + 본문인 경우
+                    return new KakaoNotificationText(
+                        Sender: validTexts[0],
+                        Title: validTexts[0],
+                        Body: validTexts[1]);
+                }
+                else
+                {
+                    // 단톡방에서 방 이름(헤더) + 발신자 닉네임인 경우 (본문은 이모티콘/미디어)
+                    return new KakaoNotificationText(
+                        Sender: validTexts[1],
+                        Title: validTexts[0],
+                        Body: "(이모티콘 또는 미디어)");
+                }
+            }
+            // 3) 1줄 검출: 단일 텍스트
+            else
+            {
+                string single = validTexts[0];
+                return new KakaoNotificationText(
+                    Sender: single,
+                    Title: single,
+                    Body: "(새 메시지)");
             }
         }
         catch (Exception ex)
@@ -640,7 +724,8 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
         }
 
         // 특수문자/구분선만 있는 라인(예: "-", "_", "•") 배제
-        if (!text.Any(char.IsLetterOrDigit))
+        // 단, 한글 자모 단독 메시지(예: "ㅠ", "ㅋ", "ㅎ", "ㅇ", "ㅠㅠ", "ㅋㅋㅋ")는 유효한 메시지 본문으로 허용
+        if (!text.Any(char.IsLetterOrDigit) && !text.Any(c => c >= 0x3131 && c <= 0x318E))
         {
             return false;
         }
