@@ -85,7 +85,9 @@ public sealed class RuleBasedFilterEngine : IFilterEngine
         string active = context.ActiveProcess.ToLowerInvariant();
 
         // 1) 알림 발신 앱과 현재 활성 프로세스가 직접 매칭되는 경우
-        if (active.Contains(app) || app.Contains(active.Replace(".exe", "")))
+        // 단, 카카오톡은 사용자가 카카오톡을 켜둔 상태라도 다른 채팅방 알림이 방해가 되므로
+        // 긴급 키워드가 없으면 Focus Mode에서 자동 통과(score 5)하지 않음
+        if ((active.Contains(app) || app.Contains(active.Replace(".exe", ""))) && !app.Contains("kakao"))
         {
             score = 5;
         }
