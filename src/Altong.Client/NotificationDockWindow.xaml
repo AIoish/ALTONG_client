@@ -17,9 +17,16 @@
           Margin="8"
           Background="Transparent"
           Cursor="Hand"
+          RenderTransformOrigin="0.5,0.5"
+          MouseLeftButtonDown="DockSurface_MouseLeftButtonDown"
+          MouseMove="DockSurface_MouseMove"
           MouseLeftButtonUp="DockSurface_MouseLeftButtonUp"
-          ToolTip="집중 모드 진행 중&#x0a;클릭하여 Altong 열기/숨기기">
-        <Border Background="#F0222428"
+          LostMouseCapture="DockSurface_LostMouseCapture"
+          ToolTip="집중 모드 진행 중&#x0a;클릭하여 Altong 열기/숨기기&#x0a;위아래로 드래그하여 위치 이동">
+        <Grid.RenderTransform>
+            <ScaleTransform x:Name="ClickScale" ScaleX="1" ScaleY="1" />
+        </Grid.RenderTransform>
+        <Border Background="#FF000000"
                 BorderBrush="#26FFFFFF"
                 BorderThickness="1"
                 CornerRadius="20">
@@ -39,13 +46,13 @@
                    Opacity="0"
                    RadiusX="19"
                    RadiusY="19"
-                   Stroke="#65D6B4"
+                   Stroke="#72B5A6"
                    StrokeThickness="1.5">
             <Rectangle.Effect>
                 <DropShadowEffect BlurRadius="12"
-                                  Opacity="0.85"
+                                  Opacity="0.6"
                                   ShadowDepth="0"
-                                  Color="#65D6B4" />
+                                  Color="#72B5A6" />
             </Rectangle.Effect>
         </Rectangle>
 
@@ -56,14 +63,14 @@
                    Opacity="0"
                    RadiusX="19"
                    RadiusY="19"
-                   Stroke="#C7FFEE"
+                   Stroke="#B7D9D0"
                    StrokeDashArray="24 174"
                    StrokeThickness="2.25">
             <Rectangle.Effect>
                 <DropShadowEffect BlurRadius="11"
-                                  Opacity="1"
+                                  Opacity="0.7"
                                   ShadowDepth="0"
-                                  Color="#7CFFDA" />
+                                  Color="#72B5A6" />
             </Rectangle.Effect>
         </Rectangle>
 
@@ -78,12 +85,12 @@
                      Height="10"
                      HorizontalAlignment="Center"
                      VerticalAlignment="Center"
-                     Fill="#65D6B4">
+                     Fill="#72B5A6">
                 <Ellipse.Effect>
-                    <DropShadowEffect BlurRadius="8"
-                                      Opacity="0.65"
+                    <DropShadowEffect BlurRadius="6"
+                                      Opacity="0.35"
                                       ShadowDepth="0"
-                                      Color="#65D6B4" />
+                                      Color="#72B5A6" />
                 </Ellipse.Effect>
             </Ellipse>
 
