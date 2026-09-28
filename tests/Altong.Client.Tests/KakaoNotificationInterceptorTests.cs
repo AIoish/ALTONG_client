@@ -1,5 +1,6 @@
 using Altong.Client.Data.Models;
 using Altong.Client.Models;
+using Altong.Client.Services;
 using Altong.Client.Services.Notifications;
 using Altong.Client.Tests.Mocks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -137,5 +138,72 @@ public sealed class KakaoNotificationInterceptorTests
 
         Assert.IsTrue(fakeOp.ClosedWindows.Contains(notiHwnd), "AI 차단 판정을 받은 알림 창은 조용히 소멸(WM_CLOSE)되어야 합니다.");
         Assert.AreEqual(0, fakeOp.ShownWindows.Count);
+    }
+
+    [TestMethod]
+    public void HandleWindowShowEvent_FocusModeOn_EnsuresAudioOperatorMuteCalled()
+    {
+        var fakeOp = new FakeKakaoWindowOperator();
+        var fakeAudio = new FakeKakaoAudioOperator();
+        nint notiHwnd = 55555;
+        fakeOp.NotificationWindows.Add(notiHwnd);
+
+        bool isFocusMode = true;
+        using var interceptor = new KakaoNotificationInterceptor(() => isFocusMode, fakeOp, fakeAudio);
+
+        interceptor.HandleWindowShowEvent(notiHwnd);
+
+        Assert.IsTrue(fakeAudio.IsMuted, "집중 모드 중 알림 발생 시 오디오 음소거가 활성화되어야 합니다.");
+        Assert.IsTrue(fakeAudio.MuteCallCount >= 1, "Mute() 메서드가 최소 1회 호출되어야 합니다.");
+    }
+
+    [TestMethod]
+    public void HandleWindowShowEvent_FocusModeOff_DoesNotCallAudioMute()
+    {
+        var fakeOp = new FakeKakaoWindowOperator();
+        var fakeAudio = new FakeKakaoAudioOperator();
+        nint notiHwnd = 44444;
+        fakeOp.NotificationWindows.Add(notiHwnd);
+
+        bool isFocusMode = false;
+        using var interceptor = new KakaoNotificationInterceptor(() => isFocusMode, fakeOp, fakeAudio);
+
+        interceptor.HandleWindowShowEvent(notiHwnd);
+
+        Assert.IsFalse(fakeAudio.IsMuted, "집중 모드가 아닐 때는 오디오 음소거가 호출되지 않아야 합니다.");
+        Assert.AreEqual(0, fakeAudio.MuteCallCount);
+    }
+
+    [TestMethod]
+    public void FocusModeStateTransition_ControlsKakaoAudio()
+    {
+        var focusService = new FocusModeService();
+        using var audioOp = new FakeKakaoAudioOperator();
+
+        focusService.StateChanged += (_, _) =>
+        {
+            if (focusService.IsEnabled)
+                audioOp.Mute();
+            else
+                audioOp.Unmute();
+        };
+
+        Assert.IsFalse(audioOp.IsMuted);
+
+        focusService.Start();
+        Assert.IsTrue(audioOp.IsMuted);
+        Assert.AreEqual(1, audioOp.MuteCallCount);
+
+        focusService.Stop();
+        Assert.IsFalse(audioOp.IsMuted);
+        Assert.AreEqual(1, audioOp.UnmuteCallCount);
+    }
+
+    [TestMethod]
+    public void LiveKakaoAudioOperator_InitializesWithoutException()
+    {
+        using var liveAudio = new LiveKakaoAudioOperator();
+        liveAudio.Mute();
+        liveAudio.Unmute();
     }
 }

@@ -80,6 +80,7 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
     }
 
     private readonly IKakaoWindowOperator _windowOperator;
+    private readonly IKakaoAudioOperator? _audioOperator;
     private readonly Func<bool> _isFocusModeEnabled;
     private readonly ConcurrentDictionary<string, PendingWindowEntry> _pendingWindows = new();
 
@@ -108,10 +109,12 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
 
     public KakaoNotificationInterceptor(
         Func<bool> isFocusModeEnabled,
-        IKakaoWindowOperator? windowOperator = null)
+        IKakaoWindowOperator? windowOperator = null,
+        IKakaoAudioOperator? audioOperator = null)
     {
         _isFocusModeEnabled = isFocusModeEnabled ?? throw new ArgumentNullException(nameof(isFocusModeEnabled));
         _windowOperator = windowOperator ?? new LiveKakaoWindowOperator();
+        _audioOperator = audioOperator;
     }
 
     [DllImport("user32.dll")]
@@ -379,10 +382,11 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
             bool isFocusMode = _isFocusModeEnabled();
             AppLogger.Info($"[KakaoInterceptor] 🎯 카카오톡 알림 팝업 창 포착 성공: hWnd=0x{hWnd:X8} (집중모드={isFocusMode})");
 
-            // 2. 집중 모드 활성화 시: 사용자 눈에 보이기 전에 즉시 스텔스 숨김 (0ms 차단)
+            // 2. 집중 모드 활성화 시: 사용자 눈에 보이기 전에 즉시 스텔스 숨김 (0ms 차단) 및 오디오 음소거 보장
             if (isFocusMode)
             {
                 _windowOperator.HideWindow(hWnd);
+                _audioOperator?.Mute();
                 AppLogger.Info($"[KakaoInterceptor] 🚨 카카오톡 알림 팝업 즉각 스텔스 은닉 완료: hWnd=0x{hWnd:X8}");
             }
 
@@ -429,9 +433,14 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
         {
             if (record.IsPassed == true)
             {
-                // 통과(중요/긴급 알림): 화면에 다시 복원 표시
+                // 통과(중요/긴급 알림): 화면에 다시 복원 표시 및 중요 알림 차임 안내
                 _windowOperator.ShowWindow(entry.Hwnd);
-                AppLogger.Info($"[KakaoInterceptor] 중요 카카오 알림 복원 표시: {record.Sender} - '{record.Title}'");
+                try
+                {
+                    System.Media.SystemSounds.Asterisk.Play();
+                }
+                catch { }
+                AppLogger.Info($"[KakaoInterceptor] 🔔 중요 카카오 알림 복원 및 차임 재생: {record.Sender} - '{record.Title}'");
             }
             else
             {

@@ -31,6 +31,7 @@ public partial class App : System.Windows.Application
     public IFocusSessionRepository FocusSessionRepository { get; private set; } = null!;
     public NotificationPipelineCoordinator NotificationPipeline { get; private set; } = null!;
     public KakaoNotificationInterceptor KakaoInterceptor { get; private set; } = null!;
+    public IKakaoAudioOperator KakaoAudioOperator { get; private set; } = null!;
 
     internal bool IsShuttingDown { get; private set; }
 
@@ -82,8 +83,16 @@ public partial class App : System.Windows.Application
         };
 
         // 실시간 알림 수신 및 AI 필터링 파이프라인 가동 (OS 표준 토스트 + 카카오톡 전용 인터셉터 복합 구성)
+        KakaoAudioOperator = new LiveKakaoAudioOperator();
+        if (FocusModeService.IsEnabled)
+        {
+            KakaoAudioOperator.Mute();
+        }
+
         var winRtListener = new WinRtNotificationListener();
-        KakaoInterceptor = new KakaoNotificationInterceptor(() => FocusModeService.IsEnabled);
+        KakaoInterceptor = new KakaoNotificationInterceptor(
+            () => FocusModeService.IsEnabled,
+            audioOperator: KakaoAudioOperator);
         var compositeListener = new CompositeNotificationListener(winRtListener, KakaoInterceptor);
 
         var filterEngine = new RuleBasedFilterEngine();
@@ -155,6 +164,7 @@ public partial class App : System.Windows.Application
             FocusRoutine.PhaseChanged -= FocusRoutine_PhaseChanged;
         ActiveWindowTracker.Dispose();
         NotificationPipeline?.Dispose();
+        KakaoAudioOperator?.Dispose();
 
         if (_focusModeCoordinator is not null)
         {
@@ -270,11 +280,13 @@ public partial class App : System.Windows.Application
             FocusRoutine.Refresh();
             if (FocusModeService.IsEnabled)
             {
+                KakaoAudioOperator?.Mute();
                 SessionResults.Begin(DateTime.UtcNow, FocusSettings.Current.FocusMinutes);
                 _mainWindow?.Hide();
             }
             else
             {
+                KakaoAudioOperator?.Unmute();
                 var lastContext = ActiveWindowTracker.CaptureNow();
                 Task pendingWrites;
                 lock (_windowWrites) pendingWrites = Task.WhenAll(_windowWrites);
