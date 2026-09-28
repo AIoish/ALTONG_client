@@ -1,7 +1,13 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
+using Altong.Client.Services;
+using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using Point = System.Windows.Point;
 
 namespace Altong.Client;
 
@@ -15,15 +21,18 @@ public partial class NotificationDockWindow : Window
     };
     private Func<string>? _statusProvider;
     private bool _hideAfterReminder;
+    private readonly DockPositionStore _positionStore = new();
+    private Point _pressScreenPoint;
+    private double _pressTop;
+    private bool _isPressed;
+    private bool _isDragging;
 
     public NotificationDockWindow()
     {
         InitializeComponent();
         _statusTimer.Tick += (_, _) => RefreshReminderStatus();
-        Closed += (_, _) =>
-        {
-            _statusTimer.Stop();
-        };
+        SystemParameters.StaticPropertyChanged += SystemParameters_StaticPropertyChanged;
+        Closed += NotificationDockWindow_Closed;
     }
 
     public event EventHandler? ToggleDashboardRequested;
@@ -34,7 +43,11 @@ public partial class NotificationDockWindow : Window
     {
         var workArea = SystemParameters.WorkArea;
         Left = workArea.Right - Width - RightMargin;
-        Top = workArea.Top + (workArea.Height * VerticalPositionRatio) - (Height / 2);
+        Top = _positionStore.VerticalRatio is { } ratio
+            ? DockPositioning.FromRatio(ratio, workArea.Top, workArea.Height, Height)
+            : DockPositioning.ClampTop(
+                workArea.Top + (workArea.Height * VerticalPositionRatio) - (Height / 2),
+                workArea.Top, workArea.Height, Height);
     }
 
     public void ShowRoutineReminder(string title, Func<string> statusProvider, string message)
@@ -121,9 +134,146 @@ public partial class NotificationDockWindow : Window
         ActivationGlow.BeginAnimation(UIElement.OpacityProperty, fade);
     }
 
+    private void DockSurface_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!DockSurface.CaptureMouse())
+            return;
+
+        _pressScreenPoint = PointToScreen(e.GetPosition(this));
+        _pressTop = Top;
+        _isPressed = true;
+        _isDragging = false;
+        e.Handled = true;
+    }
+
+    private void DockSurface_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isPressed)
+            return;
+
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            CancelPointerInteraction();
+            return;
+        }
+
+        var delta = GetPointerDelta(e);
+
+        if (!_isDragging)
+        {
+            _isDragging = DockPositioning.IsDrag(
+                delta.X, delta.Y,
+                SystemParameters.MinimumHorizontalDragDistance,
+                SystemParameters.MinimumVerticalDragDistance);
+        }
+
+        if (!_isDragging)
+            return;
+
+        var workArea = SystemParameters.WorkArea;
+        Top = DockPositioning.ClampTop(
+            _pressTop + delta.Y, workArea.Top, workArea.Height, Height);
+        e.Handled = true;
+    }
+
     private void DockSurface_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        ToggleDashboardRequested?.Invoke(this, EventArgs.Empty);
+        if (!_isPressed)
+            return;
+
+        // 마지막 MouseMove가 오지 않은 상태에서 놓아도 드래그를 클릭으로 오인하지 않는다.
+        var delta = GetPointerDelta(e);
+        var dragged = _isDragging || DockPositioning.IsDrag(
+            delta.X, delta.Y,
+            SystemParameters.MinimumHorizontalDragDistance,
+            SystemParameters.MinimumVerticalDragDistance);
+
+        if (dragged)
+        {
+            var workArea = SystemParameters.WorkArea;
+            Top = DockPositioning.ClampTop(
+                _pressTop + delta.Y, workArea.Top, workArea.Height, Height);
+            try
+            {
+                _positionStore.Save(DockPositioning.ToRatio(
+                    Top, workArea.Top, workArea.Height, Height));
+            }
+            catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+            {
+                Trace.TraceWarning("미니바 위치를 저장하지 못했습니다.");
+            }
+        }
+
+        CancelPointerInteraction();
+        if (!dragged)
+        {
+            PlayClickFeedback();
+            ToggleDashboardRequested?.Invoke(this, EventArgs.Empty);
+        }
+        e.Handled = true;
+    }
+
+    private void PlayClickFeedback()
+    {
+        if (!SystemParameters.ClientAreaAnimation)
+            return;
+
+        var press = new DoubleAnimation(
+            fromValue: 1,
+            toValue: 0.97,
+            duration: TimeSpan.FromMilliseconds(75))
+        {
+            AutoReverse = true,
+            FillBehavior = FillBehavior.Stop,
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+        };
+
+        ClickScale.BeginAnimation(ScaleTransform.ScaleXProperty, press);
+        ClickScale.BeginAnimation(ScaleTransform.ScaleYProperty, press);
+    }
+
+    private Vector GetPointerDelta(MouseEventArgs e)
+    {
+        // 화면 픽셀로 얻은 마우스 이동량을 WPF 창 좌표(DIP)로 변환한다.
+        var deviceDelta = PointToScreen(e.GetPosition(this)) - _pressScreenPoint;
+        var transform = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice;
+        return transform?.Transform(deviceDelta) ?? deviceDelta;
+    }
+
+    private void DockSurface_LostMouseCapture(object sender, MouseEventArgs e)
+    {
+        _isPressed = false;
+        _isDragging = false;
+    }
+
+    private void CancelPointerInteraction()
+    {
+        _isPressed = false;
+        _isDragging = false;
+        if (DockSurface.IsMouseCaptured)
+            DockSurface.ReleaseMouseCapture();
+    }
+
+    private void SystemParameters_StaticPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(e.PropertyName) && e.PropertyName != nameof(SystemParameters.WorkArea))
+            return;
+
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(PositionOnPrimaryWorkArea);
+            return;
+        }
+
+        if (!_isPressed)
+            PositionOnPrimaryWorkArea();
+    }
+
+    private void NotificationDockWindow_Closed(object? sender, EventArgs e)
+    {
+        _statusTimer.Stop();
+        SystemParameters.StaticPropertyChanged -= SystemParameters_StaticPropertyChanged;
+        Closed -= NotificationDockWindow_Closed;
     }
 
     private void CloseReminder_Click(object sender, RoutedEventArgs e)

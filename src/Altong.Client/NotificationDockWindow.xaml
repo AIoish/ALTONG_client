@@ -40,8 +40,15 @@
         </Grid>
 
         <Grid x:Name="DockSurface" Grid.Column="1" Margin="8" Background="Transparent" Cursor="Hand"
+              RenderTransformOrigin="0.5,0.5"
+              MouseLeftButtonDown="DockSurface_MouseLeftButtonDown"
+              MouseMove="DockSurface_MouseMove"
               MouseLeftButtonUp="DockSurface_MouseLeftButtonUp"
-              ToolTip="집중 모드 진행 중&#x0a;클릭하여 대시보드 열기/닫기">
+              LostMouseCapture="DockSurface_LostMouseCapture"
+              ToolTip="집중 모드 진행 중&#x0a;클릭하여 대시보드 열기/닫기&#x0a;위아래로 드래그하여 위치 이동">
+            <Grid.RenderTransform>
+                <ScaleTransform x:Name="ClickScale" ScaleX="1" ScaleY="1" />
+            </Grid.RenderTransform>
             <Border Background="#F0222428" BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="20">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="20" Direction="270" Opacity="0.35" ShadowDepth="4" Color="#000000" />
