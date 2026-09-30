@@ -74,12 +74,9 @@ public sealed class NotificationPipelineCoordinatorTests
         Assert.IsNull(processedRecord.IsPassed, "집중 모드 OFF일 때는 IsPassed가 null(일반 기록)이어야 합니다.");
         Assert.IsNull(processedRecord.SessionId);
 
-        // DB 검증
+        // DB 검증 (집중 모드/활동 캡처 세션 외부의 알림은 DB 트리거 정책에 의해 저장되지 않고 무시됨)
         var fromDb = await _notificationRepo.GetByIdAsync("noti_test_01");
-        Assert.IsNotNull(fromDb);
-        Assert.AreEqual("Slack", fromDb.AppName);
-        Assert.AreEqual("일반 회의 알림", fromDb.Title);
-        Assert.IsNull(fromDb.IsPassed);
+        Assert.IsNull(fromDb, "집중 모드 및 활동 세션 외부에서 수신된 알림은 DB 트리거 정책에 따라 저장되지 않아야 합니다.");
     }
 
     [TestMethod]
@@ -101,6 +98,8 @@ public sealed class NotificationPipelineCoordinatorTests
             _filterEngine,
             () => isFocusMode,
             () => sessionId);
+
+        StartFocusCaptureSession(DateTime.UtcNow.AddSeconds(-2));
 
         await coordinator.StartAsync();
 
@@ -142,6 +141,8 @@ public sealed class NotificationPipelineCoordinatorTests
             _filterEngine,
             () => isFocusMode,
             () => sessionId);
+
+        StartFocusCaptureSession(DateTime.UtcNow.AddSeconds(-2));
 
         await coordinator.StartAsync();
 
@@ -267,5 +268,15 @@ public sealed class NotificationPipelineCoordinatorTests
         public void Stop() { }
         public CurrentContext CaptureNow() => CurrentContext;
         public void Dispose() { }
+    }
+
+    private void StartFocusCaptureSession(DateTime startedAt)
+    {
+        var capture = new SqliteActivitySessionRepository(_database);
+        string activityId = "pipeline-activity-" + Guid.NewGuid().ToString("N");
+        capture.InsertAsync(new ActivitySessionRecord(activityId, startedAt)).GetAwaiter().GetResult();
+        capture.EnableFocusCaptureAsync(activityId).GetAwaiter().GetResult();
+        capture.StartCaptureSegmentAsync(activityId, startedAt).GetAwaiter().GetResult();
+        capture.TouchCaptureSegmentAsync(activityId, DateTime.UtcNow).GetAwaiter().GetResult();
     }
 }

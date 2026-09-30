@@ -85,7 +85,11 @@ public sealed class NotificationPipelineCoordinator : IDisposable
                 AiSummaryReason: filterResult.AiSummaryReason,
                 SessionId: sessionId);
 
-            await _notificationRepository.InsertAsync(record).ConfigureAwait(false);
+            // 4. SQLite DB 저장 (집중 모드 활성화 시에만 영속화)
+            if (isFocusMode)
+            {
+                await _notificationRepository.InsertAsync(record).ConfigureAwait(false);
+            }
 
             // 5. 콘솔 실시간 로깅
             string senderPart = string.IsNullOrEmpty(notification.Sender) ? "" : $" ({notification.Sender})";
@@ -93,9 +97,10 @@ public sealed class NotificationPipelineCoordinator : IDisposable
                 ? (filterResult.IsPassed ? "[PASS]" : "[BLOCK]")
                 : "[RECV]";
             string activeApp = string.IsNullOrEmpty(context.ActiveProcess) ? "None" : context.ActiveProcess;
+            string dbStatus = isFocusMode ? "DB 저장 완료" : "일반 수신 (집중 모드 OFF, 미저장)";
 
             string logMsg = $"[NotificationPipeline] {modeTag,-7} {notification.AppName}{senderPart}: " +
-                $"'{Truncate(notification.Title, 30)}' | 현재: {activeApp} ({context.DurationSeconds}s) -> DB 저장 완료";
+                $"'{Truncate(notification.Title, 30)}' | 현재: {activeApp} ({context.DurationSeconds}s) -> {dbStatus}";
             AppLogger.Info(logMsg);
 
             // 6. UI 구독자에게 이벤트 발행

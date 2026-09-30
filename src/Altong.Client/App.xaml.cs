@@ -75,11 +75,6 @@ public partial class App : System.Windows.Application
         // 안정 창의 종료 시각을 집중모드 ON 구간과 교차시켜 저장한다.
         ActiveWindowTracker.WindowSessionEnded += (_, e) =>
         {
-            var record = new WindowSessionRecord(
-                0, e.ProcessName, e.WindowTitle,
-                e.StartedAt.UtcDateTime, e.EndedAt.UtcDateTime, e.DurationSeconds,
-                SessionResults?.CurrentSessionId);
-            var write = WindowSessionRepository.InsertAsync(record);
             if (ActivitySession.Current is not { } active)
                 return;
             // Tracker events can be raised while holding its state lock; do not perform SQLite I/O there.
@@ -381,8 +376,6 @@ public partial class App : System.Windows.Application
             if (enabled)
             {
                 KakaoAudioOperator?.Mute();
-                SessionResults.Begin(DateTime.UtcNow, FocusSettings.Current.FocusMinutes);
-                _mainWindow?.Hide();
                 SessionResults.Begin(changedAt, FocusSettings.Current.FocusMinutes);
             }
             else
