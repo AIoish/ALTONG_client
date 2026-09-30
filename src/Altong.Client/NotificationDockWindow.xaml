@@ -49,24 +49,24 @@
             <Grid.RenderTransform>
                 <ScaleTransform x:Name="ClickScale" ScaleX="1" ScaleY="1" />
             </Grid.RenderTransform>
-            <Border Background="#F0222428" BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="20">
+            <Border Background="#FF000000" BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="20">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="20" Direction="270" Opacity="0.35" ShadowDepth="4" Color="#000000" />
                 </Border.Effect>
             </Border>
 
             <Rectangle x:Name="ActivationHalo" Margin="1" Fill="Transparent" IsHitTestVisible="False"
-                       Opacity="0" RadiusX="19" RadiusY="19" Stroke="#65D6B4" StrokeThickness="1.5">
+                       Opacity="0" RadiusX="19" RadiusY="19" Stroke="#72B5A6" StrokeThickness="1.5">
                 <Rectangle.Effect>
-                    <DropShadowEffect BlurRadius="12" Opacity="0.85" ShadowDepth="0" Color="#65D6B4" />
+                    <DropShadowEffect BlurRadius="12" Opacity="0.6" ShadowDepth="0" Color="#72B5A6" />
                 </Rectangle.Effect>
             </Rectangle>
 
             <Rectangle x:Name="ActivationGlow" Margin="1" Fill="Transparent" IsHitTestVisible="False"
-                       Opacity="0" RadiusX="19" RadiusY="19" Stroke="#C7FFEE"
+                       Opacity="0" RadiusX="19" RadiusY="19" Stroke="#B7D9D0"
                        StrokeDashArray="24 174" StrokeThickness="2.25">
                 <Rectangle.Effect>
-                    <DropShadowEffect BlurRadius="11" Opacity="1" ShadowDepth="0" Color="#7CFFDA" />
+                    <DropShadowEffect BlurRadius="11" Opacity="0.7" ShadowDepth="0" Color="#72B5A6" />
                 </Rectangle.Effect>
             </Rectangle>
 
@@ -75,9 +75,9 @@
                     <RowDefinition Height="44" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <Ellipse Grid.Row="0" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center" Fill="#65D6B4">
+                <Ellipse Grid.Row="0" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center" Fill="#72B5A6">
                     <Ellipse.Effect>
-                        <DropShadowEffect BlurRadius="8" Opacity="0.65" ShadowDepth="0" Color="#65D6B4" />
+                        <DropShadowEffect BlurRadius="6" Opacity="0.35" ShadowDepth="0" Color="#72B5A6" />
                     </Ellipse.Effect>
                 </Ellipse>
                 <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
