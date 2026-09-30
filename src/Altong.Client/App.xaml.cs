@@ -6,6 +6,7 @@ using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
 using Altong.Client.Services;
+using Altong.Client.Services.Notifications;
 
 namespace Altong.Client;
 
@@ -30,6 +31,9 @@ public partial class App : System.Windows.Application
     public INotificationRepository NotificationRepository { get; private set; } = null!;
     public IWindowSessionRepository WindowSessionRepository { get; private set; } = null!;
     public IFocusSessionRepository FocusSessionRepository { get; private set; } = null!;
+    public NotificationPipelineCoordinator NotificationPipeline { get; private set; } = null!;
+    public KakaoNotificationInterceptor KakaoInterceptor { get; private set; } = null!;
+    public IKakaoAudioOperator KakaoAudioOperator { get; private set; } = null!;
     public SqliteActivitySessionRepository ActivitySessionRepository { get; private set; } = null!;
 
     internal bool IsShuttingDown { get; private set; }
@@ -53,7 +57,7 @@ public partial class App : System.Windows.Application
         {
             var stdOut = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
             Console.SetOut(stdOut);
-            Console.WriteLine("\n[Altong] 터미널 콘솔 로그 연결 완료 (ActiveWindow 실시간 추적 시작)");
+            AppLogger.Info("[Altong] 터미널 콘솔 로그 연결 완료 (ActiveWindow 실시간 추적 시작)");
         }
 
         // 로컬 SQLite 데이터베이스 초기화 및 저장소 바인딩
@@ -81,9 +85,39 @@ public partial class App : System.Windows.Application
                 _windowWrites.RemoveAll(task => task.IsCompletedSuccessfully);
                 _windowWrites.Add(write);
             }
-            _ = write.ContinueWith(t => Console.WriteLine($"[Database] 세션 저장 실패: {t.Exception?.GetBaseException().Message}"),
+            _ = write.ContinueWith(t => AppLogger.Error($"[Database] 세션 저장 실패: {t.Exception?.GetBaseException().Message}", t.Exception),
                 TaskContinuationOptions.OnlyOnFaulted);
         };
+
+        // 실시간 알림 수신 및 AI 필터링 파이프라인 가동 (OS 표준 토스트 + 카카오톡 전용 인터셉터 복합 구성)
+        KakaoAudioOperator = new LiveKakaoAudioOperator();
+        if (FocusModeService.IsEnabled)
+        {
+            KakaoAudioOperator.Mute();
+        }
+
+        var winRtListener = new WinRtNotificationListener();
+        KakaoInterceptor = new KakaoNotificationInterceptor(
+            () => FocusModeService.IsEnabled,
+            audioOperator: KakaoAudioOperator);
+        var compositeListener = new CompositeNotificationListener(winRtListener, KakaoInterceptor);
+
+        var filterEngine = new RuleBasedFilterEngine();
+        NotificationPipeline = new NotificationPipelineCoordinator(
+            compositeListener,
+            ActiveWindowTracker,
+            NotificationRepository,
+            filterEngine,
+            () => FocusModeService.IsEnabled,
+            () => SessionResults.CurrentSessionId);
+
+        // 카카오톡 알림 평가 후 스텔스 복원 또는 완전 소멸 후속 제어 연동
+        NotificationPipeline.NotificationProcessed += (_, record) =>
+        {
+            KakaoInterceptor.OnNotificationProcessed(record);
+        };
+
+        _ = NotificationPipeline.StartAsync();
 
         _focusModeCoordinator = new FocusModeCoordinator(
             FocusModeService,
@@ -128,6 +162,8 @@ public partial class App : System.Windows.Application
             FocusRoutine.PhaseChanged -= FocusRoutine_PhaseChanged;
         PersistActivityStateForExit();
         ActiveWindowTracker.Dispose();
+        NotificationPipeline?.Dispose();
+        KakaoAudioOperator?.Dispose();
 
         if (_focusModeCoordinator is not null)
         {
@@ -339,10 +375,12 @@ public partial class App : System.Windows.Application
             FocusRoutine.Refresh();
             if (enabled)
             {
+                KakaoAudioOperator?.Mute();
                 SessionResults.Begin(changedAt, FocusSettings.Current.FocusMinutes);
             }
             else
             {
+                KakaoAudioOperator?.Unmute();
                 var lastContext = ActiveWindowTracker.CaptureNow();
                 Task pendingWrites;
                 lock (_windowWrites) pendingWrites = Task.WhenAll(_windowWrites);

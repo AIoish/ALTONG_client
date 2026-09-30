@@ -115,6 +115,9 @@ public partial class MainWindow : Window
 
             builder.Show();
 
+            // Altong.Client 개발/시연 로컬 파이프로도 전달
+            TrySendToClientPipe(appName, senderName, title, body);
+
             var timestamp = DateTime.Now.ToString("HH:mm:ss");
             var historyEntry = $"{timestamp}  {appName} / {senderName} / {title}";
             HistoryListView.Items.Insert(0, historyEntry);
@@ -125,6 +128,34 @@ public partial class MainWindow : Window
         {
             ShowStatus($"❌ 전송 실패: {ex.Message}", isError: true);
         }
+    }
+
+    private static void TrySendToClientPipe(string appName, string sender, string title, string body)
+    {
+        Task.Run(() =>
+        {
+            try
+            {
+                using var client = new System.IO.Pipes.NamedPipeClientStream(".", "Altong_Notification_Pipe", System.IO.Pipes.PipeDirection.Out);
+                client.Connect(300);
+                using var writer = new System.IO.StreamWriter(client, System.Text.Encoding.UTF8);
+                var json = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    id = $"mock_{DateTime.UtcNow:yyyyMMddHHmmssfff}",
+                    app_name = string.IsNullOrEmpty(appName) ? "Altong.MockGenerator" : appName,
+                    sender = sender,
+                    title = title,
+                    body = body,
+                    timestamp = DateTime.UtcNow
+                });
+                writer.WriteLine(json);
+                writer.Flush();
+            }
+            catch
+            {
+                // Altong.Client가 실행 중이지 않을 때는 무시
+            }
+        });
     }
 
     /// <summary>
