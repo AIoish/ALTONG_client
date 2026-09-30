@@ -51,6 +51,7 @@ Thumbs.db
 # .NET build output
 **/bin/
 **/obj/
+/verify-build/
 
 # Gemini Agents
 .agents/rules/

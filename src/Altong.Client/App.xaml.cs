@@ -4,6 +4,7 @@ using System.Windows;
 using Altong.Client.Data;
 using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
+using Altong.Client.Models;
 using Altong.Client.Services;
 using Altong.Client.Services.Notifications;
 
@@ -19,6 +20,7 @@ public partial class App : System.Windows.Application
     public FocusSettingsStore FocusSettings { get; } = new();
     public FocusRoutineService FocusRoutine { get; private set; } = null!;
     public SessionResultsService SessionResults { get; private set; } = null!;
+    public ActivitySessionService ActivitySession { get; private set; } = null!;
     private readonly System.Windows.Threading.DispatcherTimer _routineTimer = new()
     {
         Interval = TimeSpan.FromSeconds(1)
@@ -32,17 +34,19 @@ public partial class App : System.Windows.Application
     public NotificationPipelineCoordinator NotificationPipeline { get; private set; } = null!;
     public KakaoNotificationInterceptor KakaoInterceptor { get; private set; } = null!;
     public IKakaoAudioOperator KakaoAudioOperator { get; private set; } = null!;
+    public SqliteActivitySessionRepository ActivitySessionRepository { get; private set; } = null!;
 
     internal bool IsShuttingDown { get; private set; }
 
-    private MainWindow? _mainWindow;
     private DashboardWindow? _dashboardWindow;
     private NotificationDockWindow? _notificationDockWindow;
     private WindowsDndGuidanceWindow? _windowsDndGuidanceWindow;
-    private BreakReminderWindow? _breakReminderWindow;
     private TrayIconService? _trayIconService;
     private FocusModeCoordinator? _focusModeCoordinator;
     private readonly List<Task> _windowWrites = new();
+    private DateTime _lastWindowCheckpointAt = DateTime.MinValue;
+    private bool _windowCheckpointInProgress;
+    private bool _routineTickInProgress;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -63,9 +67,12 @@ public partial class App : System.Windows.Application
         NotificationRepository = new SqliteNotificationRepository(Database);
         WindowSessionRepository = new SqliteWindowSessionRepository(Database);
         FocusSessionRepository = new SqliteFocusSessionRepository(Database);
+        ActivitySessionRepository = new SqliteActivitySessionRepository(Database);
         SessionResults = new SessionResultsService(Database, FocusSessionRepository);
+        ActivitySession = new ActivitySessionService(ActivitySessionRepository);
+        ActivitySession.RestoreAsync().GetAwaiter().GetResult();
 
-        // ActiveWindowTracker의 세션 종료([OUT]) 이벤트를 수신하여 window_sessions에 자동 적재
+        // 안정 창의 종료 시각을 집중모드 ON 구간과 교차시켜 저장한다.
         ActiveWindowTracker.WindowSessionEnded += (_, e) =>
         {
             var record = new WindowSessionRecord(
@@ -73,6 +80,11 @@ public partial class App : System.Windows.Application
                 e.StartedAt.UtcDateTime, e.EndedAt.UtcDateTime, e.DurationSeconds,
                 SessionResults?.CurrentSessionId);
             var write = WindowSessionRepository.InsertAsync(record);
+            if (ActivitySession.Current is not { } active)
+                return;
+            // Tracker events can be raised while holding its state lock; do not perform SQLite I/O there.
+            var write = Task.Run(() => PersistWindowIntervalAsync(active, e.ProcessName, e.WindowTitle,
+                e.StartedAt.UtcDateTime, e.EndedAt.UtcDateTime));
             lock (_windowWrites)
             {
                 _windowWrites.RemoveAll(task => task.IsCompletedSuccessfully);
@@ -123,12 +135,9 @@ public partial class App : System.Windows.Application
         FocusRoutine.PhaseChanged += FocusRoutine_PhaseChanged;
         _routineTimer.Start();
 
-        _mainWindow = new MainWindow(FocusModeService, _focusModeCoordinator);
-        MainWindow = _mainWindow;
-
         _notificationDockWindow = new NotificationDockWindow();
-        _notificationDockWindow.ToggleMainWindowRequested +=
-            NotificationDockWindow_ToggleMainWindowRequested;
+        _notificationDockWindow.ToggleDashboardRequested +=
+            NotificationDockWindow_ToggleDashboardRequested;
 
         _windowsDndGuidanceWindow = new WindowsDndGuidanceWindow();
         _windowsDndGuidanceWindow.CancelRequested +=
@@ -136,13 +145,8 @@ public partial class App : System.Windows.Application
         _windowsDndGuidanceWindow.OpenSettingsRequested +=
             WindowsDndGuidanceWindow_OpenSettingsRequested;
 
-        _breakReminderWindow = new BreakReminderWindow();
-
-        _trayIconService = new TrayIconService(
-            ShowMainWindow,
-            RequestFocusModeChange,
-            RequestShutdown);
-        _trayIconService.SetDashboardAction(ShowDashboard);
+        _trayIconService = new TrayIconService(ShowDashboard);
+        _trayIconService.SetDashboardAction(ToggleDashboard);
 
         FocusModeService.StateChanged += FocusModeService_StateChanged;
         _focusModeCoordinator.StateChanged += FocusModeCoordinator_StateChanged;
@@ -151,8 +155,7 @@ public partial class App : System.Windows.Application
         UpdateFocusModeShell();
         UpdateWindowsDndGuidance();
 
-        _mainWindow.Show();
-        _mainWindow.Hide();
+        ShowDashboard();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -162,6 +165,7 @@ public partial class App : System.Windows.Application
         _routineTimer.Tick -= RoutineTimer_Tick;
         if (FocusRoutine is not null)
             FocusRoutine.PhaseChanged -= FocusRoutine_PhaseChanged;
+        PersistActivityStateForExit();
         ActiveWindowTracker.Dispose();
         NotificationPipeline?.Dispose();
         KakaoAudioOperator?.Dispose();
@@ -175,8 +179,8 @@ public partial class App : System.Windows.Application
 
         if (_notificationDockWindow is not null)
         {
-            _notificationDockWindow.ToggleMainWindowRequested -=
-                NotificationDockWindow_ToggleMainWindowRequested;
+            _notificationDockWindow.ToggleDashboardRequested -=
+                NotificationDockWindow_ToggleDashboardRequested;
         }
 
         if (_windowsDndGuidanceWindow is not null)
@@ -187,8 +191,6 @@ public partial class App : System.Windows.Application
                 WindowsDndGuidanceWindow_OpenSettingsRequested;
         }
 
-        _breakReminderWindow?.CloseForShutdown();
-        _breakReminderWindow = null;
 
         _trayIconService?.Dispose();
         _trayIconService = null;
@@ -198,24 +200,22 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
-    internal void ShowMainWindow()
+    private void PersistActivityStateForExit()
     {
-        RunOnUiThread(() =>
+        if (ActivitySession?.Current is not { } active)
+            return;
+        try
         {
-            if (_mainWindow is null)
-            {
-                return;
-            }
-
-            _mainWindow.Show();
-
-            if (_mainWindow.WindowState == WindowState.Minimized)
-            {
-                _mainWindow.WindowState = WindowState.Normal;
-            }
-
-            _mainWindow.Activate();
-        });
+            DateTime endedAt = DateTime.UtcNow;
+            ActivitySession.TouchIfDueAsync(endedAt).GetAwaiter().GetResult();
+            CurrentContext context = ActiveWindowTracker.CaptureNow();
+            PersistCurrentWindowSnapshotAsync(active.StartedAt, endedAt, context).GetAwaiter().GetResult();
+            ActivitySession.PauseForShutdownAsync(endedAt).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Database] 종료 상태 저장 실패: {ex.GetBaseException().Message}");
+        }
     }
 
     internal void ShowDashboard()
@@ -224,8 +224,20 @@ public partial class App : System.Windows.Application
         {
             if (_dashboardWindow is null)
             {
-                _dashboardWindow = new DashboardWindow(FocusSettings, FocusRoutine, SessionResults, ActiveWindowTracker);
+                _dashboardWindow = new DashboardWindow(
+                    FocusSettings,
+                    FocusRoutine,
+                    SessionResults,
+                    ActiveWindowTracker,
+                    FocusModeService,
+                    _focusModeCoordinator,
+                    ActivitySession,
+                    StartActivityAsync,
+                    CompleteActivityAsync,
+                    ShowCurrentRoutineReminder,
+                    RequestShutdown);
                 _dashboardWindow.Closed += DashboardWindow_Closed;
+                MainWindow = _dashboardWindow;
             }
 
             _dashboardWindow.Show();
@@ -249,12 +261,90 @@ public partial class App : System.Windows.Application
         _dashboardWindow = null;
     }
 
-    private void RequestFocusModeChange()
+    private async Task StartActivityAsync()
     {
-        RunOnUiThread(() => _focusModeCoordinator?.RequestToggle());
+        lock (_windowWrites)
+            _windowWrites.RemoveAll(task => task.IsCompleted);
+        await ActivitySession.StartAsync(DateTime.UtcNow);
+        if (FocusModeService.IsEnabled)
+            await ActivitySession.SetFocusCaptureAsync(true, DateTime.UtcNow);
+        _lastWindowCheckpointAt = DateTime.MinValue;
+        SessionResults.ClearResult();
     }
 
-    private void RequestShutdown()
+    private async Task CompleteActivityAsync()
+    {
+        if (ActivitySession.Current is not { } active)
+            return;
+
+        DateTime endedAt = DateTime.UtcNow;
+        await ActivitySession.TouchIfDueAsync(endedAt);
+        CurrentContext context = ActiveWindowTracker.CaptureNow();
+        Task finalWindowWrite = PersistCurrentWindowSnapshotAsync(active.StartedAt, endedAt, context);
+        var completed = await ActivitySession.CompleteAsync(endedAt);
+        if (completed is null)
+            return;
+
+        Task pendingWrites;
+        lock (_windowWrites)
+            pendingWrites = Task.WhenAll(_windowWrites.Append(finalWindowWrite));
+        await SessionResults.BuildActivityResultAsync(
+            completed.StartedAt,
+            completed.EndedAt!.Value,
+            context,
+            pendingWrites,
+            await ActivitySession.GetRecordedDurationAsync(completed.ActivitySessionId),
+            await ActivitySession.UsesFocusCaptureAsync(completed.ActivitySessionId)
+                ? completed.ActivitySessionId : null);
+    }
+
+    private Task PersistCurrentWindowSnapshotAsync(
+        DateTime activityStartedAt,
+        DateTime endedAt,
+        CurrentContext context)
+    {
+        if (string.IsNullOrWhiteSpace(context.ActiveProcess) || context.DurationSeconds <= 0)
+            return Task.CompletedTask;
+
+        DateTime startedAt = context.LastUpdated.AddSeconds(-context.DurationSeconds);
+        if (startedAt < activityStartedAt)
+            startedAt = activityStartedAt;
+        if (ActivitySession.UsesFocusCapture && startedAt < _lastWindowCheckpointAt)
+            startedAt = _lastWindowCheckpointAt;
+        if (endedAt <= startedAt)
+            return Task.CompletedTask;
+
+        return PersistWindowIntervalAsync(ActivitySession.Current!, context.ActiveProcess,
+            context.WindowTitle, startedAt, endedAt, latestCaptureOnly: true);
+    }
+
+    private async Task PersistWindowIntervalAsync(ActivitySessionRecord activity, string process,
+        string title, DateTime startedAt, DateTime endedAt, bool latestCaptureOnly = false)
+    {
+        if (endedAt <= startedAt) return;
+        if (await ActivitySession.UsesFocusCaptureAsync(activity.ActivitySessionId).ConfigureAwait(false))
+        {
+            var captures = await ActivitySession.GetCaptureIntervalsAsync(activity.ActivitySessionId, endedAt).ConfigureAwait(false);
+            foreach (var capture in latestCaptureOnly ? captures.TakeLast(1) : captures)
+            {
+                var start = startedAt > capture.Start ? startedAt : capture.Start;
+                var end = endedAt < capture.End ? endedAt : capture.End;
+                if (end > start)
+                    await SaveWindowIntervalAsync(process, title, start, end, activity.ActivitySessionId).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            // 이전 버전의 진행 중 기록은 기존 저장 형식을 유지한다.
+            await SaveWindowIntervalAsync(process, title, startedAt, endedAt, null).ConfigureAwait(false);
+        }
+    }
+
+    private Task SaveWindowIntervalAsync(string process, string title, DateTime start, DateTime end, string? activityId) =>
+        WindowSessionRepository.InsertAsync(new WindowSessionRecord(0, process, title, start, end,
+            Math.Max(1, (int)Math.Ceiling((end - start).TotalSeconds)), activityId));
+
+    internal void RequestShutdown()
     {
         RunOnUiThread(() =>
         {
@@ -264,25 +354,36 @@ public partial class App : System.Windows.Application
             _trayIconService = null;
 
             _windowsDndGuidanceWindow?.CloseForShutdown();
-            _breakReminderWindow?.CloseForShutdown();
-            _breakReminderWindow = null;
             _notificationDockWindow?.Close();
             _dashboardWindow?.Close();
-            _mainWindow?.Close();
             Shutdown();
         });
     }
 
     private void FocusModeService_StateChanged(object? sender, EventArgs e)
     {
+        var changedAt = DateTime.UtcNow;
+        var enabled = FocusModeService.IsEnabled;
         RunOnUiThread(() =>
         {
+            if (ActivitySession.IsRecording)
+            {
+                ActivitySession.SetFocusCaptureAsync(enabled, changedAt).GetAwaiter().GetResult();
+                if (enabled) _lastWindowCheckpointAt = DateTime.MinValue;
+                var context = ActiveWindowTracker.CaptureNow();
+                if (!enabled && ActivitySession.Current is { } active)
+                {
+                    var write = PersistCurrentWindowSnapshotAsync(active.StartedAt, changedAt, context);
+                    lock (_windowWrites) _windowWrites.Add(write);
+                }
+            }
             FocusRoutine.Refresh();
-            if (FocusModeService.IsEnabled)
+            if (enabled)
             {
                 KakaoAudioOperator?.Mute();
                 SessionResults.Begin(DateTime.UtcNow, FocusSettings.Current.FocusMinutes);
                 _mainWindow?.Hide();
+                SessionResults.Begin(changedAt, FocusSettings.Current.FocusMinutes);
             }
             else
             {
@@ -290,9 +391,7 @@ public partial class App : System.Windows.Application
                 var lastContext = ActiveWindowTracker.CaptureNow();
                 Task pendingWrites;
                 lock (_windowWrites) pendingWrites = Task.WhenAll(_windowWrites);
-                SessionResults.End(DateTime.UtcNow, lastContext, pendingWrites);
-                _ = SessionResults.RefreshAsync();
-                ShowDashboard();
+                SessionResults.End(changedAt, lastContext, pendingWrites, collectResult: false);
             }
 
             UpdateFocusModeShell();
@@ -300,45 +399,115 @@ public partial class App : System.Windows.Application
         });
     }
 
-    private void RoutineTimer_Tick(object? sender, EventArgs e)
+    private void ToggleDashboard()
     {
-        FocusRoutine.Refresh();
-        UpdateRoutineView();
-        _ = SessionResults.RefreshAsync();
+        RunOnUiThread(() =>
+        {
+            if (_dashboardWindow?.IsVisible == true)
+            {
+                _dashboardWindow.Hide();
+                return;
+            }
+
+            ShowDashboard();
+        });
+    }
+
+    private async void RoutineTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_routineTickInProgress || IsShuttingDown) return;
+        _routineTickInProgress = true;
+        try
+        {
+            FocusRoutine.Refresh();
+            UpdateRoutineView();
+            await SessionResults.RefreshAsync();
+            await ActivitySession.TouchIfDueAsync(DateTime.UtcNow);
+            if (!IsShuttingDown) await CheckpointActiveWindowAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Database] 활동 상태 갱신 실패: {ex.GetBaseException().Message}");
+        }
+        finally { _routineTickInProgress = false; }
+    }
+
+    private async Task CheckpointActiveWindowAsync()
+    {
+        if (_windowCheckpointInProgress || ActivitySession?.Current is not { } active ||
+            !ActivitySession.UsesFocusCapture || !FocusModeService.IsEnabled)
+            return;
+        var now = DateTime.UtcNow;
+        if (_lastWindowCheckpointAt != DateTime.MinValue &&
+            now - _lastWindowCheckpointAt < TimeSpan.FromSeconds(5))
+            return;
+        _windowCheckpointInProgress = true;
+        try
+        {
+            var context = ActiveWindowTracker.CaptureNow();
+            var write = PersistCurrentWindowSnapshotAsync(active.StartedAt, now, context);
+            lock (_windowWrites)
+            {
+                _windowWrites.RemoveAll(task => task.IsCompletedSuccessfully);
+                _windowWrites.Add(write);
+            }
+            await write;
+            _lastWindowCheckpointAt = now;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Database] 활성 창 확인 저장 실패: {ex.GetBaseException().Message}");
+        }
+        finally { _windowCheckpointInProgress = false; }
     }
 
     private void UpdateRoutineView()
     {
         if (FocusRoutine.Phase != FocusRoutinePhase.Idle)
             _trayIconService?.UpdateRoutineStatus(FocusRoutine.StatusText);
-        _mainWindow?.UpdateRoutineStatus(FocusRoutine.StatusText);
     }
 
     private void FocusRoutine_PhaseChanged(object? sender, EventArgs e)
     {
-        if (FocusRoutine.Phase == FocusRoutinePhase.Idle) return;
-        if (FocusRoutine.Phase == FocusRoutinePhase.Break)
-            _breakReminderWindow?.Present(FocusRoutine.StatusText);
-        else
-            _trayIconService?.ShowRoutineReminder("집중할 시간이에요.", FocusRoutine.StatusText);
+        switch (FocusRoutine.Phase)
+        {
+            case FocusRoutinePhase.Focus:
+                _notificationDockWindow?.ShowRoutineReminder(
+                    "집중 시간이 시작됐어요.",
+                    () => FocusRoutine.StatusText,
+                    "집중에 필요한 작업을 시작해보세요.");
+                break;
+
+            case FocusRoutinePhase.Break:
+                _notificationDockWindow?.ShowRoutineReminder(
+                    "휴식 시간이 시작됐어요.",
+                    () => FocusRoutine.StatusText,
+                    "잠시 쉬어가세요. 방해 금지 모드는 직접 조절할 수 있어요.");
+                break;
+
+            case FocusRoutinePhase.Idle:
+                _notificationDockWindow?.ShowRoutineReminder(
+                    "집중 모드가 종료됐어요.",
+                    () => "세션 종료",
+                    ActivitySession.IsRecording
+                        ? "집중 기록을 저장했어요. 활동 기록은 계속됩니다."
+                        : "집중 기록을 저장했어요.");
+                break;
+        }
     }
 
-    private void ToggleMainWindowVisibility()
+    internal void ShowCurrentRoutineReminder()
     {
         RunOnUiThread(() =>
         {
-            if (_mainWindow is null)
-            {
+            if (_notificationDockWindow is null || FocusRoutine.Phase == FocusRoutinePhase.Idle)
                 return;
-            }
 
-            if (_mainWindow.IsVisible)
-            {
-                _mainWindow.Hide();
-                return;
-            }
-
-            ShowMainWindow();
+            bool isBreak = FocusRoutine.Phase == FocusRoutinePhase.Break;
+            _notificationDockWindow.ShowRoutineReminder(
+                isBreak ? "휴식 시간이 진행 중이에요." : "집중 시간이 진행 중이에요.",
+                () => FocusRoutine.StatusText,
+                isBreak ? "충분히 쉬고 다음 집중을 준비해보세요." : "현재 작업에 집중해보세요.");
         });
     }
 
@@ -347,11 +516,11 @@ public partial class App : System.Windows.Application
         RunOnUiThread(UpdateWindowsDndGuidance);
     }
 
-    private void NotificationDockWindow_ToggleMainWindowRequested(
+    private void NotificationDockWindow_ToggleDashboardRequested(
         object? sender,
         EventArgs e)
     {
-        ToggleMainWindowVisibility();
+        ToggleDashboard();
     }
 
     private void WindowsDndGuidanceWindow_CancelRequested(object? sender, EventArgs e)
@@ -376,17 +545,13 @@ public partial class App : System.Windows.Application
         if (FocusModeService.IsEnabled)
         {
             var wasVisible = _notificationDockWindow.IsVisible;
-            _notificationDockWindow.PositionOnPrimaryWorkArea();
-
+            _notificationDockWindow.KeepVisible();
             if (!wasVisible)
-            {
-                _notificationDockWindow.Show();
                 _notificationDockWindow.PlayActivationAnimation();
-            }
         }
         else
         {
-            _notificationDockWindow.Hide();
+            _notificationDockWindow.HideAfterCurrentReminder();
         }
 
         _trayIconService?.UpdateFocusModeState(FocusModeService.IsEnabled);

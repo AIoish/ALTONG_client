@@ -11,7 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Resource Include="Fonts\BMJUA_ttf.ttf" />
+    <Resource Include="Fonts\Pretendard-Regular.otf" />
+    <None Include="Fonts\Pretendard-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
   </ItemGroup>
 
