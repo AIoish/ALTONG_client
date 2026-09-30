@@ -22,10 +22,34 @@ public sealed class SessionResultsTests
         _database.Initialize();
         _notifications = new SqliteNotificationRepository(_database);
         _results = new SessionResultsService(_database, new SqliteFocusSessionRepository(_database));
+        // 이 테스트의 과거 알림 시각을 ON 구간에 놓고, 현재 heartbeat도 유지한다.
+        var capture = new SqliteActivitySessionRepository(_database);
+        const string activityId = "session-results-test-activity";
+        capture.InsertAsync(new ActivitySessionRecord(activityId, _start.AddMinutes(-1)))
+            .GetAwaiter().GetResult();
+        capture.EnableFocusCaptureAsync(activityId).GetAwaiter().GetResult();
+        capture.StartCaptureSegmentAsync(activityId, _start.AddMinutes(-1)).GetAwaiter().GetResult();
+        capture.TouchCaptureSegmentAsync(activityId, DateTime.UtcNow).GetAwaiter().GetResult();
     }
 
     [TestCleanup]
     public void Cleanup() => _database.Dispose();
+
+    [TestMethod]
+    public async Task Journal_ReadsSavedWindowsInReverseOrder_AndClipsRange()
+    {
+        var windows = new SqliteWindowSessionRepository(_database);
+        await windows.InsertAsync(new(0, "Code", "이전 작업", _start.AddMinutes(-1), _start.AddMinutes(1), 120));
+        await windows.InsertAsync(new(0, "Browser", "현재 작업", _start.AddMinutes(1), _start.AddMinutes(3), 120));
+        await windows.InsertAsync(new(0, "Excluded", "", _start.AddMinutes(-2), _start, 120));
+        var entries = await _results.ReadActivityJournalAsync(_start, _start.AddMinutes(2));
+        Assert.AreEqual(2, entries.Count);
+        Assert.AreEqual("Browser", entries[0].AppName);
+        Assert.AreEqual("현재 작업", entries[0].WindowTitle);
+        Assert.AreEqual(_start.AddMinutes(2), entries[0].EndedAt);
+        Assert.AreEqual(_start, entries[1].StartedAt);
+        Assert.AreEqual("1분 0초", entries[1].DurationText);
+    }
 
     [TestMethod]
     public async Task Results_AppearOnlyAfterEndAndAllClassificationsComplete()
@@ -106,6 +130,32 @@ public sealed class SessionResultsTests
         _results.End(_start.AddMinutes(3), CurrentContext.Empty);
         await _results.RefreshAsync();
         Assert.AreEqual(_start.AddMinutes(2), _results.Latest!.StartedAt);
+    }
+
+    [TestMethod]
+    public async Task ClearResult_InvalidatesAnInFlightFocusReport()
+    {
+        var writes = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _results.Begin(_start, 25);
+        _results.End(_start.AddMinutes(1), CurrentContext.Empty, writes.Task);
+        var refresh = _results.RefreshAsync();
+        _results.ClearResult();
+        writes.SetResult();
+        await refresh;
+        Assert.IsNull(_results.Latest);
+        Assert.IsFalse(_results.IsCollecting);
+    }
+
+    [TestMethod]
+    public async Task ClearResult_InvalidatesAnInFlightActivityReport()
+    {
+        var writes = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var build = _results.BuildActivityResultAsync(_start, _start.AddMinutes(1), CurrentContext.Empty, writes.Task);
+        _results.ClearResult();
+        writes.SetResult();
+        await build;
+        Assert.IsNull(_results.Latest);
+        Assert.AreEqual("", _results.Status);
     }
 
     [TestMethod]

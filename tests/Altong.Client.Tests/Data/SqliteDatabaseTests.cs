@@ -26,6 +26,15 @@ public class SqliteDatabaseTests
         _notificationRepo = new SqliteNotificationRepository(_database);
         _windowSessionRepo = new SqliteWindowSessionRepository(_database);
         _focusSessionRepo = new SqliteFocusSessionRepository(_database);
+
+        // 알림은 활동 기록과 집중모드가 함께 켜진 동안에만 저장된다.
+        var capture = new SqliteActivitySessionRepository(_database);
+        var startedAt = DateTime.UtcNow.AddSeconds(-1);
+        capture.InsertAsync(new ActivitySessionRecord("notification-test-activity", startedAt))
+            .GetAwaiter().GetResult();
+        capture.EnableFocusCaptureAsync("notification-test-activity").GetAwaiter().GetResult();
+        capture.StartCaptureSegmentAsync("notification-test-activity", startedAt)
+            .GetAwaiter().GetResult();
     }
 
     [TestCleanup]
@@ -70,6 +79,17 @@ public class SqliteDatabaseTests
         Assert.AreEqual("긴급 업무", retrieved.Category);
         Assert.AreEqual("백엔드 코드 작성 중 발생한 서버 장애 알림", retrieved.AiSummaryReason);
         Assert.AreEqual("session_001", retrieved.SessionId);
+    }
+
+    [TestMethod]
+    public async Task NotificationRepository_AfterFocusCaptureEnds_DoesNotStoreNotification()
+    {
+        var capture = new SqliteActivitySessionRepository(_database);
+        await capture.EndCaptureSegmentAsync("notification-test-activity", DateTime.UtcNow);
+        await _notificationRepo.InsertAsync(new NotificationRecord(
+            "off-notification", "Slack", null, "집중모드 OFF", "", DateTime.UtcNow));
+
+        Assert.IsNull(await _notificationRepo.GetByIdAsync("off-notification"));
     }
 
     [TestMethod]
