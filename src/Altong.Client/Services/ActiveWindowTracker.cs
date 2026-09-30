@@ -14,6 +14,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     // interval avoids making every transition wait for a multi-second poll.
     private static readonly TimeSpan DefaultPollingInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan DefaultStabilizationThreshold = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MaximumObservedGap = TimeSpan.FromSeconds(10);
     private const int MaxRecentProcesses = 3;
 
     private readonly IWindowInfoProvider _windowInfoProvider;
@@ -32,6 +33,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     private DateTimeOffset _candidateEnteredAt;
 
     private CurrentContext _currentContext = CurrentContext.Empty;
+    private DateTimeOffset? _lastObservedAt;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _pollingTask;
     private bool _isDisposed;
@@ -84,7 +86,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
             _cancellationTokenSource = cts;
 
             // 시작 즉시 초기 활성 창 1회 캡처 (0초 시점 맥락 확보)
-            EvaluateCurrentWindowLocked(_timeProvider.GetUtcNow());
+            ObserveForegroundWindowLocked(_timeProvider.GetUtcNow());
 
             _pollingTask = Task.Run(() => RunPollingLoopAsync(cts.Token));
         }
@@ -130,7 +132,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         lock (_syncRoot)
         {
             ObjectDisposedException.ThrowIf(_isDisposed, this);
-            return EvaluateCurrentWindowLocked(_timeProvider.GetUtcNow());
+            return ObserveForegroundWindowLocked(_timeProvider.GetUtcNow());
         }
     }
 
@@ -167,7 +169,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
                     }
 
                     CurrentContext previous = _currentContext;
-                    CurrentContext current = EvaluateCurrentWindowLocked(_timeProvider.GetUtcNow());
+                    CurrentContext current = ObserveForegroundWindowLocked(_timeProvider.GetUtcNow());
 
                     if (HasContextChangedSignificantly(previous, current))
                     {
@@ -185,6 +187,32 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         {
             // 종료 루프 탈출
         }
+    }
+
+    private CurrentContext ObserveForegroundWindowLocked(DateTimeOffset now)
+    {
+        if (_lastObservedAt is { } previousObservation &&
+            now - previousObservation > MaximumObservedGap)
+        {
+            // 절전이나 앱 중단 중에는 마지막으로 확인한 시점까지만 사용 시간을 인정한다.
+            if (_stableWindow is { } previousWindow && previousObservation > _stableEnteredAt)
+            {
+                int duration = Math.Max(0, (int)(previousObservation - _stableEnteredAt).TotalSeconds);
+                WindowSessionEnded?.Invoke(this, new WindowSessionEndedEventArgs(
+                    previousWindow.ProcessName,
+                    previousWindow.WindowTitle,
+                    _stableEnteredAt,
+                    previousObservation,
+                    duration));
+            }
+
+            _stableWindow = null;
+            _candidateWindow = null;
+            _currentContext = CurrentContext.Empty;
+        }
+
+        _lastObservedAt = now;
+        return EvaluateCurrentWindowLocked(now);
     }
 
     private CurrentContext EvaluateCurrentWindowLocked(DateTimeOffset now)

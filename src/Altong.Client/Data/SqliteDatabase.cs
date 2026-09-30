@@ -129,6 +129,53 @@ public sealed class SqliteDatabase : IAltongDatabase
                 ON activity_sessions(started_at);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_sessions_single_active
                 ON activity_sessions(status) WHERE status = 'active';
+
+            -- 앱 종료, 절전, 재실행 사이 구간은 기록 시간에서 제외한다.
+            CREATE TABLE IF NOT EXISTS activity_session_segments (
+                segment_id TEXT PRIMARY KEY,
+                activity_session_id TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                last_seen_at TEXT NOT NULL,
+                FOREIGN KEY(activity_session_id) REFERENCES activity_sessions(activity_session_id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_activity_session_segments_activity
+                ON activity_session_segments(activity_session_id, started_at);
+
+            -- 새 기록만 집중모드 ON 구간으로 집계한다. 이전 기록과 구분하는 표식이다.
+            CREATE TABLE IF NOT EXISTS activity_capture_policy (
+                activity_session_id TEXT PRIMARY KEY,
+                FOREIGN KEY(activity_session_id) REFERENCES activity_sessions(activity_session_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS activity_capture_segments (
+                segment_id TEXT PRIMARY KEY,
+                activity_session_id TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                last_seen_at TEXT NOT NULL,
+                FOREIGN KEY(activity_session_id) REFERENCES activity_sessions(activity_session_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_activity_capture_segments_activity
+                ON activity_capture_segments(activity_session_id, started_at);
+
+            -- 외부 알림 작성자도 같은 DB를 사용하므로 저장 경계는 DB에서 강제한다.
+            -- 절전/비정상 종료 후 열린 구간은 최근 heartbeat가 없으면 인정하지 않는다.
+            CREATE TRIGGER IF NOT EXISTS trg_notifications_focus_capture
+            BEFORE INSERT ON notifications
+            WHEN NOT EXISTS (
+                SELECT 1 FROM activity_capture_segments capture
+                JOIN activity_sessions activity
+                  ON activity.activity_session_id = capture.activity_session_id
+                WHERE activity.status = 'active'
+                  AND capture.ended_at IS NULL
+                  AND julianday(NEW.received_at) >= julianday(capture.started_at)
+                  AND julianday('now') - julianday(capture.last_seen_at) <= 10.0 / 86400.0
+            )
+            BEGIN
+                SELECT RAISE(IGNORE);
+            END;
             """;
 
         command.ExecuteNonQuery();
