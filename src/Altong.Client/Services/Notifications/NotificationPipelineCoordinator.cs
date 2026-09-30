@@ -94,7 +94,7 @@ public sealed class NotificationPipelineCoordinator : IDisposable
                 : "[RECV]";
             string activeApp = string.IsNullOrEmpty(context.ActiveProcess) ? "None" : context.ActiveProcess;
 
-            string logMsg = $"[NOTI] {modeTag,-7} {notification.AppName}{senderPart}: " +
+            string logMsg = $"[NotificationPipeline] {modeTag,-7} {notification.AppName}{senderPart}: " +
                 $"'{Truncate(notification.Title, 30)}' | 현재: {activeApp} ({context.DurationSeconds}s) -> DB 저장 완료";
             AppLogger.Info(logMsg);
 

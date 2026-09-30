@@ -78,7 +78,8 @@ public sealed class WinRtNotificationListener : IWindowsNotificationListener
 
             if (accessStatus != UserNotificationListenerAccessStatus.Allowed)
             {
-                AppLogger.Warn($"[WinRtNotificationListener] 알림 접근 권한 미허용: {accessStatus}");
+                AppLogger.Warn($"[WinRtNotificationListener] 알림 접근 권한 미허용 상태입니다: {accessStatus}");
+                AppLogger.Info("[WinRtNotificationListener] Windows 설정 -> 개인 정보 및 보안 -> 알림에서 '알림 액세스'를 허용해주세요. (ms-settings:privacy-notifications)");
                 return false;
             }
 
@@ -94,8 +95,10 @@ public sealed class WinRtNotificationListener : IWindowsNotificationListener
         }
         catch (System.Runtime.InteropServices.COMException ex) when (ex.HResult == unchecked((int)0x80070490))
         {
-            AppLogger.Warn("[WinRtNotificationListener] ⚠️ Win32 언패키징 환경 감지 (0x80070490: Package Identity 부재)");
-            AppLogger.Info("[WinRtNotificationListener] ➡️ 개발/시연을 위해 'Altong.MockGenerator' 전용 로컬 파이프 리스너로 자동 전환합니다.");
+            AppLogger.Warn("[WinRtNotificationListener] Win32 언패키징 환경 감지 (0x80070490: Package Identity 부재)");
+            AppLogger.Info("[WinRtNotificationListener] 실제 Windows 알림(Slack, Chrome 등)을 수신하려면 터미널에서 다음 스크립트를 1회 실행하세요:");
+            AppLogger.Info("[WinRtNotificationListener]    powershell -ExecutionPolicy Bypass -File tools/register-sparse-package.ps1");
+            AppLogger.Info("[WinRtNotificationListener] 현재는 'Altong.MockGenerator' 전용 로컬 파이프 리스너로 자동 전환되어 안전하게 실행됩니다.");
 
             _fallbackPipeListener = new LocalPipeNotificationListener();
             _fallbackPipeListener.NotificationReceived += (s, raw) => NotificationReceived?.Invoke(this, raw);
@@ -166,7 +169,7 @@ public sealed class WinRtNotificationListener : IWindowsNotificationListener
             }
 
             RawNotification raw = ExtractRawNotification(userNotification);
-            AppLogger.Info($"[WinRtNotificationListener] 🔔 WinRT 알림 수신: {raw.AppName} - '{raw.Title}': '{raw.Body}'");
+            AppLogger.Info($"[WinRtNotificationListener] WinRT 알림 수신: {raw.AppName} - '{raw.Title}': '{raw.Body}'");
             NotificationReceived?.Invoke(this, raw);
         }
         catch (Exception ex)

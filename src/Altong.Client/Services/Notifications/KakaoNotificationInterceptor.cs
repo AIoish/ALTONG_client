@@ -260,6 +260,29 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
         }
     }
 
+    private DateTimeOffset _lastPidCheck = DateTimeOffset.MinValue;
+
+    private uint EnsureKakaoPid(DateTimeOffset now)
+    {
+        if (now - _lastPidCheck < TimeSpan.FromSeconds(3))
+        {
+            return _kakaoPid;
+        }
+
+        _lastPidCheck = now;
+        try
+        {
+            var procs = System.Diagnostics.Process.GetProcessesByName("KakaoTalk");
+            _kakaoPid = procs.Length > 0 ? (uint)procs[0].Id : 0;
+        }
+        catch
+        {
+            _kakaoPid = 0;
+        }
+
+        return _kakaoPid;
+    }
+
     private void OnScannerTick(object? state)
     {
         if (!_isRunning)
@@ -270,6 +293,7 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
         try
         {
             var now = DateTimeOffset.UtcNow;
+            uint kakaoPid = EnsureKakaoPid(now);
 
             // 5초 이상 응답 없는 보류 창 자동 소멸 (타임아웃 안전망)
             foreach (var kvp in _pendingWindows)
@@ -278,10 +302,16 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
                 {
                     if (_pendingWindows.TryRemove(kvp.Key, out var expired))
                     {
-                        AppLogger.Warn($"[KakaoInterceptor] ⚠️ 알림 처리 타임아웃(5초 초과): 창을 안전하게 소멸합니다. (hWnd=0x{expired.Hwnd:X8})");
+                        AppLogger.Warn($"[KakaoInterceptor] 알림 처리 타임아웃(5초 초과): 창을 안전하게 소멸합니다. (hWnd=0x{expired.Hwnd:X8})");
                         _windowOperator.CloseWindow(expired.Hwnd);
                     }
                 }
+            }
+
+            // 카카오톡 프로세스가 실행 중이지 않은 환경에서는 전체 윈도우 스캔 생략 (CPU 0.0% 보장)
+            if (kakaoPid == 0)
+            {
+                return;
             }
 
             nint hWnd = nint.Zero;
@@ -330,10 +360,11 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
         }
 
         // 카카오톡 프로세스의 창인지 확인 (TargetPID 필터링)
-        if (_kakaoPid != 0)
+        uint kakaoPid = EnsureKakaoPid(now);
+        if (kakaoPid != 0)
         {
             GetWindowThreadProcessId(hWnd, out uint pid);
-            if (pid != _kakaoPid)
+            if (pid != kakaoPid)
             {
                 return;
             }
@@ -380,14 +411,14 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
             }
 
             bool isFocusMode = _isFocusModeEnabled();
-            AppLogger.Info($"[KakaoInterceptor] 🎯 카카오톡 알림 팝업 창 포착 성공: hWnd=0x{hWnd:X8} (집중모드={isFocusMode})");
+            string stealthTag = isFocusMode ? "스텔스 은닉" : "일반 표시";
+            AppLogger.Info($"[KakaoInterceptor] 카카오톡 알림 팝업 포착 & {stealthTag} (hWnd=0x{hWnd:X8})");
 
             // 2. 집중 모드 활성화 시: 사용자 눈에 보이기 전에 즉시 스텔스 숨김 (0ms 차단) 및 오디오 음소거 보장
             if (isFocusMode)
             {
                 _windowOperator.HideWindow(hWnd);
                 _audioOperator?.Mute();
-                AppLogger.Info($"[KakaoInterceptor] 🚨 카카오톡 알림 팝업 즉각 스텔스 은닉 완료: hWnd=0x{hWnd:X8}");
             }
 
             // 3. 팝업 UI로부터 발신자 및 메시지 본문 추출
@@ -407,8 +438,6 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
             {
                 _pendingWindows[notificationId] = new PendingWindowEntry(hWnd, DateTimeOffset.UtcNow);
             }
-
-            AppLogger.Info($"[KakaoInterceptor] 카카오톡 알림 포착: {extracted.Sender} - '{extracted.Body}' (집중모드={isFocusMode})");
 
             // 5. 알림 파이프라인으로 이벤트 전달
             NotificationReceived?.Invoke(this, rawNotification);
@@ -440,13 +469,13 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
                     System.Media.SystemSounds.Asterisk.Play();
                 }
                 catch { }
-                AppLogger.Info($"[KakaoInterceptor] 🔔 중요 카카오 알림 복원 및 차임 재생: {record.Sender} - '{record.Title}'");
+                AppLogger.Info($"[KakaoInterceptor] 중요 알림 복원 & 차임 안내: {record.Sender} - '{record.Title}'");
             }
             else
             {
                 // 차단 알림: 조용히 윈도우 닫기
                 _windowOperator.CloseWindow(entry.Hwnd);
-                AppLogger.Info($"[KakaoInterceptor] 차단 카카오 알림 완전 소멸: {record.Sender} - '{record.Title}'");
+                AppLogger.Info($"[KakaoInterceptor] 차단 알림 소멸 완료 (hWnd=0x{entry.Hwnd:X8})");
             }
         }
         catch (Exception ex)

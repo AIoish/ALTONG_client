@@ -36,17 +36,18 @@ public static class AppLogger
 
     private static void Log(string level, string message)
     {
-        var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}";
+        var consoleLine = $"[{DateTime.Now:HH:mm:ss}] [{level,-5}] {message}";
+        var fileLine = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}";
         
-        // 1. 콘솔 출력
-        Console.WriteLine(line);
+        // 1. 콘솔 출력 (표준 시간 및 레벨 정렬)
+        Console.WriteLine(consoleLine);
 
         // 2. 파일 출력 (비동기 잠금)
         try
         {
             lock (SyncLock)
             {
-                File.AppendAllText(LogPath, line + Environment.NewLine);
+                File.AppendAllText(LogPath, fileLine + Environment.NewLine);
             }
         }
         catch

@@ -205,7 +205,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         {
             if (_candidateWindow is not null)
             {
-                Console.WriteLine($"[{now.ToLocalTime():HH:mm:ss}] [DEFENSE] {_candidateWindow.ProcessName} (5초 미만 이탈) -> 직전 맥락 유지: {_stableWindow.ProcessName}");
+                AppLogger.Info($"[WindowTracker] [DEFENSE] {_candidateWindow.ProcessName} (<5s) -> 유지: {_stableWindow.ProcessName}");
                 _candidateWindow = null;
             }
 
@@ -220,8 +220,6 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
             // 새로운 후보 창 진입 감지 (후보 타이머 시작)
             _candidateWindow = window;
             _candidateEnteredAt = now;
-
-            Console.WriteLine($"[{now.ToLocalTime():HH:mm:ss}] [WAIT]    {window.ProcessName} ('{TruncateTitle(window.WindowTitle)}') (5초 체류 검증 시작)");
 
             // 아직 5초가 안 되었으므로 기존 안정 작업 맥락 유지
             return UpdateDurationForStableWindow(now);
@@ -248,7 +246,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
             (_stableWindow.Handle != window.Handle || _stableWindow.WindowTitle != window.WindowTitle))
         {
             int previousTotalDuration = Math.Max(0, (int)(enteredAt - _stableEnteredAt).TotalSeconds);
-            Console.WriteLine($"[{currentNow.ToLocalTime():HH:mm:ss}] [OUT]     {_stableWindow.ProcessName} ('{TruncateTitle(_stableWindow.WindowTitle)}') 최종 체류: {previousTotalDuration}s");
+            AppLogger.Info($"[WindowTracker] [OUT]     {_stableWindow.ProcessName} ('{TruncateTitle(_stableWindow.WindowTitle)}') 체류: {previousTotalDuration}s");
 
             var sessionEnded = new WindowSessionEndedEventArgs(
                 _stableWindow.ProcessName,
@@ -275,7 +273,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
             DurationSeconds: durationSeconds,
             RecentProcesses: [.. _recentProcesses]);
 
-        Console.WriteLine($"[{currentNow.ToLocalTime():HH:mm:ss}] [CONFIRM] {window.ProcessName} ('{TruncateTitle(window.WindowTitle)}') | 콤비: [{string.Join(", ", _recentProcesses)}]");
+        AppLogger.Info($"[WindowTracker] [CONFIRM] {window.ProcessName} ('{TruncateTitle(window.WindowTitle)}') | 콤비: [{string.Join(", ", _recentProcesses)}]");
 
         return _currentContext;
     }

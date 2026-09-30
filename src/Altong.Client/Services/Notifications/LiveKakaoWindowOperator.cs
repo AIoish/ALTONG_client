@@ -254,7 +254,6 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
         }
 
         int exStyle = GetWindowLong(hWnd, GwlExStyle);
-        AppLogger.Info($"[KakaoInterceptor] ✅ 카카오톡 순수 알림 팝업 창 확정: hWnd=0x{hWnd:X8}, Title='{title}', Pos=({r.Left},{r.Top}), Size=({width}x{height} [논리 {logicalWidth:F0}x{logicalHeight:F0}]), Style=0x{style:X8}, ExStyle=0x{exStyle:X8}");
         return true;
     }
 
@@ -389,7 +388,8 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
                         ocrText.Body != "(새 메시지)" &&
                         ocrText.Body != "(이모티콘 또는 미디어)")
                     {
-                        AppLogger.Info($"[KakaoInterceptor] ✅ OCR 텍스트 완벽 추출 성공 (시도 {attempt + 1}): 방제='{ocrText.Title}', 발신자='{ocrText.Sender}', 본문='{ocrText.Body}'");
+                        string senderPart = ocrText.Sender == ocrText.Title ? ocrText.Sender : $"[{ocrText.Title}] {ocrText.Sender}";
+                        AppLogger.Info($"[KakaoInterceptor] OCR 추출 완료 (시도 {attempt + 1}): {senderPart} - \"{ocrText.Body}\"");
                         return ocrText;
                     }
                 }
@@ -399,7 +399,8 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
 
             if (candidate != null)
             {
-                AppLogger.Info($"[KakaoInterceptor] ✅ OCR 텍스트 추출 완료 (후보): 방제='{candidate.Title}', 발신자='{candidate.Sender}', 본문='{candidate.Body}'");
+                string candidateSenderPart = candidate.Sender == candidate.Title ? candidate.Sender : $"[{candidate.Title}] {candidate.Sender}";
+                AppLogger.Info($"[KakaoInterceptor] OCR 추출 완료 (후보): {candidateSenderPart} - \"{candidate.Body}\"");
                 return candidate;
             }
 

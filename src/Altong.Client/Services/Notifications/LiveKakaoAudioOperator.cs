@@ -58,6 +58,8 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
             try
             {
                 var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+                int mutedCount = 0;
+                uint targetPid = 0;
 
                 // 1. 모든 활성 오디오 출력 장치(헤드폰, 스피커 등)의 카카오톡 세션 일괄 음소거/복원
                 int hr = enumerator.EnumAudioEndpoints(0 /*eRender*/, 1 /*DEVICE_STATE_ACTIVE*/, out var colPtr);
@@ -73,7 +75,11 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
                             {
                                 try
                                 {
-                                    MuteSessionsOnDevice(dev, mute);
+                                    if (MuteSessionsOnDevice(dev, mute, out uint pid))
+                                    {
+                                        mutedCount++;
+                                        targetPid = pid;
+                                    }
                                 }
                                 finally
                                 {
@@ -94,13 +100,23 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
                     {
                         try
                         {
-                            MuteSessionsOnDevice(defaultDev, mute);
+                            if (MuteSessionsOnDevice(defaultDev, mute, out uint pid))
+                            {
+                                mutedCount++;
+                                targetPid = pid;
+                            }
                         }
                         finally
                         {
                             Marshal.ReleaseComObject(defaultDev);
                         }
                     }
+                }
+
+                if (mutedCount > 0)
+                {
+                    string action = mute ? "음소거" : "음소거 해제";
+                    AppLogger.Info($"[KakaoAudio] 카카오톡 오디오 세션 {action} 완료 (PID: {targetPid})");
                 }
             }
             catch (Exception ex)
@@ -110,21 +126,23 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
         }
     }
 
-    private void MuteSessionsOnDevice(IMMDevice dev, bool mute)
+    private bool MuteSessionsOnDevice(IMMDevice dev, bool mute, out uint matchedPid)
     {
+        matchedPid = 0;
         var iid = typeof(IAudioSessionManager2).GUID;
         int hr = dev.Activate(ref iid, 23 /*CLSCTX_ALL*/, nint.Zero, out var objMgr);
         if (hr != 0 || objMgr is not IAudioSessionManager2 mgr)
         {
-            return;
+            return false;
         }
 
+        bool anyMuted = false;
         try
         {
             hr = mgr.GetSessionEnumerator(out var sessionEnum);
             if (hr != 0 || sessionEnum == null)
             {
-                return;
+                return false;
             }
 
             sessionEnum.GetCount(out int count);
@@ -145,8 +163,8 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
                         var vol = (ISimpleAudioVolume)Marshal.GetObjectForIUnknown(ctlPtr);
                         var context = Guid.Empty;
                         vol.SetMute(mute, ref context);
-                        string action = mute ? "음소거(Mute)" : "음소거 해제(Unmute)";
-                        AppLogger.Info($"[KakaoAudio] 🔊 카카오톡 오디오 세션 {action} 완료 (PID: {pid})");
+                        matchedPid = pid;
+                        anyMuted = true;
                     }
                 }
                 catch (Exception ex)
@@ -163,6 +181,8 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
         {
             Marshal.ReleaseComObject(mgr);
         }
+
+        return anyMuted;
     }
 
     private void TryInitializeSessionNotification()
@@ -211,7 +231,7 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
                 var vol = (ISimpleAudioVolume)Marshal.GetObjectForIUnknown(newSession);
                 var context = Guid.Empty;
                 vol.SetMute(true, ref context);
-                AppLogger.Info($"[KakaoAudio] 🔇 신규 생성된 카카오톡 오디오 세션 즉각 음소거 완료 (PID: {pid})");
+                AppLogger.Info($"[KakaoAudio] 신규 생성된 카카오톡 오디오 세션 음소거 완료 (PID: {pid})");
             }
         }
         catch { }
