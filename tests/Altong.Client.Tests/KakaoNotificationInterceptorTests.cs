@@ -69,7 +69,7 @@ public sealed class KakaoNotificationInterceptorTests
     }
 
     [TestMethod]
-    public void OnNotificationProcessed_PassedNotification_RestoresWindow()
+    public void OnNotificationProcessed_PassedNotification_ClosesWindowWithoutRestoring()
     {
         var fakeOp = new FakeKakaoWindowOperator();
         nint notiHwnd = 77777;
@@ -100,8 +100,8 @@ public sealed class KakaoNotificationInterceptorTests
 
         interceptor.OnNotificationProcessed(record);
 
-        Assert.IsTrue(fakeOp.ShownWindows.Contains(notiHwnd), "AI 통과 판정을 받은 알림 창은 화면에 다시 표시되어야 합니다.");
-        Assert.AreEqual(0, fakeOp.ClosedWindows.Count);
+        Assert.IsTrue(fakeOp.ClosedWindows.Contains(notiHwnd), "통과 알림도 원래 팝업을 닫고 미니바에서 표시합니다.");
+        Assert.AreEqual(0, fakeOp.ShownWindows.Count);
     }
 
     [TestMethod]
@@ -155,6 +155,45 @@ public sealed class KakaoNotificationInterceptorTests
 
         Assert.IsTrue(fakeAudio.IsMuted, "집중 모드 중 알림 발생 시 오디오 음소거가 활성화되어야 합니다.");
         Assert.IsTrue(fakeAudio.MuteCallCount >= 1, "Mute() 메서드가 최소 1회 호출되어야 합니다.");
+    }
+
+    [TestMethod]
+    public void ProcessedNotification_OutsideFocus_DoesNotCloseOrRestoreTheNormalPopup()
+    {
+        var windows = new FakeKakaoWindowOperator();
+        var audio = new FakeKakaoAudioOperator();
+        windows.NotificationWindows.Add(81234);
+        using var interceptor = new KakaoNotificationInterceptor(() => false, windows, audio);
+        RawNotification? raw = null;
+        interceptor.NotificationReceived += (_, notification) => raw = notification;
+        interceptor.HandleWindowShowEvent(81234);
+        Assert.IsNotNull(raw);
+        interceptor.OnNotificationProcessed(new NotificationRecord(raw.Id, raw.AppName, raw.Sender,
+            raw.Title, raw.Body, raw.Timestamp, IsPassed: true));
+        Assert.AreEqual(0, windows.HiddenWindows.Count);
+        Assert.AreEqual(0, windows.ClosedWindows.Count);
+        Assert.AreEqual(0, windows.ShownWindows.Count);
+        Assert.AreEqual(0, audio.MuteCallCount);
+    }
+
+    [TestMethod]
+    public void FocusEndsBeforeVerdict_ClosesOnlyThePopupCapturedDuringFocus()
+    {
+        bool focused = true;
+        var windows = new FakeKakaoWindowOperator();
+        windows.NotificationWindows.Add(81235);
+        using var interceptor = new KakaoNotificationInterceptor(() => focused, windows);
+        RawNotification? raw = null;
+        interceptor.NotificationReceived += (_, notification) => raw = notification;
+        interceptor.HandleWindowShowEvent(81235);
+        focused = false;
+        Assert.IsNotNull(raw);
+        var record = new NotificationRecord(raw.Id, raw.AppName, raw.Sender, raw.Title, raw.Body,
+            raw.Timestamp, IsPassed: true);
+        interceptor.OnNotificationProcessed(record);
+        interceptor.OnNotificationProcessed(record);
+        Assert.AreEqual(1, windows.ClosedWindows.Count, "중복 판정에도 한 번만 닫습니다.");
+        Assert.AreEqual(0, windows.ShownWindows.Count);
     }
 
     [TestMethod]

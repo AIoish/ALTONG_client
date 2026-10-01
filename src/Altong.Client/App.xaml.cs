@@ -111,11 +111,7 @@ public partial class App : System.Windows.Application
             () => FocusModeService.IsEnabled,
             () => SessionResults.CurrentSessionId);
 
-        // 카카오톡 알림 평가 후 스텔스 복원 또는 완전 소멸 후속 제어 연동
-        NotificationPipeline.NotificationProcessed += (_, record) =>
-        {
-            KakaoInterceptor.OnNotificationProcessed(record);
-        };
+        NotificationPipeline.NotificationProcessed += NotificationPipeline_NotificationProcessed;
 
         _ = NotificationPipeline.StartAsync();
 
@@ -155,6 +151,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        IsShuttingDown = true;
         FocusModeService.StateChanged -= FocusModeService_StateChanged;
         _routineTimer.Stop();
         _routineTimer.Tick -= RoutineTimer_Tick;
@@ -162,7 +159,11 @@ public partial class App : System.Windows.Application
             FocusRoutine.PhaseChanged -= FocusRoutine_PhaseChanged;
         PersistActivityStateForExit();
         ActiveWindowTracker.Dispose();
-        NotificationPipeline?.Dispose();
+        if (NotificationPipeline is not null)
+        {
+            NotificationPipeline.NotificationProcessed -= NotificationPipeline_NotificationProcessed;
+            NotificationPipeline.Dispose();
+        }
         KakaoAudioOperator?.Dispose();
 
         if (_focusModeCoordinator is not null)
@@ -176,6 +177,8 @@ public partial class App : System.Windows.Application
         {
             _notificationDockWindow.ToggleDashboardRequested -=
                 NotificationDockWindow_ToggleDashboardRequested;
+            _notificationDockWindow.Close();
+            _notificationDockWindow = null;
         }
 
         if (_windowsDndGuidanceWindow is not null)
@@ -361,6 +364,7 @@ public partial class App : System.Windows.Application
         var enabled = FocusModeService.IsEnabled;
         RunOnUiThread(() =>
         {
+            if (!enabled) _notificationDockWindow?.EndNotificationSession();
             if (ActivitySession.IsRecording)
             {
                 ActivitySession.SetFocusCaptureAsync(enabled, changedAt).GetAwaiter().GetResult();
@@ -377,6 +381,8 @@ public partial class App : System.Windows.Application
             {
                 KakaoAudioOperator?.Mute();
                 SessionResults.Begin(changedAt, FocusSettings.Current.FocusMinutes);
+                if (SessionResults.CurrentSessionId is { } sessionId)
+                    _notificationDockWindow?.BeginNotificationSession(sessionId);
             }
             else
             {
@@ -514,6 +520,20 @@ public partial class App : System.Windows.Application
         EventArgs e)
     {
         ToggleDashboard();
+    }
+
+    private void NotificationPipeline_NotificationProcessed(object? sender, NotificationRecord record)
+    {
+        // 수집 당시 숨긴 카톡 팝업 정리는 UI 표시와 독립적으로 수행한다.
+        KakaoInterceptor.OnNotificationProcessed(record);
+        if (IsShuttingDown || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            // 큐에서 기다리는 동안 집중 세션이 끝나거나 교체되었을 수도 있다.
+            if (IsShuttingDown || !FocusModeService.IsEnabled ||
+                record.SessionId != SessionResults.CurrentSessionId) return;
+            _notificationDockWindow?.ReceiveNotification(record);
+        }));
     }
 
     private void WindowsDndGuidanceWindow_CancelRequested(object? sender, EventArgs e)
