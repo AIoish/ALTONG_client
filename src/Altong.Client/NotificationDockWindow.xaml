@@ -45,11 +45,16 @@
               MouseMove="DockSurface_MouseMove"
               MouseLeftButtonUp="DockSurface_MouseLeftButtonUp"
               LostMouseCapture="DockSurface_LostMouseCapture"
-              ToolTip="집중 모드 진행 중&#x0a;클릭하여 대시보드 열기/닫기&#x0a;위아래로 드래그하여 위치 이동">
+              MouseEnter="DockSurface_MouseEnter" MouseLeave="DockSurface_MouseLeave"
+              AutomationProperties.Name="Altong 미니바"
+              AutomationProperties.HelpText="커서를 올려 알림 확인, 클릭하여 대시보드 열기, 위아래로 드래그하여 이동">
             <Grid.RenderTransform>
                 <ScaleTransform x:Name="ClickScale" ScaleX="1" ScaleY="1" />
             </Grid.RenderTransform>
-            <Border Background="#FF000000" BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="20">
+            <Border BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="20">
+                <Border.Background>
+                    <SolidColorBrush x:Name="DockBackground" Color="#FF000000" />
+                </Border.Background>
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="20" Direction="270" Opacity="0.35" ShadowDepth="4" Color="#000000" />
                 </Border.Effect>
@@ -75,11 +80,26 @@
                     <RowDefinition Height="44" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <Ellipse Grid.Row="0" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center" Fill="#72B5A6">
+                <Ellipse x:Name="StatusDot" Grid.Row="0" Width="10" Height="10" HorizontalAlignment="Center"
+                         VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False">
+                    <Ellipse.Fill>
+                        <SolidColorBrush x:Name="StatusDotBrush" Color="#72B5A6" />
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <ScaleTransform x:Name="StatusDotScale" />
+                    </Ellipse.RenderTransform>
                     <Ellipse.Effect>
-                        <DropShadowEffect BlurRadius="6" Opacity="0.35" ShadowDepth="0" Color="#72B5A6" />
+                        <DropShadowEffect x:Name="StatusDotGlow" BlurRadius="0" Opacity="0" ShadowDepth="0" Color="#72B5A6" />
                     </Ellipse.Effect>
                 </Ellipse>
+                <!-- 좁고 둥근 캡슐의 우상단을 벗어나지 않도록 배지는 원 바로 아래에 둔다. -->
+                <Border x:Name="UnreadBadge" Grid.Row="0" Grid.RowSpan="2" Visibility="Collapsed" IsHitTestVisible="False"
+                        HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,31,0,0"
+                        MinWidth="17" Height="16" Padding="3,0" CornerRadius="8"
+                        Background="#28242F" BorderBrush="#62566F" BorderThickness="1">
+                    <TextBlock x:Name="UnreadBadgeText" Foreground="#FFFFFF" FontSize="9" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
                 <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
                     <Ellipse Width="6" Height="6" Margin="0,3" Fill="#B8BBC4" />
                     <Ellipse Width="6" Height="6" Margin="0,3" Fill="#B8BBC4" />

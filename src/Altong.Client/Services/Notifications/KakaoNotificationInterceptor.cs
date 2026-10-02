@@ -7,7 +7,7 @@ namespace Altong.Client.Services.Notifications;
 
 /// <summary>
 /// 카카오톡의 독자적인 Win32 알림 팝업을 포착하여 실시간 가로채기(스텔스 숨김) 및
-/// AI 필터링 결과에 따라 복원(통과) 또는 소멸(차단)을 수행하는 전용 인터셉터.
+/// 집중 모드에서 숨긴 원래 팝업을 닫는 전용 인터셉터. 통과한 내용은 미니바에서 표시한다.
 /// </summary>
 public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
 {
@@ -449,7 +449,7 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
     }
 
     /// <summary>
-    /// 알림 파이프라인에서 AI 평가 및 DB 저장이 완료되었을 때 호출되어 창 복원 또는 소멸을 수행합니다.
+    /// 판정 완료 후 집중 모드에서 숨겨 둔 팝업을 닫습니다. 일반 수신 팝업은 건드리지 않습니다.
     /// </summary>
     public void OnNotificationProcessed(NotificationRecord record)
     {
@@ -460,23 +460,10 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
 
         try
         {
-            if (record.IsPassed == true)
-            {
-                // 통과(중요/긴급 알림): 화면에 다시 복원 표시 및 중요 알림 차임 안내
-                _windowOperator.ShowWindow(entry.Hwnd);
-                try
-                {
-                    System.Media.SystemSounds.Asterisk.Play();
-                }
-                catch { }
-                AppLogger.Info($"[KakaoInterceptor] 중요 알림 복원 & 차임 안내: {record.Sender} - '{record.Title}'");
-            }
-            else
-            {
-                // 차단 알림: 조용히 윈도우 닫기
-                _windowOperator.CloseWindow(entry.Hwnd);
-                AppLogger.Info($"[KakaoInterceptor] 차단 알림 소멸 완료 (hWnd=0x{entry.Hwnd:X8})");
-            }
+            // 통과 여부와 관계없이 원래 팝업·차임은 사용하지 않는다.
+            // 원문과 판정 결과는 이미 DB 및 NotificationProcessed 이벤트에 전달된다.
+            _windowOperator.CloseWindow(entry.Hwnd);
+            AppLogger.Info($"[KakaoInterceptor] 집중 알림 팝업 닫기 완료 (hWnd=0x{entry.Hwnd:X8}, passed={record.IsPassed})");
         }
         catch (Exception ex)
         {

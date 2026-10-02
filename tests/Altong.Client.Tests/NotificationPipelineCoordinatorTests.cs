@@ -214,7 +214,7 @@ public sealed class NotificationPipelineCoordinatorTests
     }
 
     [TestMethod]
-    public async Task NotificationPipeline_WithKakaoInterceptor_EndToEnd_HidesAndRestoresUrgentKakaoNotification()
+    public async Task NotificationPipeline_WithKakaoInterceptor_EndToEnd_ClosesUrgentPopupAndDeliversContent()
     {
         bool isFocusMode = true;
         string? sessionId = "sess_kakao_02";
@@ -252,9 +252,44 @@ public sealed class NotificationPipelineCoordinatorTests
         var record = await tcs.Task;
         Assert.AreEqual(true, record.IsPassed, "교수님 긴급 알림은 통과되어야 합니다.");
 
-        // 3. 통과 후 화면 복원(SW_SHOWNOACTIVATE) 검증
-        Assert.IsTrue(fakeOp.ShownWindows.Contains(kakaoHwnd), "통과된 알림은 화면에 다시 표시되어야 합니다.");
-        Assert.AreEqual(0, fakeOp.ClosedWindows.Count);
+        // 3. 원래 팝업은 닫되, 미니바에 필요한 원문과 판정은 전달한다.
+        Assert.IsTrue(fakeOp.ClosedWindows.Contains(kakaoHwnd));
+        Assert.AreEqual(0, fakeOp.ShownWindows.Count);
+        Assert.AreEqual("교수님", record.Sender);
+        Assert.AreEqual("[긴급] 프로젝트 피드백 확인 바랍니다.", record.Body);
+        Assert.AreEqual("sess_kakao_02", record.SessionId);
+    }
+
+    [TestMethod]
+    public async Task DelayedVerdict_KeepsOriginalSession_AndDockRejectsItAfterNextSessionStarts()
+    {
+        string currentSession = "old-session";
+        var filter = new DelayedFilterEngine();
+        var dock = new DockNotificationState();
+        dock.BeginSession(currentSession);
+        using var coordinator = new NotificationPipelineCoordinator(_fakeListener, _fakeTracker,
+            _notificationRepo, filter, () => true, () => currentSession);
+        StartFocusCaptureSession(DateTime.UtcNow.AddSeconds(-2));
+        var completion = new TaskCompletionSource<NotificationRecord>(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.NotificationProcessed += (_, record) => completion.TrySetResult(record);
+        await coordinator.StartAsync();
+        _fakeListener.EmitNotification(new RawNotification("delayed", "Slack", "팀원", "긴급", "원본 내용", DateTime.UtcNow));
+
+        dock.EndSession();
+        currentSession = "new-session";
+        dock.BeginSession(currentSession);
+        filter.Completion.SetResult(new FilterResult("delayed", true, 5, 4, "긴급 업무"));
+        var result = await completion.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.AreEqual("old-session", result.SessionId);
+        Assert.IsFalse(dock.Receive(result));
+        Assert.AreEqual(0, dock.Items.Count);
+        Assert.IsNotNull(await _notificationRepo.GetByIdAsync("delayed"), "늦은 결과도 DB 기록은 보존합니다.");
+    }
+
+    private sealed class DelayedFilterEngine : IFilterEngine
+    {
+        public TaskCompletionSource<FilterResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<FilterResult> EvaluateAsync(RawNotification notification, CurrentContext context) => Completion.Task;
     }
 
     private sealed class FakeActiveWindowTracker : IActiveWindowTracker

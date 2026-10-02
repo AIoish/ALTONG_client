@@ -18,6 +18,8 @@ public class OcrTests
 
         // Create a test bitmap with text (Using GenericSansSerif and universal ASCII text for CI compatibility)
         using var bmp = new Bitmap(350, 100);
+        // WPF UI 테스트가 먼저 실행되어 프로세스 DPI가 바뀌어도 글자가 잘리지 않도록 고정한다.
+        bmp.SetResolution(96, 96);
         using (var g = Graphics.FromImage(bmp))
         {
             g.Clear(Color.White);
