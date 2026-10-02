@@ -55,10 +55,13 @@ public class OcrTests
     public async Task TestKoreanSmallTextWithUpscaling()
     {
         var koLang = new Windows.Globalization.Language("ko-KR");
-        var ocr = OcrEngine.IsLanguageSupported(koLang)
-            ? OcrEngine.TryCreateFromLanguage(koLang)
-            : OcrEngine.TryCreateFromUserProfileLanguages();
+        if (!OcrEngine.IsLanguageSupported(koLang))
+        {
+            Assert.Inconclusive("Korean OCR language pack (ko-KR) is not installed on this system.");
+            return;
+        }
 
+        var ocr = OcrEngine.TryCreateFromLanguage(koLang);
         if (ocr == null)
         {
             Assert.Inconclusive("Korean OCR is not installed or available on this system.");
