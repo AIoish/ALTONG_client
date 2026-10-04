@@ -10,13 +10,8 @@ namespace Altong.Client.Services.Notifications;
 public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
 {
     private readonly object _syncLock = new();
-    private bool _shouldBeMuted;
+    private volatile bool _shouldBeMuted;
     private bool _isDisposed;
-
-    private IMMDeviceEnumerator? _deviceEnumerator;
-    private IMMDevice? _currentDevice;
-    private IAudioSessionManager2? _sessionManager;
-    private SessionNotificationListener? _notificationListener;
 
     public bool IsMuted
     {
@@ -31,7 +26,15 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
 
     public LiveKakaoAudioOperator()
     {
-        TryInitializeSessionNotification();
+        // 프로세스 예기치 않은 종료(Ctrl+C, 비정상 종료 등) 시 카카오톡 음소거가 잔류하지 않도록 안전망 등록
+        AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+
+        // 시작 시 혹시 이전 비정상 종료로 카카오톡이 음소거 상태로 남아있다면 안전하게 해제
+        try
+        {
+            SetKakaoTalkMute(false);
+        }
+        catch { }
     }
 
     public void Mute()
@@ -185,58 +188,6 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
         return anyMuted;
     }
 
-    private void TryInitializeSessionNotification()
-    {
-        try
-        {
-            _deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-            int hr = _deviceEnumerator.GetDefaultAudioEndpoint(0, 1, out _currentDevice);
-            if (hr != 0 || _currentDevice == null)
-            {
-                return;
-            }
-
-            var iid = typeof(IAudioSessionManager2).GUID;
-            hr = _currentDevice.Activate(ref iid, 23, nint.Zero, out var objMgr);
-            if (hr != 0 || objMgr is not IAudioSessionManager2 mgr)
-            {
-                return;
-            }
-
-            _sessionManager = mgr;
-            _notificationListener = new SessionNotificationListener(this);
-            _sessionManager.RegisterSessionNotification(_notificationListener);
-        }
-        catch (Exception ex)
-        {
-            AppLogger.Warn($"[KakaoAudio] 세션 알림 리스너 등록 생략(비오디오 환경): {ex.Message}");
-        }
-    }
-
-    private void HandleNewSession(nint newSession)
-    {
-        if (newSession == nint.Zero || !_shouldBeMuted)
-        {
-            return;
-        }
-
-        try
-        {
-            var ctl = (IAudioSessionControl2)Marshal.GetObjectForIUnknown(newSession);
-            ctl.GetProcessId(out uint pid);
-            if (pid == 0) return;
-
-            if (IsTargetProcess(pid))
-            {
-                var vol = (ISimpleAudioVolume)Marshal.GetObjectForIUnknown(newSession);
-                var context = Guid.Empty;
-                vol.SetMute(true, ref context);
-                AppLogger.Info($"[KakaoAudio] 신규 생성된 카카오톡 오디오 세션 음소거 완료 (PID: {pid})");
-            }
-        }
-        catch { }
-    }
-
     private static bool IsTargetProcess(uint pid)
     {
         try
@@ -250,6 +201,11 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
         }
     }
 
+    private void OnProcessExit(object? sender, EventArgs e)
+    {
+        Dispose();
+    }
+
     public void Dispose()
     {
         lock (_syncLock)
@@ -259,7 +215,7 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
                 return;
             }
 
-            _isDisposed = true;
+            AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
 
             // 종료 시 반드시 카카오톡 음소거 해제
             if (_shouldBeMuted)
@@ -267,29 +223,7 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
                 SetKakaoTalkMute(false);
             }
 
-            try
-            {
-                if (_sessionManager != null && _notificationListener != null)
-                {
-                    _sessionManager.UnregisterSessionNotification(_notificationListener);
-                }
-            }
-            catch { }
-
-            if (_sessionManager != null)
-            {
-                try { Marshal.ReleaseComObject(_sessionManager); } catch { }
-                _sessionManager = null;
-            }
-
-            if (_currentDevice != null)
-            {
-                try { Marshal.ReleaseComObject(_currentDevice); } catch { }
-                _currentDevice = null;
-            }
-
-            _deviceEnumerator = null;
-            _notificationListener = null;
+            _isDisposed = true;
         }
     }
 
@@ -335,8 +269,8 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
         int GetAudioSessionControl(ref Guid AudioSessionGuid, uint StreamFlags, out nint SessionControl);
         int GetSimpleAudioVolume(ref Guid AudioSessionGuid, uint StreamFlags, out ISimpleAudioVolume AudioVolume);
         int GetSessionEnumerator(out IAudioSessionEnumerator SessionEnum);
-        int RegisterSessionNotification(IAudioSessionNotification SessionNotification);
-        int UnregisterSessionNotification(IAudioSessionNotification SessionNotification);
+        int RegisterSessionNotification(nint SessionNotification);
+        int UnregisterSessionNotification(nint SessionNotification);
         int RegisterDuckNotification(string sessionID, nint duckNotification);
         int UnregisterDuckNotification(nint duckNotification);
     }
@@ -370,14 +304,6 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
     }
 
     [ComImport]
-    [Guid("641DD20B-4D41-4939-8357-1903698F813D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IAudioSessionNotification
-    {
-        [PreserveSig]
-        int OnSessionCreated(nint NewSession);
-    }
-
-    [ComImport]
     [Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface ISimpleAudioVolume
     {
@@ -385,29 +311,6 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
         int GetMasterVolume(out float pfLevel);
         int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid EventContext);
         int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
-    }
-
-    private sealed class SessionNotificationListener : IAudioSessionNotification
-    {
-        private readonly LiveKakaoAudioOperator _owner;
-
-        public SessionNotificationListener(LiveKakaoAudioOperator owner)
-        {
-            _owner = owner;
-        }
-
-        public int OnSessionCreated(nint newSession)
-        {
-            try
-            {
-                _owner.HandleNewSession(newSession);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Warn($"[KakaoAudio] 신규 오디오 세션 콜백 예외: {ex.Message}");
-            }
-            return 0; // S_OK
-        }
     }
 
     #endregion

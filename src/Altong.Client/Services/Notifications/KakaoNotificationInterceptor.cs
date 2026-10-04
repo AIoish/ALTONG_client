@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Altong.Client.Data.Models;
 using Altong.Client.Models;
@@ -13,10 +14,15 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
 {
     private const uint EventObjectShow = 0x8002;
     private const int ObjidWindow = 0;
+    private const int ObjidClient = -4;
     private const uint WinEventOutOfContext = 0x0000;
     private const uint WinEventSkipOwnProcess = 0x0002;
     private const uint WmQuit = 0x0012;
-    private const uint DesktopAllAccess = 0x01FF;
+    private const uint WmUser = 0x0400;
+    private const uint PmNoRemove = 0x0000;
+
+    private static readonly TimeSpan PendingTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan PidCacheDuration = TimeSpan.FromSeconds(3);
 
     private delegate void WinEventDelegate(
         nint hWinEventHook,
@@ -44,7 +50,10 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
     private static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
 
     [DllImport("user32.dll")]
-    private static extern bool GetMessage(out Msg lpMsg, nint hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+    private static extern int GetMessage(out Msg lpMsg, nint hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    [DllImport("user32.dll")]
+    private static extern bool PeekMessage(out Msg lpMsg, nint hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
 
     [DllImport("user32.dll")]
     private static extern bool TranslateMessage([In] ref Msg lpMsg);
@@ -58,14 +67,14 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern nint OpenDesktop(string lpszDesktop, int dwFlags, bool fInherit, uint dwDesiredAccess);
+    [DllImport("user32.dll")]
+    private static extern nint FindWindowEx(nint hwndParent, nint hwndChildAfter, string? lpszClass, string? lpszWindow);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool SetThreadDesktop(nint hDesktop);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(nint hWnd);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool CloseDesktop(nint hDesktop);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(nint hWnd);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Msg
@@ -84,28 +93,29 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
     private readonly Func<bool> _isFocusModeEnabled;
     private readonly ConcurrentDictionary<string, PendingWindowEntry> _pendingWindows = new();
 
+    // 이미 포착한 알림 창. 창이 사라지거나 숨겨질 때까지 다시 포착하지 않는다(스캐너가 정리).
+    private readonly ConcurrentDictionary<nint, byte> _capturedHwnds = new();
+
     private readonly object _syncRoot = new();
+    private readonly object _pidLock = new();
     private Thread? _hookThread;
     private uint _hookThreadId;
-    private nint _hookHandle;
+    private Task<bool>? _startTask;
+    private System.Threading.Timer? _scannerTimer;
     private WinEventDelegate? _winEventProc;
-    private bool _isRunning;
+    private volatile bool _isRunning;
     private bool _isDisposed;
+    private int _scanInProgress;
+    private uint _kakaoPid;
+    private DateTimeOffset _lastPidCheck = DateTimeOffset.MinValue;
 
     private record PendingWindowEntry(nint Hwnd, DateTimeOffset CreatedAt);
 
+    private readonly record struct Capture(nint Hwnd, string Id, bool IsFocusMode);
+
     public event EventHandler<RawNotification>? NotificationReceived;
 
-    public bool IsRunning
-    {
-        get
-        {
-            lock (_syncRoot)
-            {
-                return _isRunning;
-            }
-        }
-    }
+    public bool IsRunning => _isRunning;
 
     public KakaoNotificationInterceptor(
         Func<bool> isFocusModeEnabled,
@@ -117,24 +127,21 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
         _audioOperator = audioOperator;
     }
 
-    [DllImport("user32.dll")]
-    private static extern nint FindWindowEx(nint hwndParent, nint hwndChildAfter, string? lpszClass, string? lpszWindow);
-
-    private System.Threading.Timer? _scannerTimer;
-    private uint _kakaoPid;
-
     public Task<bool> StartAsync()
     {
         lock (_syncRoot)
         {
             ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-            if (_isRunning)
+            if (_startTask is not null)
             {
-                return Task.FromResult(true);
+                return _startTask;
             }
 
-            var tcs = new TaskCompletionSource<bool>();
+            // 훅 스레드에서 이어지는 await 연속 작업이 메시지 루프를 막지 않도록 비동기 완료
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _startTask = tcs.Task;
+            _isRunning = true;
 
             _hookThread = new Thread(() => RunHookLoop(tcs))
             {
@@ -144,7 +151,7 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
             _hookThread.SetApartmentState(ApartmentState.STA);
             _hookThread.Start();
 
-            // 50ms 주기 초고속 윈도우 스캐너 가동 (이벤트 훅 누락 시에도 50ms 내 즉각 은닉 보장)
+            // 50ms 백업 스캐너 (이벤트 훅이 놓친 팝업 포착 + 보류 창 타임아웃 정리)
             _scannerTimer = new System.Threading.Timer(OnScannerTick, null, 50, 50);
 
             return tcs.Task;
@@ -153,6 +160,9 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
 
     public void Stop()
     {
+        Thread? hookThread;
+        System.Threading.Timer? scannerTimer;
+
         lock (_syncRoot)
         {
             if (!_isRunning)
@@ -161,27 +171,23 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
             }
 
             _isRunning = false;
-
-            _scannerTimer?.Dispose();
+            _startTask = null;
+            scannerTimer = _scannerTimer;
             _scannerTimer = null;
+            hookThread = _hookThread;
+            _hookThread = null;
 
-            if (_hookHandle != nint.Zero)
-            {
-                UnhookWinEvent(_hookHandle);
-                _hookHandle = nint.Zero;
-            }
-
+            // 훅 스레드가 아직 ID를 등록하기 전이면, 스레드가 스스로 _isRunning=false를 보고 종료한다.
             if (_hookThreadId != 0)
             {
                 PostThreadMessage(_hookThreadId, WmQuit, nint.Zero, nint.Zero);
             }
         }
 
-        if (_hookThread is not null && _hookThread.IsAlive)
-        {
-            _hookThread.Join(1000);
-            _hookThread = null;
-        }
+        // 진행 중인 스캐너 콜백과 훅 스레드가 끝난 뒤에 보류 창을 정리해야 숨긴 창이 남지 않는다.
+        scannerTimer?.Dispose();
+        SpinWait.SpinUntil(() => Volatile.Read(ref _scanInProgress) == 0, 1000);
+        hookThread?.Join(1000);
 
         CleanupPendingWindows();
         AppLogger.Info("[KakaoInterceptor] 카카오톡 가로채기 엔진 중지 완료.");
@@ -189,31 +195,20 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
 
     private void RunHookLoop(TaskCompletionSource<bool> tcs)
     {
+        nint hook = nint.Zero;
         try
         {
-            _hookThreadId = GetCurrentThreadId();
+            // PostThreadMessage(WM_QUIT)가 유실되지 않도록 메시지 큐를 먼저 생성
+            PeekMessage(out _, nint.Zero, WmUser, WmUser, PmNoRemove);
 
             // 가비지 컬렉션 방지를 위해 필드에 delegate 유지
             _winEventProc = OnWinEvent;
-
-            // KakaoTalk 프로세스 PID 직접 타깃팅
-            uint kakaoPid = 0;
-            try
-            {
-                var procs = System.Diagnostics.Process.GetProcessesByName("KakaoTalk");
-                if (procs.Length > 0)
-                {
-                    kakaoPid = (uint)procs[0].Id;
-                    _kakaoPid = kakaoPid;
-                    AppLogger.Info($"[KakaoInterceptor] KakaoTalk 프로세스 감지 (PID: {kakaoPid})");
-                }
-            }
-            catch { }
+            uint kakaoPid = EnsureKakaoPid(DateTimeOffset.UtcNow);
 
             // 시스템/오브젝트 전 이벤트(0x0001 ~ 0x7FFFFFFF) 훅 등록
-            // 64비트 .NET 9 프로세스에서 32비트(WOW64) 카카오톡 창 이벤트를 누락 없이 수신하려면
+            // 64비트 .NET 9 프로세스에서 32비트(WOW64) 카카오톡 창 이벤트를 누락 없이 0ms로 수신하려면
             // idProcess=0(글로벌 훅)으로 등록 후 OnWinEvent 콜백에서 PID를 초고속(1ns) 필터링해야 함
-            _hookHandle = SetWinEventHook(
+            hook = SetWinEventHook(
                 0x0001,
                 0x7FFFFFFF,
                 nint.Zero,
@@ -222,24 +217,32 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
                 0,
                 WinEventOutOfContext | WinEventSkipOwnProcess);
 
-            if (_hookHandle == nint.Zero)
+            if (hook == nint.Zero)
             {
                 int err = Marshal.GetLastWin32Error();
                 AppLogger.Error($"[KakaoInterceptor] SetWinEventHook 등록 실패: ErrorCode={err}");
+                ResetAfterStartFailure();
                 tcs.TrySetResult(false);
                 return;
             }
 
             lock (_syncRoot)
             {
-                _isRunning = true;
+                if (!_isRunning)
+                {
+                    // 시작 도중 Stop이 호출됨
+                    tcs.TrySetResult(false);
+                    return;
+                }
+
+                _hookThreadId = GetCurrentThreadId();
             }
 
             AppLogger.Info($"[KakaoInterceptor] 카카오톡 전용 가로채기 훅 엔진 가동 시작. (TargetPID={kakaoPid})");
             tcs.TrySetResult(true);
 
-            // Win32 메시지 루프 가동 (훅 이벤트 처리를 위해 필수)
-            while (GetMessage(out Msg msg, nint.Zero, 0, 0))
+            // Win32 메시지 루프 가동 (훅 이벤트 처리를 위해 필수). GetMessage는 오류 시 -1을 반환한다.
+            while (GetMessage(out Msg msg, nint.Zero, 0, 0) > 0)
             {
                 TranslateMessage(ref msg);
                 DispatchMessage(ref msg);
@@ -248,68 +251,108 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
         catch (Exception ex)
         {
             AppLogger.Error($"[KakaoInterceptor] 훅 스레드 비정상 종료: {ex.Message}", ex);
+            ResetAfterStartFailure();
             tcs.TrySetResult(false);
         }
         finally
         {
-            if (_hookHandle != nint.Zero)
+            // UnhookWinEvent는 훅을 등록한 스레드에서 호출해야 한다.
+            if (hook != nint.Zero)
             {
-                UnhookWinEvent(_hookHandle);
-                _hookHandle = nint.Zero;
+                UnhookWinEvent(hook);
+            }
+
+            lock (_syncRoot)
+            {
+                _hookThreadId = 0;
             }
         }
     }
 
-    private DateTimeOffset _lastPidCheck = DateTimeOffset.MinValue;
+    private void ResetAfterStartFailure()
+    {
+        lock (_syncRoot)
+        {
+            if (_hookThread != Thread.CurrentThread)
+            {
+                return;
+            }
+
+            _isRunning = false;
+            _startTask = null;
+            _hookThread = null;
+            _scannerTimer?.Dispose();
+            _scannerTimer = null;
+        }
+    }
 
     private uint EnsureKakaoPid(DateTimeOffset now)
     {
-        if (now - _lastPidCheck < TimeSpan.FromSeconds(3))
+        lock (_pidLock)
         {
+            if (now - _lastPidCheck < PidCacheDuration)
+            {
+                return _kakaoPid;
+            }
+
+            _lastPidCheck = now;
+            try
+            {
+                var procs = Process.GetProcessesByName("KakaoTalk");
+                _kakaoPid = procs.Length > 0 ? (uint)procs[0].Id : 0;
+                foreach (var proc in procs)
+                {
+                    proc.Dispose();
+                }
+            }
+            catch
+            {
+                _kakaoPid = 0;
+            }
+
             return _kakaoPid;
         }
-
-        _lastPidCheck = now;
-        try
-        {
-            var procs = System.Diagnostics.Process.GetProcessesByName("KakaoTalk");
-            _kakaoPid = procs.Length > 0 ? (uint)procs[0].Id : 0;
-        }
-        catch
-        {
-            _kakaoPid = 0;
-        }
-
-        return _kakaoPid;
     }
 
     private void OnScannerTick(object? state)
     {
-        if (!_isRunning)
+        // 콜백 중첩 실행 방지 (플래그를 먼저 세운 뒤 _isRunning을 확인해야 Stop과 경합하지 않음)
+        if (Interlocked.Exchange(ref _scanInProgress, 1) == 1)
         {
             return;
         }
 
         try
         {
-            var now = DateTimeOffset.UtcNow;
-            uint kakaoPid = EnsureKakaoPid(now);
+            if (!_isRunning)
+            {
+                return;
+            }
 
-            // 5초 이상 응답 없는 보류 창 자동 소멸 (타임아웃 안전망)
+            var now = DateTimeOffset.UtcNow;
+
+            // 5초 이상 판정이 오지 않은 보류 창 자동 소멸 (타임아웃 안전망)
             foreach (var kvp in _pendingWindows)
             {
-                if (now - kvp.Value.CreatedAt > TimeSpan.FromSeconds(5))
+                if (now - kvp.Value.CreatedAt > PendingTimeout &&
+                    _pendingWindows.TryRemove(kvp.Key, out var expired))
                 {
-                    if (_pendingWindows.TryRemove(kvp.Key, out var expired))
-                    {
-                        AppLogger.Warn($"[KakaoInterceptor] 알림 처리 타임아웃(5초 초과): 창을 안전하게 소멸합니다. (hWnd=0x{expired.Hwnd:X8})");
-                        _windowOperator.CloseWindow(expired.Hwnd);
-                    }
+                    AppLogger.Warn($"[KakaoInterceptor] 알림 처리 타임아웃(5초 초과): 창을 안전하게 소멸합니다. (hWnd=0x{expired.Hwnd:X8})");
+                    _windowOperator.CloseWindow(expired.Hwnd);
                 }
             }
 
-            // 카카오톡 프로세스가 실행 중이지 않은 환경에서는 전체 윈도우 스캔 생략 (CPU 0.0% 보장)
-            if (kakaoPid == 0)
+            // 파괴된 창은 포착 목록에서 제거
+            foreach (var hwnd in _capturedHwnds.Keys)
+            {
+                if (!IsWindow(hwnd))
+                {
+                    _capturedHwnds.TryRemove(hwnd, out _);
+                }
+            }
+
+            // 카카오톡 프로세스가 실행 중이지 않으면 전체 윈도우 스캔 생략
+            if (EnsureKakaoPid(now) == 0)
             {
                 return;
             }
@@ -317,21 +360,21 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
             nint hWnd = nint.Zero;
             while ((hWnd = FindWindowEx(nint.Zero, hWnd, null, null)) != nint.Zero)
             {
-                if (_recentlyHandledHwnds.TryGetValue(hWnd, out var lastTime) && now - lastTime < TimeSpan.FromSeconds(3.0))
+                if (!_capturedHwnds.ContainsKey(hWnd) && _windowOperator.IsNotificationWindow(hWnd))
                 {
-                    continue;
-                }
-
-                if (_windowOperator.IsNotificationWindow(hWnd))
-                {
-                    HandleWindowShowEvent(hWnd);
+                    OnWindowDetected(hWnd);
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            AppLogger.Warn($"[KakaoInterceptor] 백업 스캐너 오류: {ex.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref _scanInProgress, 0);
+        }
     }
-
-    private readonly ConcurrentDictionary<nint, DateTimeOffset> _recentlyHandledHwnds = new();
 
     private void OnWinEvent(
         nint hWinEventHook,
@@ -342,109 +385,116 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
         uint dwEventThread,
         uint dwmsEventTime)
     {
-        if (hWnd == nint.Zero)
+        if (hWnd == nint.Zero || (idObject != ObjidWindow && idObject != ObjidClient))
         {
             return;
         }
 
-        // 창 레벨 이벤트(OBJID_WINDOW=0 또는 OBJID_CLIENT=-4)만 수신
-        if (idObject != 0 && idObject != -4)
+        if (_capturedHwnds.ContainsKey(hWnd))
         {
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
-        if (_recentlyHandledHwnds.TryGetValue(hWnd, out var lastTime) && now - lastTime < TimeSpan.FromSeconds(3.0))
+        // 카카오톡 프로세스의 창인지 확인 (카카오톡 미실행 시 즉시 무시)
+        uint kakaoPid = EnsureKakaoPid(DateTimeOffset.UtcNow);
+        if (kakaoPid == 0)
         {
             return;
         }
 
-        // 카카오톡 프로세스의 창인지 확인 (TargetPID 필터링)
-        uint kakaoPid = EnsureKakaoPid(now);
-        if (kakaoPid != 0)
+        GetWindowThreadProcessId(hWnd, out uint pid);
+        if (pid != kakaoPid)
         {
-            GetWindowThreadProcessId(hWnd, out uint pid);
-            if (pid != kakaoPid)
-            {
-                return;
-            }
+            return;
         }
 
-        HandleWindowShowEvent(hWnd);
+        OnWindowDetected(hWnd);
     }
 
     /// <summary>
-    /// 카카오톡 윈도우 표시 이벤트를 처리합니다. (단위 테스트 및 모의 환경에서 직접 호출 가능)
+    /// 훅/스캐너 경로: 숨김까지만 즉시 처리하고, 수백 ms 이상 걸리는 OCR은 워커 스레드로 넘긴다.
+    /// </summary>
+    private void OnWindowDetected(nint hWnd)
+    {
+        if (TryBeginCapture(hWnd, out var capture))
+        {
+            ThreadPool.QueueUserWorkItem(_ => CompleteCapture(capture));
+        }
+    }
+
+    /// <summary>
+    /// 카카오톡 윈도우 표시 이벤트를 동기적으로 처리합니다. (단위 테스트 및 모의 환경에서 직접 호출 가능)
     /// </summary>
     public void HandleWindowShowEvent(nint hWnd)
     {
+        if (TryBeginCapture(hWnd, out var capture))
+        {
+            CompleteCapture(capture);
+        }
+    }
+
+    private bool TryBeginCapture(nint hWnd, out Capture capture)
+    {
+        capture = default;
         try
         {
-            var now = DateTimeOffset.UtcNow;
-
-            // 1. 원자적(Atomic) 중복 진입 차단: 동시 호출(훅 + 타이머) 중 최초 1개 스레드만 허용
-            if (!_recentlyHandledHwnds.TryAdd(hWnd, now))
-            {
-                if (_recentlyHandledHwnds.TryGetValue(hWnd, out var lastTime) && now - lastTime < TimeSpan.FromSeconds(3.0))
-                {
-                    return;
-                }
-                _recentlyHandledHwnds[hWnd] = now;
-            }
-
-            if (_recentlyHandledHwnds.Count > 100)
-            {
-                foreach (var kv in _recentlyHandledHwnds)
-                {
-                    if (now - kv.Value > TimeSpan.FromSeconds(10))
-                    {
-                        _recentlyHandledHwnds.TryRemove(kv.Key, out _);
-                    }
-                }
-            }
-
-            // 2. 카카오톡 알림 팝업 창 여부 판정
+            // 1. 카카오톡 알림 팝업 창 여부 판정
             if (!_windowOperator.IsNotificationWindow(hWnd))
             {
-                // 알림 창이 아닌 일반 윈도우는 3초간 재검사를 건너뛰어 반복 부하 및 오인 방지
-                return;
+                return false;
+            }
+
+            // 2. 원자적 중복 진입 차단: 훅과 스캐너가 동시에 같은 창을 잡아도 하나만 통과
+            if (!_capturedHwnds.TryAdd(hWnd, 0))
+            {
+                return false;
             }
 
             bool isFocusMode = _isFocusModeEnabled();
+            capture = new Capture(hWnd, $"kakao_{Guid.NewGuid():N}", isFocusMode);
+
             string stealthTag = isFocusMode ? "스텔스 은닉" : "일반 표시";
             AppLogger.Info($"[KakaoInterceptor] 카카오톡 알림 팝업 포착 & {stealthTag} (hWnd=0x{hWnd:X8})");
 
-            // 2. 집중 모드 활성화 시: 사용자 눈에 보이기 전에 즉시 스텔스 숨김 (0ms 차단) 및 오디오 음소거 보장
+            // 3. 집중 모드: 보류 목록에 먼저 등록(판정/타임아웃/종료 시 반드시 닫힘)한 뒤 즉시 숨김 및 오디오 음소거
             if (isFocusMode)
             {
+                _pendingWindows[capture.Id] = new PendingWindowEntry(hWnd, DateTimeOffset.UtcNow);
                 _windowOperator.HideWindow(hWnd);
                 _audioOperator?.Mute();
             }
 
-            // 3. 팝업 UI로부터 발신자 및 메시지 본문 추출
-            KakaoNotificationText extracted = _windowOperator.ExtractNotificationText(hWnd);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error($"[KakaoInterceptor] 윈도우 가로채기 처리 중 오류: {ex.Message}", ex);
+            return false;
+        }
+    }
 
-            string notificationId = $"kakao_{Guid.NewGuid():N}";
+    private void CompleteCapture(Capture capture)
+    {
+        try
+        {
+
+            // 팝업 UI로부터 발신자 및 메시지 본문 추출
+            KakaoNotificationText extracted = _windowOperator.ExtractNotificationText(capture.Hwnd);
+
             var rawNotification = new RawNotification(
-                Id: notificationId,
+                Id: capture.Id,
                 AppName: "KakaoTalk.exe",
                 Sender: extracted.Sender ?? string.Empty,
                 Title: extracted.Title,
                 Body: extracted.Body,
                 Timestamp: DateTime.UtcNow);
 
-            // 4. 집중 모드인 경우 AI 판정 대기 목록에 등록
-            if (isFocusMode)
-            {
-                _pendingWindows[notificationId] = new PendingWindowEntry(hWnd, DateTimeOffset.UtcNow);
-            }
-
-            // 5. 알림 파이프라인으로 이벤트 전달
+            // 알림 파이프라인으로 이벤트 전달
             NotificationReceived?.Invoke(this, rawNotification);
         }
         catch (Exception ex)
         {
-            AppLogger.Error($"[KakaoInterceptor] 윈도우 가로채기 처리 중 오류: {ex.Message}", ex);
+            AppLogger.Error($"[KakaoInterceptor] 알림 텍스트 추출/전달 중 오류: {ex.Message}", ex);
         }
     }
 
