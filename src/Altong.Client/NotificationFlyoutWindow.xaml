@@ -1,6 +1,7 @@
 <Window x:Class="Altong.Client.NotificationFlyoutWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:services="clr-namespace:Altong.Client.Services"
         Title="Altong 중요 알림" Width="332" Height="480"
         AllowsTransparency="True" Background="Transparent"
         WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
@@ -12,6 +13,7 @@
         <SolidColorBrush x:Key="PrimaryText" Color="#F3F4F6" />
         <SolidColorBrush x:Key="MutedText" Color="#ADB2BD" />
         <SolidColorBrush x:Key="Accent" Color="#A6D5FF" />
+        <SolidColorBrush x:Key="ReadCardSurface" Color="#27292C" />
         <LinearGradientBrush x:Key="WindowSurface" StartPoint="0,0" EndPoint="1,1">
             <GradientStop Color="#272D33" Offset="0" />
             <GradientStop Color="#26282B" Offset=".45" />
@@ -129,6 +131,9 @@
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Surface" Property="Opacity" Value=".6" />
                             </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Surface" Property="Opacity" Value=".35" />
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -170,7 +175,7 @@
     <Grid Background="Transparent" Margin="8">
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="DetailColumn" Width="0" />
-            <ColumnDefinition Width="316" />
+            <ColumnDefinition x:Name="ListColumn" Width="316" />
         </Grid.ColumnDefinitions>
         <Border x:Name="DetailPanel" Grid.Column="0" Visibility="Collapsed" Margin="0,0,12,0"
                 Style="{StaticResource PanelSurface}" Padding="20">
@@ -200,7 +205,7 @@
                                    FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,14" />
                         <TextBlock Text="{Binding Body}" FontSize="14" LineHeight="24" TextWrapping="Wrap" />
                         <Border Margin="0,24,0,0" BorderBrush="#3D3F42" BorderThickness="0,1,0,0" Padding="0,14,0,0">
-                            <TextBlock Text="읽은 알림은 이번 집중이 끝날 때까지 남아 있어요."
+                            <TextBlock Text="읽은 알림은 다시 확인하거나 ‘읽은 알림 삭제’로 목록에서 지울 수 있어요."
                                        Foreground="{StaticResource MutedText}" FontSize="11" TextWrapping="Wrap" />
                         </Border>
                     </StackPanel>
@@ -212,13 +217,14 @@
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid Margin="0,0,0,18">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="중요 알림" FontSize="16" FontWeight="SemiBold" />
+                        <TextBlock x:Name="ListHeading" Text="중요 알림" FontSize="16" FontWeight="SemiBold" />
                         <TextBlock x:Name="CountText" Margin="0,6,0,0" FontSize="11" Foreground="{StaticResource MutedText}" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
@@ -228,7 +234,17 @@
                                 ToolTip="알림 패널 닫기" AutomationProperties.Name="알림 패널 닫기" />
                     </StackPanel>
                 </Grid>
-                <Grid Grid.Row="1">
+                <StackPanel x:Name="RoutineBand" Grid.Row="1" Visibility="Collapsed" Margin="0,0,0,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock x:Name="RoutinePhaseText" Text="집중 대기" Foreground="{StaticResource MutedText}" FontSize="11" VerticalAlignment="Center" />
+                        <Button x:Name="RoutineActionButton" Grid.Column="1" Content="집중 중단" Click="ToggleFocus_Click"
+                                Style="{StaticResource HeaderButton}" Width="88" Height="32" FontSize="12"
+                                Foreground="{StaticResource PrimaryText}" Background="#35383F" VerticalAlignment="Center"
+                                AutomationProperties.Name="집중 모드 전환" ToolTip="Windows 방해 금지 설정과 연결하여 집중 모드 전환" />
+                    </Grid>
+                </StackPanel>
+                <Grid Grid.Row="2">
                     <StackPanel x:Name="EmptyState" VerticalAlignment="Center" Margin="12">
                         <Border Width="40" Height="40" Background="#303841" CornerRadius="10" Margin="0,0,0,16">
                             <TextBlock Text="&#xEA8F;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Accent}"
@@ -248,13 +264,13 @@
                                             AutomationProperties.Name="{Binding Title}">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
-                                                <Border x:Name="Card" Background="{StaticResource CardSurface}" BorderBrush="#3D3F42"
+                                                <Border x:Name="Card" Background="{DynamicResource CardSurface}" BorderBrush="#3D3F42"
                                                         BorderThickness="1" CornerRadius="8" Padding="14">
                                                     <ContentPresenter />
                                                 </Border>
                                                 <ControlTemplate.Triggers>
                                                     <DataTrigger Binding="{Binding IsRead}" Value="True">
-                                                        <Setter TargetName="Card" Property="Background" Value="#27292C" />
+                                                        <Setter TargetName="Card" Property="Background" Value="{DynamicResource ReadCardSurface}" />
                                                         <Setter TargetName="Card" Property="BorderBrush" Value="#373A3F" />
                                                     </DataTrigger>
                                                     <Trigger Property="IsMouseOver" Value="True">
@@ -309,8 +325,39 @@
                         </ItemsControl>
                     </ScrollViewer>
                 </Grid>
-                <TextBlock Grid.Row="2" Text="카드를 눌러 자세히 확인하세요" FontSize="11" Foreground="{StaticResource MutedText}"
-                           Margin="0,12,0,0" />
+                <StackPanel Grid.Row="3" Margin="0,12,0,0">
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="MarkAllReadButton" Content="모두 읽기" Click="MarkAllRead_Click"
+                                Style="{StaticResource HeaderButton}" Width="Auto" Height="28" FontSize="11"
+                                Background="#303235" ToolTip="이번 집중 세션의 알림을 모두 읽음으로 표시"
+                                AutomationProperties.Name="모두 읽기" />
+                        <Button x:Name="DeleteReadButton" Grid.Column="2" Content="읽은 알림 삭제" Click="DeleteRead_Click"
+                                Style="{StaticResource HeaderButton}" Width="Auto" Height="28" FontSize="11"
+                                Background="#303235" ToolTip="이번 집중 세션의 목록에서 읽은 알림만 삭제. 대시보드 기록은 유지됩니다."
+                                AutomationProperties.Name="읽은 알림 삭제" />
+                    </Grid>
+                    <TextBlock Text="카드를 눌러 자세히 확인하세요" FontSize="11" Foreground="{StaticResource MutedText}" />
+                    <Grid Margin="0,10,0,0">
+                        <Button Style="{StaticResource HeaderButton}" Content="&#xE80F;" FontFamily="Segoe MDL2 Assets"
+                                HorizontalAlignment="Left" Click="Dashboard_Click" ToolTip="대시보드 활성화/최소화"
+                                AutomationProperties.Name="대시보드 활성화/최소화" />
+                        <Border Background="#202225" CornerRadius="8" Padding="2" HorizontalAlignment="Right">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="NotchDesignButton" Content="가로" Tag="{x:Static services:DockPresentation.RightNotch}"
+                                        Click="SwitchPresentation_Click" Style="{StaticResource HeaderButton}" Width="64" Height="26" Margin="1" FontSize="11"
+                                        ToolTip="작업표시줄 위 가로 캡슐 미니바" AutomationProperties.Name="가로 캡슐 미니바 디자인" />
+                                <Button x:Name="ClassicDesignButton" Content="기존" Tag="{x:Static services:DockPresentation.Classic}"
+                                        Click="SwitchPresentation_Click" Style="{StaticResource HeaderButton}" Width="64" Height="26" Margin="1" FontSize="11"
+                                        ToolTip="기존 미니바" AutomationProperties.Name="기존 미니바 디자인" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </StackPanel>
             </Grid>
         </Border>
     </Grid>

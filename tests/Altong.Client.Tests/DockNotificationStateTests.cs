@@ -32,6 +32,53 @@ public sealed class DockNotificationStateTests
     }
 
     [TestMethod]
+    public void MarkAllRead_PreservesDetailAndPin_AndLaterArrivalIsUnread()
+    {
+        var state = new DockNotificationState();
+        state.BeginSession("current");
+        state.Receive(Record("older", 0));
+        state.Receive(Record("newer", 1, 5));
+        state.OpenPanel();
+        state.TogglePin();
+        state.OpenDetail("older");
+        var selected = state.SelectedItem;
+        state.MarkAllRead();
+        Assert.AreEqual(0, state.UnreadCount);
+        Assert.AreEqual(0, state.HighestUrgency);
+        Assert.AreEqual(2, state.Items.Count);
+        Assert.AreSame(selected, state.SelectedItem);
+        Assert.IsTrue(state.IsPanelOpen && state.IsPinned);
+        CollectionAssert.AreEqual(new[] { "newer", "older" }, state.Items.Select(item => item.Id).ToArray());
+        state.Receive(Record("late-result", -1));
+        Assert.AreEqual(1, state.UnreadCount);
+        Assert.AreEqual("late-result", state.Items[0].Id);
+    }
+
+    [TestMethod]
+    public void DeleteRead_LeavesUnreadAndPin_AndRejectsDeletedDuplicatesUntilNextSession()
+    {
+        var state = new DockNotificationState();
+        state.BeginSession("current");
+        state.Receive(Record("read"));
+        state.Receive(Record("unread", 1));
+        state.OpenPanel();
+        state.TogglePin();
+        state.OpenDetail("read");
+        state.DeleteRead();
+        Assert.IsNull(state.SelectedItem);
+        Assert.IsTrue(state.IsPanelOpen && state.IsPinned);
+        Assert.AreEqual("unread", state.Items.Single().Id);
+        Assert.AreEqual(1, state.UnreadCount);
+        Assert.IsFalse(state.Receive(Record("read")));
+        state.MarkAllRead();
+        state.DeleteRead();
+        Assert.AreEqual(0, state.Items.Count);
+        state.DeleteRead();
+        state.BeginSession("next");
+        Assert.IsTrue(state.Receive(Record("read", session: "next")));
+    }
+
+    [TestMethod]
     public void OpenDetail_UpdatesCountImmediately_ButDefersReorderUntilDetailCloses()
     {
         var state = new DockNotificationState();

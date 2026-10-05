@@ -96,11 +96,39 @@ public sealed class DockNotificationState
         Notify();
     }
 
+    public void MarkAllRead()
+    {
+        if (!IsActive || IsDragging || UnreadCount == 0) return;
+        foreach (var item in _items)
+        {
+            item.MarkRead();
+            item.SortAsUnread = false;
+        }
+        ReorderItems();
+        Notify();
+    }
+
+    public void DeleteRead()
+    {
+        if (!IsActive || IsDragging) return;
+        var readItems = _items.Where(item => item.IsRead).ToArray();
+        if (readItems.Length == 0) return;
+        if (SelectedItem?.IsRead == true) SelectedItem = null;
+        foreach (var item in readItems) _items.Remove(item);
+        // 같은 세션의 지연·중복 결과로 삭제한 알림이 다시 나타나지 않도록 ID는 유지한다.
+        Notify();
+    }
+
     private void FinalizeSelectedRead()
     {
         if (SelectedItem is not { } selected) return;
         selected.SortAsUnread = false;
         SelectedItem = null;
+        ReorderItems();
+    }
+
+    private void ReorderItems()
+    {
         var ordered = _items.OrderBy(item => item, Comparer<DockNotificationItem>.Create(Compare)).ToArray();
         for (int i = 0; i < ordered.Length; i++)
         {
