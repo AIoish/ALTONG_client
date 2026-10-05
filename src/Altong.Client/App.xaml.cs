@@ -130,7 +130,6 @@ public partial class App : System.Windows.Application
         _notificationDockWindow.RoutineStatusProvider = () => new DockRoutineStatus(FocusRoutine.Phase);
         _notificationDockWindow.ShowDashboardRequested +=
             NotificationDockWindow_ShowDashboardRequested;
-        _notificationDockWindow.ToggleFocusRequested += NotificationDockWindow_ToggleFocusRequested;
 
         _windowsDndGuidanceWindow = new WindowsDndGuidanceWindow();
         _windowsDndGuidanceWindow.CancelRequested +=
@@ -179,7 +178,6 @@ public partial class App : System.Windows.Application
         {
             _notificationDockWindow.ShowDashboardRequested -=
                 NotificationDockWindow_ShowDashboardRequested;
-            _notificationDockWindow.ToggleFocusRequested -= NotificationDockWindow_ToggleFocusRequested;
             _notificationDockWindow.Close();
             _notificationDockWindow = null;
         }
@@ -529,11 +527,6 @@ public partial class App : System.Windows.Application
             else
                 ShowDashboard();
         });
-    }
-
-    private void NotificationDockWindow_ToggleFocusRequested(object? sender, EventArgs e)
-    {
-        _focusModeCoordinator?.RequestToggle();
     }
 
     private void NotificationPipeline_NotificationProcessed(object? sender, NotificationRecord record)

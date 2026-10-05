@@ -65,7 +65,6 @@ public partial class NotificationDockWindow : Window
     }
 
     public event EventHandler? ShowDashboardRequested;
-    public event EventHandler? ToggleFocusRequested;
 
     public void SetPresentation(DockPresentation presentation)
     {
@@ -104,7 +103,6 @@ public partial class NotificationDockWindow : Window
     private void SwitchPresentationRequested(object? sender, DockPresentation presentation) => SetPresentation(presentation);
 
     private void Flyout_ShowDashboardRequested(object? sender, EventArgs e) => ShowDashboardRequested?.Invoke(this, e);
-    private void Flyout_ToggleFocusRequested(object? sender, EventArgs e) => ToggleFocusRequested?.Invoke(this, e);
 
     public bool IsReminderVisible => ReminderBubble.Visibility == Visibility.Visible;
 
@@ -186,7 +184,6 @@ public partial class NotificationDockWindow : Window
             ReminderStatusText.Text = _statusProvider();
         var routine = RoutineStatusProvider?.Invoke() ?? DockRoutineStatus.Idle;
         NotchSurface.ToolTip = routine.Label;
-        _notificationFlyout?.UpdateRoutine(routine, ToggleFocusRequested is not null);
     }
 
     private void HideReminderBubble()
@@ -436,7 +433,6 @@ public partial class NotificationDockWindow : Window
             _notificationFlyout.MouseLeave -= Flyout_MouseLeave;
             _notificationFlyout.SwitchPresentationRequested -= SwitchPresentationRequested;
             _notificationFlyout.ShowDashboardRequested -= Flyout_ShowDashboardRequested;
-            _notificationFlyout.ToggleFocusRequested -= Flyout_ToggleFocusRequested;
             _notificationFlyout.Close();
             _notificationFlyout = null;
         }
@@ -546,7 +542,6 @@ public partial class NotificationDockWindow : Window
                 _notificationFlyout.MouseLeave += Flyout_MouseLeave;
                 _notificationFlyout.SwitchPresentationRequested += SwitchPresentationRequested;
                 _notificationFlyout.ShowDashboardRequested += Flyout_ShowDashboardRequested;
-                _notificationFlyout.ToggleFocusRequested += Flyout_ToggleFocusRequested;
                 _notificationFlyout.SetPresentation(Presentation);
             }
             _notificationFlyout.Refresh();

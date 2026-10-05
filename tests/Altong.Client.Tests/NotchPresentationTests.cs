@@ -35,8 +35,7 @@ public sealed class NotchPresentationTests
                 Left = -10000, Top = -10000,
                 RoutineStatusProvider = () => new(FocusRoutinePhase.Focus),
             };
-            int toggleFocusCount = 0, dashboardCount = 0;
-            dock.ToggleFocusRequested += (_, _) => toggleFocusCount++;
+            int dashboardCount = 0;
             dock.ShowDashboardRequested += (_, _) => dashboardCount++;
             try
             {
@@ -89,8 +88,6 @@ public sealed class NotchPresentationTests
                 dock.ReceiveNotification(Record("third", 3, "지훈", "검토가 끝나면 알려주세요."));
                 Assert.AreEqual(3, state.Items.Count);
                 Assert.AreEqual("first", state.SelectedItem!.Id);
-                ((Button)flyout.FindName("RoutineActionButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                Assert.AreEqual(1, toggleFocusCount);
 
                 var classicButton = (Button)flyout.FindName("ClassicDesignButton");
                 classicButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -102,8 +99,10 @@ public sealed class NotchPresentationTests
                 Assert.AreEqual(2, state.UnreadCount);
                 Assert.AreEqual("선택됨", System.Windows.Automation.AutomationProperties.GetItemStatus(classicButton));
                 Assert.AreEqual("선택 안 됨", System.Windows.Automation.AutomationProperties.GetItemStatus(switchButton));
-                Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)flyout.FindName("RoutineBand")).Visibility);
+                Assert.IsNull(flyout.FindName("RoutineBand"));
                 Assert.AreEqual(0, dashboardCount, "디자인 전환으로 대시보드를 열거나 집중을 토글하면 안 됩니다.");
+                ((Button)flyout.FindName("DashboardButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.AreEqual(1, dashboardCount, "홈 버튼은 대시보드 활성화·최소화 요청을 전달합니다.");
                 dock.EndNotificationSession();
                 Assert.AreEqual(0, state.Items.Count);
                 Assert.IsFalse(flyout.IsVisible);
@@ -152,7 +151,7 @@ public sealed class NotchPresentationTests
 
                 routine = new(FocusRoutinePhase.Break);
                 dock.ShowRoutineReminder("휴식 시간", () => "휴식 · 05:00", "잠시 쉬어가세요.");
-                Assert.AreEqual("휴식 중", ((TextBlock)flyout.FindName("RoutinePhaseText")).Text);
+                Assert.AreEqual("휴식 중", ((FrameworkElement)dock.FindName("NotchSurface")).ToolTip);
                 Assert.IsFalse(dock.IsReminderVisible, "읽는 중인 패널을 루틴 안내가 가리지 않아야 합니다.");
                 state.BeginDrag();
                 Assert.IsFalse(flyout.IsVisible);

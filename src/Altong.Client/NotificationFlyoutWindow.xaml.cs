@@ -22,7 +22,6 @@ public partial class NotificationFlyoutWindow : Window
 
     public event EventHandler<DockPresentation>? SwitchPresentationRequested;
     public event EventHandler? ShowDashboardRequested;
-    public event EventHandler? ToggleFocusRequested;
 
     public NotificationFlyoutWindow(DockNotificationState state)
     {
@@ -40,7 +39,6 @@ public partial class NotificationFlyoutWindow : Window
         _presentation = presentation;
         bool notch = presentation != DockPresentation.Classic;
         ListColumn.Width = new GridLength((notch ? NotchListWidth : ListWidth) - 16);
-        RoutineBand.Visibility = notch ? Visibility.Visible : Visibility.Collapsed;
         foreach (var button in new[] { NotchDesignButton, ClassicDesignButton })
         {
             bool selected = button.Tag is DockPresentation option && option == presentation;
@@ -51,20 +49,12 @@ public partial class NotificationFlyoutWindow : Window
         Refresh();
     }
 
-    public void UpdateRoutine(DockRoutineStatus routine, bool canToggleFocus)
-    {
-        RoutinePhaseText.Text = routine.Label;
-        RoutineActionButton.Content = routine.Phase == FocusRoutinePhase.Idle ? "집중 시작" : "집중 중단";
-        RoutineActionButton.IsEnabled = canToggleFocus;
-    }
-
     private void SwitchPresentation_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: DockPresentation presentation })
             SwitchPresentationRequested?.Invoke(this, presentation);
     }
     private void Dashboard_Click(object sender, RoutedEventArgs e) => ShowDashboardRequested?.Invoke(this, EventArgs.Empty);
-    private void ToggleFocus_Click(object sender, RoutedEventArgs e) => ToggleFocusRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
