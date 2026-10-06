@@ -127,8 +127,9 @@ public partial class App : System.Windows.Application
         _routineTimer.Start();
 
         _notificationDockWindow = new NotificationDockWindow();
-        _notificationDockWindow.ToggleDashboardRequested +=
-            NotificationDockWindow_ToggleDashboardRequested;
+        _notificationDockWindow.RoutineStatusProvider = () => new DockRoutineStatus(FocusRoutine.Phase);
+        _notificationDockWindow.ShowDashboardRequested +=
+            NotificationDockWindow_ShowDashboardRequested;
 
         _windowsDndGuidanceWindow = new WindowsDndGuidanceWindow();
         _windowsDndGuidanceWindow.CancelRequested +=
@@ -175,8 +176,8 @@ public partial class App : System.Windows.Application
 
         if (_notificationDockWindow is not null)
         {
-            _notificationDockWindow.ToggleDashboardRequested -=
-                NotificationDockWindow_ToggleDashboardRequested;
+            _notificationDockWindow.ShowDashboardRequested -=
+                NotificationDockWindow_ShowDashboardRequested;
             _notificationDockWindow.Close();
             _notificationDockWindow = null;
         }
@@ -515,11 +516,17 @@ public partial class App : System.Windows.Application
         RunOnUiThread(UpdateWindowsDndGuidance);
     }
 
-    private void NotificationDockWindow_ToggleDashboardRequested(
+    private void NotificationDockWindow_ShowDashboardRequested(
         object? sender,
         EventArgs e)
     {
-        ToggleDashboard();
+        RunOnUiThread(() =>
+        {
+            if (_dashboardWindow is { IsActive: true } dashboard)
+                dashboard.WindowState = WindowState.Minimized;
+            else
+                ShowDashboard();
+        });
     }
 
     private void NotificationPipeline_NotificationProcessed(object? sender, NotificationRecord record)

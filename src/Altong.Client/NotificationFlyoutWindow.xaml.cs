@@ -6,6 +6,7 @@ using System.Windows.Media.Animation;
 using Altong.Client.Models;
 using Altong.Client.Services;
 using Button = System.Windows.Controls.Button;
+using Brushes = System.Windows.Media.Brushes;
 
 namespace Altong.Client;
 
@@ -13,9 +14,14 @@ public partial class NotificationFlyoutWindow : Window
 {
     public const double ListWidth = 332;
     public const double DetailWidth = 372;
+    public const double NotchListWidth = 332;
     private readonly DockNotificationState _state;
     private DockNotificationItem? _displayedDetail;
     private HwndSource? _source;
+    private DockPresentation _presentation;
+
+    public event EventHandler<DockPresentation>? SwitchPresentationRequested;
+    public event EventHandler? ShowDashboardRequested;
 
     public NotificationFlyoutWindow(DockNotificationState state)
     {
@@ -27,6 +33,28 @@ public partial class NotificationFlyoutWindow : Window
         Closed += OnClosed;
         Refresh();
     }
+
+    public void SetPresentation(DockPresentation presentation)
+    {
+        _presentation = presentation;
+        bool notch = presentation != DockPresentation.Classic;
+        ListColumn.Width = new GridLength((notch ? NotchListWidth : ListWidth) - 16);
+        foreach (var button in new[] { NotchDesignButton, ClassicDesignButton })
+        {
+            bool selected = button.Tag is DockPresentation option && option == presentation;
+            button.Background = selected ? (System.Windows.Media.Brush)FindResource("Accent") : Brushes.Transparent;
+            button.Foreground = selected ? Brushes.Black : (System.Windows.Media.Brush)FindResource("MutedText");
+            System.Windows.Automation.AutomationProperties.SetItemStatus(button, selected ? "선택됨" : "선택 안 됨");
+        }
+        Refresh();
+    }
+
+    private void SwitchPresentation_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: DockPresentation presentation })
+            SwitchPresentationRequested?.Invoke(this, presentation);
+    }
+    private void Dashboard_Click(object sender, RoutedEventArgs e) => ShowDashboardRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
@@ -48,6 +76,8 @@ public partial class NotificationFlyoutWindow : Window
     public void Refresh()
     {
         CountText.Text = $"미확인 {_state.UnreadCount}개 · 전체 {_state.Items.Count}개";
+        MarkAllReadButton.IsEnabled = _state.UnreadCount > 0;
+        DeleteReadButton.IsEnabled = _state.Items.Any(item => item.IsRead);
         ListPinButton.IsChecked = DetailPinButton.IsChecked = _state.IsPinned;
         string pinHint = _state.IsPinned ? "고정 해제" : "목록과 상세 함께 고정";
         ListPinButton.ToolTip = DetailPinButton.ToolTip = pinHint;
@@ -58,7 +88,7 @@ public partial class NotificationFlyoutWindow : Window
         bool openingDetail = hasDetail && DetailPanel.Visibility != Visibility.Visible;
         DetailColumn.Width = new GridLength(hasDetail ? DetailWidth : 0);
         DetailPanel.Visibility = hasDetail ? Visibility.Visible : Visibility.Collapsed;
-        Width = ListWidth + (hasDetail ? DetailWidth : 0);
+        Width = (_presentation != DockPresentation.Classic ? NotchListWidth : ListWidth) + (hasDetail ? DetailWidth : 0);
         if (_displayedDetail != _state.SelectedItem)
         {
             _displayedDetail = _state.SelectedItem;
@@ -148,6 +178,9 @@ public partial class NotificationFlyoutWindow : Window
     }
 
     private void Pin_Click(object sender, RoutedEventArgs e) => _state.TogglePin();
+    private void MarkAllRead_Click(object sender, RoutedEventArgs e) =>
+        PreserveScrollPosition(_state.MarkAllRead);
+    private void DeleteRead_Click(object sender, RoutedEventArgs e) => _state.DeleteRead();
     private void CloseDetail_Click(object sender, RoutedEventArgs e) => _state.CloseDetail();
     private void CloseList_Click(object sender, RoutedEventArgs e) => _state.ClosePanel();
 

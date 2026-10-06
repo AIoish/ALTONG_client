@@ -21,6 +21,53 @@ public sealed class DockNotificationUiTests
     private static extern nint SendMessage(nint hwnd, uint msg, nint wParam, nint lParam);
 
     [DataTestMethod]
+    [DataRow(DockPresentation.Classic)]
+    [DataRow(DockPresentation.RightNotch)]
+    public void BulkButtons_UpdateCountsCloseDeletedDetailAndShowEmptyState(DockPresentation presentation)
+    {
+        RunOnSta(() =>
+        {
+            var state = new DockNotificationState();
+            state.BeginSession("ui");
+            state.Receive(Record("first", 5));
+            state.Receive(Record("second", 4));
+            state.OpenPanel();
+            state.TogglePin();
+            var flyout = new NotificationFlyoutWindow(state) { Left = -10000, Top = -10000 };
+            state.Changed += (_, _) => flyout.Refresh();
+            try
+            {
+                flyout.SetPresentation(presentation);
+                flyout.Show();
+                var markAll = (Button)flyout.FindName("MarkAllReadButton");
+                var deleteRead = (Button)flyout.FindName("DeleteReadButton");
+                Assert.IsTrue(markAll.IsEnabled);
+                Assert.IsFalse(deleteRead.IsEnabled);
+                state.OpenDetail("first");
+                Assert.IsTrue(deleteRead.IsEnabled);
+                deleteRead.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.IsNull(state.SelectedItem);
+                Assert.AreEqual(Visibility.Collapsed, ((Border)flyout.FindName("DetailPanel")).Visibility);
+                Assert.AreEqual(1, state.UnreadCount);
+                markAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.AreEqual("미확인 0개 · 전체 1개", ((TextBlock)flyout.FindName("CountText")).Text);
+                Assert.IsFalse(markAll.IsEnabled);
+                Assert.IsTrue(deleteRead.IsEnabled);
+                SavePreview(flyout, $"bulk-actions-{presentation}.png");
+                deleteRead.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.AreEqual(0, state.Items.Count);
+                Assert.AreEqual(Visibility.Visible, ((StackPanel)flyout.FindName("EmptyState")).Visibility);
+                Assert.IsFalse(markAll.IsEnabled || deleteRead.IsEnabled);
+                Assert.IsTrue(state.IsPanelOpen && state.IsPinned);
+                state.Receive(Record("new", 3));
+                Assert.IsTrue(markAll.IsEnabled);
+                Assert.AreEqual(Visibility.Collapsed, ((StackPanel)flyout.FindName("EmptyState")).Visibility);
+            }
+            finally { flyout.Close(); }
+        });
+    }
+
+    [DataTestMethod]
     [DataRow("민준", false)]
     [DataRow(" 민준 ", false)]
     [DataRow("", false)]
@@ -83,6 +130,7 @@ public sealed class DockNotificationUiTests
         {
             var state = new DockNotificationState();
             var dock = new NotificationDockWindow(state);
+            dock.SetPresentation(DockPresentation.Classic);
             try
             {
                 dock.Left = dock.Top = -10000;

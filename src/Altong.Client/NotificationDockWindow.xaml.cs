@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
@@ -29,6 +31,8 @@ public partial class NotificationDockWindow : Window
     private readonly DockPositionStore _positionStore = new();
     private Point _pressScreenPoint;
     private double _pressTop;
+    private double _pressLeft;
+    private double _capsuleRightInset = 24;
     private bool _isPressed;
     private bool _isDragging;
     private readonly DockNotificationState _notifications;
@@ -37,6 +41,10 @@ public partial class NotificationDockWindow : Window
     private readonly DispatcherTimer _leaveTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private bool _isClosed;
     private bool _backgroundEngaged;
+    private HwndSource? _windowSource;
+    public DockPresentation Presentation { get; private set; }
+    public Func<DockRoutineStatus>? RoutineStatusProvider { get; set; }
+    private FrameworkElement ActiveSurface => Presentation != DockPresentation.Classic ? NotchSurface : DockSurface;
 
     public NotificationDockWindow() : this(new DockNotificationState()) { }
 
@@ -44,6 +52,7 @@ public partial class NotificationDockWindow : Window
     {
         _notifications = notifications;
         InitializeComponent();
+        SourceInitialized += Dock_SourceInitialized;
         _statusTimer.Tick += (_, _) => RefreshReminderStatus();
         _hoverTimer.Tick += HoverTimer_Tick;
         _leaveTimer.Tick += LeaveTimer_Tick;
@@ -52,10 +61,48 @@ public partial class NotificationDockWindow : Window
         Closed += NotificationDockWindow_Closed;
         IsVisibleChanged += Dock_IsVisibleChanged;
         LocationChanged += Dock_LocationChanged;
-        UpdateNotificationVisuals();
+        SetPresentation(DockPresentation.RightNotch);
     }
 
-    public event EventHandler? ToggleDashboardRequested;
+    public event EventHandler? ShowDashboardRequested;
+
+    public void SetPresentation(DockPresentation presentation)
+    {
+        if (_isClosed || Presentation == presentation) return;
+        // 표시만 바꾼다. 세션, 읽음, 상세 선택, 고정 상태는 같은 객체에 유지한다.
+        CancelPointerInteraction();
+        Presentation = presentation;
+        bool notch = presentation != DockPresentation.Classic;
+        DockSurface.Visibility = notch ? Visibility.Collapsed : Visibility.Visible;
+        NotchSurface.Visibility = notch ? Visibility.Visible : Visibility.Collapsed;
+        Height = notch ? 168 : 136;
+        ConfigureReminderLayout(notch);
+        _notificationFlyout?.SetPresentation(presentation);
+        PositionOnPrimaryWorkArea();
+        UpdateLayout();
+        PositionNotificationFlyout();
+        RefreshReminderStatus();
+        UpdateNotificationVisuals();
+        UpdateBackground();
+        UpdatePointerState();
+    }
+
+    private void ConfigureReminderLayout(bool horizontal)
+    {
+        Grid.SetColumnSpan(ReminderBubble, horizontal ? 2 : 1);
+        ReminderBubble.Margin = horizontal ? new Thickness(8, 8, 8, 38) : new Thickness(8, 12, 2, 12);
+        ReminderCard.Margin = horizontal ? new Thickness(0, 0, 0, 9) : new Thickness(0, 0, 10, 0);
+        ReminderArrow.Points = horizontal
+            ? new PointCollection { new(0, 0), new(18, 0), new(9, 10) }
+            : new PointCollection { new(0, 0), new(12, 9), new(0, 18) };
+        ReminderArrow.VerticalAlignment = horizontal ? VerticalAlignment.Bottom : VerticalAlignment.Center;
+        // 오른쪽에 놓인 가로 미니바의 중심(창 오른쪽에서 56)에 화살표 끝을 맞춘다.
+        ReminderArrow.Margin = horizontal ? new Thickness(0, 0, 38, 0) : new Thickness(0);
+    }
+
+    private void SwitchPresentationRequested(object? sender, DockPresentation presentation) => SetPresentation(presentation);
+
+    private void Flyout_ShowDashboardRequested(object? sender, EventArgs e) => ShowDashboardRequested?.Invoke(this, e);
 
     public bool IsReminderVisible => ReminderBubble.Visibility == Visibility.Visible;
 
@@ -81,6 +128,12 @@ public partial class NotificationDockWindow : Window
     public void PositionOnPrimaryWorkArea()
     {
         var workArea = SystemParameters.WorkArea;
+        if (Presentation != DockPresentation.Classic)
+        {
+            Left = workArea.Right - Width - _capsuleRightInset;
+            Top = workArea.Bottom - Height;
+            return;
+        }
         Left = workArea.Right - Width - RightMargin;
         Top = _positionStore.VerticalRatio is { } ratio
             ? DockPositioning.FromRatio(ratio, workArea.Top, workArea.Height, Height)
@@ -129,11 +182,13 @@ public partial class NotificationDockWindow : Window
     {
         if (_statusProvider is not null)
             ReminderStatusText.Text = _statusProvider();
+        var routine = RoutineStatusProvider?.Invoke() ?? DockRoutineStatus.Idle;
+        NotchSurface.ToolTip = routine.Label;
     }
 
     private void HideReminderBubble()
     {
-        _statusTimer.Stop();
+        if (!IsVisible) _statusTimer.Stop();
         _reminderPending = false;
         ReminderBubble.Visibility = Visibility.Collapsed;
         if (_hideAfterReminder)
@@ -178,11 +233,12 @@ public partial class NotificationDockWindow : Window
 
     private void DockSurface_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (!DockSurface.CaptureMouse())
+        if (!ActiveSurface.CaptureMouse())
             return;
 
         _pressScreenPoint = PointToScreen(e.GetPosition(this));
         _pressTop = Top;
+        _pressLeft = Left;
         _isPressed = true;
         _isDragging = false;
         _hoverTimer.Stop();
@@ -219,6 +275,12 @@ public partial class NotificationDockWindow : Window
             return;
 
         var workArea = SystemParameters.WorkArea;
+        if (Presentation != DockPresentation.Classic)
+        {
+            MoveCapsule(delta.X, workArea);
+            e.Handled = true;
+            return;
+        }
         Top = DockPositioning.ClampTop(
             _pressTop + delta.Y, workArea.Top, workArea.Height, Height);
         e.Handled = true;
@@ -240,16 +302,21 @@ public partial class NotificationDockWindow : Window
         {
             if (!_notifications.IsDragging) _notifications.BeginDrag();
             var workArea = SystemParameters.WorkArea;
-            Top = DockPositioning.ClampTop(
-                _pressTop + delta.Y, workArea.Top, workArea.Height, Height);
-            try
+            if (Presentation != DockPresentation.Classic)
+                MoveCapsule(delta.X, workArea);
+            else
             {
-                _positionStore.Save(DockPositioning.ToRatio(
-                    Top, workArea.Top, workArea.Height, Height));
-            }
-            catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
-            {
-                Trace.TraceWarning("미니바 위치를 저장하지 못했습니다.");
+                Top = DockPositioning.ClampTop(
+                    _pressTop + delta.Y, workArea.Top, workArea.Height, Height);
+                try
+                {
+                    _positionStore.Save(DockPositioning.ToRatio(
+                        Top, workArea.Top, workArea.Height, Height));
+                }
+                catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+                {
+                    Trace.TraceWarning("미니바 위치를 저장하지 못했습니다.");
+                }
             }
         }
 
@@ -257,9 +324,17 @@ public partial class NotificationDockWindow : Window
         if (!dragged)
         {
             PlayClickFeedback();
-            ToggleDashboardRequested?.Invoke(this, EventArgs.Empty);
+            ShowDashboardRequested?.Invoke(this, EventArgs.Empty);
         }
         e.Handled = true;
+    }
+
+    private void MoveCapsule(double deltaX, Rect workArea)
+    {
+        Left = Math.Clamp(_pressLeft + deltaX,
+            workArea.Left - (Width - NotchSurface.Width), workArea.Right - Width);
+        Top = workArea.Bottom - Height;
+        _capsuleRightInset = workArea.Right - Left - Width;
     }
 
     private void PlayClickFeedback()
@@ -279,6 +354,8 @@ public partial class NotificationDockWindow : Window
 
         ClickScale.BeginAnimation(ScaleTransform.ScaleXProperty, press);
         ClickScale.BeginAnimation(ScaleTransform.ScaleYProperty, press);
+        NotchClickScale.BeginAnimation(ScaleTransform.ScaleXProperty, press);
+        NotchClickScale.BeginAnimation(ScaleTransform.ScaleYProperty, press);
     }
 
     private Vector GetPointerDelta(MouseEventArgs e)
@@ -301,8 +378,8 @@ public partial class NotificationDockWindow : Window
     {
         _isPressed = false;
         _isDragging = false;
-        if (DockSurface.IsMouseCaptured)
-            DockSurface.ReleaseMouseCapture();
+        if (ActiveSurface.IsMouseCaptured)
+            ActiveSurface.ReleaseMouseCapture();
         _notifications.EndDrag();
         UpdatePointerState();
     }
@@ -322,9 +399,29 @@ public partial class NotificationDockWindow : Window
             PositionOnPrimaryWorkArea();
     }
 
+    private void Dock_SourceInitialized(object? sender, EventArgs e)
+    {
+        _windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        _windowSource?.AddHook(Dock_WindowProc);
+    }
+
+    private static nint Dock_WindowProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        // 클릭 순간 미니바가 활성 창을 가로채지 않아 대시보드의 기존 활성 상태를 판단할 수 있다.
+        if (message == 0x0021) // WM_MOUSEACTIVATE
+        {
+            handled = true;
+            return 3; // MA_NOACTIVATE: 클릭은 전달하되 미니바는 활성화하지 않는다.
+        }
+        return 0;
+    }
+
     private void NotificationDockWindow_Closed(object? sender, EventArgs e)
     {
         _isClosed = true;
+        _windowSource?.RemoveHook(Dock_WindowProc);
+        _windowSource = null;
+        SourceInitialized -= Dock_SourceInitialized;
         _statusTimer.Stop();
         StopHoverTimers();
         _hoverTimer.Tick -= HoverTimer_Tick;
@@ -334,6 +431,8 @@ public partial class NotificationDockWindow : Window
         {
             _notificationFlyout.MouseEnter -= Flyout_MouseEnter;
             _notificationFlyout.MouseLeave -= Flyout_MouseLeave;
+            _notificationFlyout.SwitchPresentationRequested -= SwitchPresentationRequested;
+            _notificationFlyout.ShowDashboardRequested -= Flyout_ShowDashboardRequested;
             _notificationFlyout.Close();
             _notificationFlyout = null;
         }
@@ -349,17 +448,23 @@ public partial class NotificationDockWindow : Window
         e.Handled = true;
     }
 
-    private bool IsPointerOverNotifications => DockSurface.IsMouseOver ||
+    private bool IsPointerOverNotifications => ActiveSurface.IsMouseOver ||
         _notificationFlyout?.IsMouseOver == true || IsPointerOverPanelBridge();
 
     private bool IsPointerOverPanelBridge()
     {
         if (!IsVisible || _notificationFlyout is not { IsVisible: true } flyout) return false;
         // 두 HWND 사이의 좁은 빈틈도 패널 영역으로 취급한다. 좌표는 모두 화면 픽셀이다.
-        var dockTop = DockSurface.PointToScreen(new Point());
-        var dockBottom = DockSurface.PointToScreen(new Point(DockSurface.ActualWidth, DockSurface.ActualHeight));
+        var dockTop = ActiveSurface.PointToScreen(new Point());
+        var dockBottom = ActiveSurface.PointToScreen(new Point(ActiveSurface.ActualWidth, ActiveSurface.ActualHeight));
         var panelTop = flyout.PointToScreen(new Point(8, 8));
         var panelBottom = flyout.PointToScreen(new Point(flyout.ActualWidth - 8, flyout.ActualHeight - 8));
+        if (Presentation != DockPresentation.Classic)
+        {
+            var cursor = System.Windows.Forms.Cursor.Position;
+            return cursor.X >= Math.Max(dockTop.X, panelTop.X) && cursor.X <= Math.Min(dockBottom.X, panelBottom.X)
+                && cursor.Y >= panelBottom.Y && cursor.Y <= dockTop.Y;
+        }
         double top = Math.Max(dockTop.Y, panelTop.Y);
         double bottom = Math.Min(dockBottom.Y, panelBottom.Y);
         if (bottom <= top || dockTop.X < panelBottom.X) return false;
@@ -367,7 +472,10 @@ public partial class NotificationDockWindow : Window
         return pointer.X >= panelBottom.X && pointer.X <= dockTop.X && pointer.Y >= top && pointer.Y <= bottom;
     }
 
-    private void DockSurface_MouseEnter(object sender, MouseEventArgs e) => UpdatePointerState();
+    private void DockSurface_MouseEnter(object sender, MouseEventArgs e)
+    {
+        UpdatePointerState();
+    }
     private void DockSurface_MouseLeave(object sender, MouseEventArgs e) => UpdatePointerState();
     private void Flyout_MouseEnter(object sender, MouseEventArgs e) => UpdatePointerState();
     private void Flyout_MouseLeave(object sender, MouseEventArgs e) => UpdatePointerState();
@@ -382,7 +490,7 @@ public partial class NotificationDockWindow : Window
             return;
         }
         // 빈틈에서는 새 MouseLeave가 오지 않으므로 닫힘 타이머로 계속 위치를 확인한다.
-        if (DockSurface.IsMouseOver || _notificationFlyout?.IsMouseOver == true)
+        if (ActiveSurface.IsMouseOver || _notificationFlyout?.IsMouseOver == true)
         {
             _leaveTimer.Stop();
             if (!_notifications.IsPanelOpen && !_hoverTimer.IsEnabled) _hoverTimer.Start();
@@ -398,7 +506,7 @@ public partial class NotificationDockWindow : Window
     private void HoverTimer_Tick(object? sender, EventArgs e)
     {
         _hoverTimer.Stop();
-        if (_isClosed || !IsVisible || !DockSurface.IsMouseOver || _isPressed || !_notifications.IsActive) return;
+        if (_isClosed || !IsVisible || !ActiveSurface.IsMouseOver || _isPressed || !_notifications.IsActive) return;
         HideReminderBubble();
         _notifications.OpenPanel();
     }
@@ -432,8 +540,12 @@ public partial class NotificationDockWindow : Window
                 _notificationFlyout = new NotificationFlyoutWindow(_notifications) { Owner = this };
                 _notificationFlyout.MouseEnter += Flyout_MouseEnter;
                 _notificationFlyout.MouseLeave += Flyout_MouseLeave;
+                _notificationFlyout.SwitchPresentationRequested += SwitchPresentationRequested;
+                _notificationFlyout.ShowDashboardRequested += Flyout_ShowDashboardRequested;
+                _notificationFlyout.SetPresentation(Presentation);
             }
             _notificationFlyout.Refresh();
+            RefreshReminderStatus();
             PositionNotificationFlyout();
             if (!_notificationFlyout.IsVisible) _notificationFlyout.Show();
         }
@@ -457,22 +569,40 @@ public partial class NotificationDockWindow : Window
         if (_notificationFlyout is null || !IsVisible) return;
         var workArea = SystemParameters.WorkArea;
         _notificationFlyout.Height = Math.Min(480, Math.Max(1, workArea.Height - 16));
-        var dockOrigin = DockSurface.TranslatePoint(new Point(), this);
+        var dockOrigin = ActiveSurface.TranslatePoint(new Point(), this);
+        if (Presentation != DockPresentation.Classic)
+        {
+            _notificationFlyout.Left = Math.Clamp(Left + dockOrigin.X + ActiveSurface.ActualWidth + 8 - _notificationFlyout.Width,
+                workArea.Left, Math.Max(workArea.Left, workArea.Right - _notificationFlyout.Width));
+            _notificationFlyout.Top = DockPositioning.ClampTop(Top + dockOrigin.Y - _notificationFlyout.Height,
+                workArea.Top, workArea.Height, _notificationFlyout.Height);
+            return;
+        }
         // 창의 투명 여백을 고려해 실제 카드와 캡슐 사이 간격은 8 DIP로 맞춘다.
         _notificationFlyout.Left = Left + dockOrigin.X - _notificationFlyout.Width;
         _notificationFlyout.Top = DockPositioning.ClampTop(
             Top + dockOrigin.Y - 8, workArea.Top + 8, workArea.Height - 16, _notificationFlyout.Height);
     }
 
-    private void Dock_LocationChanged(object? sender, EventArgs e) => PositionNotificationFlyout();
+    private void Dock_LocationChanged(object? sender, EventArgs e)
+    {
+        PositionNotificationFlyout();
+    }
 
     private void Dock_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (!IsVisible)
         {
+            _statusTimer.Stop();
             StopHoverTimers();
             _notifications.ClosePanel();
         }
+        else
+        {
+            RefreshReminderStatus();
+            _statusTimer.Start();
+        }
+        UpdateBackground();
     }
 
     private void UpdateNotificationVisuals()
@@ -488,13 +618,21 @@ public partial class NotificationDockWindow : Window
         StatusDotGlow.BlurRadius = appearance.BlurRadius;
         UnreadBadge.Visibility = _notifications.UnreadCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         UnreadBadgeText.Text = _notifications.BadgeText;
+        bool unread = _notifications.UnreadCount > 0;
+        bool urgent = _notifications.HighestUrgency >= 5;
+        NotchStatusBrush.Color = unread ? color : (Color)ColorConverter.ConvertFromString("#455D55");
+        NotchQuietDot.Visibility = urgent ? Visibility.Collapsed : Visibility.Visible;
+        NotchUrgentIndicator.Visibility = urgent ? Visibility.Visible : Visibility.Collapsed;
+        NotchUrgentCountText.Text = _notifications.BadgeText;
         System.Windows.Automation.AutomationProperties.SetItemStatus(DockSurface,
+            _notifications.UnreadCount > 0 ? $"미확인 중요 알림 {_notifications.UnreadCount}개" : "미확인 알림 없음");
+        System.Windows.Automation.AutomationProperties.SetItemStatus(NotchSurface,
             _notifications.UnreadCount > 0 ? $"미확인 중요 알림 {_notifications.UnreadCount}개" : "미확인 알림 없음");
     }
 
     private void PlayNotificationPulse()
     {
-        if (!SystemParameters.ClientAreaAnimation || _notifications.UnreadCount == 0) return;
+        if (Presentation != DockPresentation.Classic || !SystemParameters.ClientAreaAnimation || _notifications.UnreadCount == 0) return;
         var pulse = new DoubleAnimation(1, 1.45, TimeSpan.FromMilliseconds(160))
         {
             AutoReverse = true, FillBehavior = FillBehavior.Stop,
@@ -511,7 +649,7 @@ public partial class NotificationDockWindow : Window
 
     private void UpdateBackground()
     {
-        bool engaged = IsVisible && (DockSurface.IsMouseOver || _notifications.IsPanelOpen);
+        bool engaged = IsVisible && (ActiveSurface.IsMouseOver || _notifications.IsPanelOpen);
         if (_backgroundEngaged == engaged) return;
         _backgroundEngaged = engaged;
         var target = (Color)ColorConverter.ConvertFromString(engaged
@@ -525,4 +663,5 @@ public partial class NotificationDockWindow : Window
             DockBackground.Color = target;
         }
     }
+
 }
