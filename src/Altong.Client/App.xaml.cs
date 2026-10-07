@@ -47,10 +47,27 @@ public partial class App : System.Windows.Application
     private DateTime _lastWindowCheckpointAt = DateTime.MinValue;
     private bool _windowCheckpointInProgress;
     private bool _routineTickInProgress;
+    private SingleInstanceService? _singleInstance;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        _singleInstance = new SingleInstanceService();
+        if (!_singleInstance.IsPrimary)
+        {
+            bool activated = _singleInstance.ActivateExistingAsync(TimeSpan.FromSeconds(3))
+                .GetAwaiter().GetResult();
+            if (!activated)
+                System.Windows.MessageBox.Show("알통이 이미 실행 중입니다. 트레이 아이콘에서 기존 창을 열어주세요.",
+                    "ALTONG", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+        _singleInstance.StartListening(() => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!IsShuttingDown) ShowDashboard();
+        })));
 
         // WinExe(GUI 앱)에서 dotnet run을 실행한 부모 터미널로 콘솔 출력 연결
         if (AttachConsole(AttachParentProcess))
@@ -152,6 +169,12 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        if (_singleInstance is { IsPrimary: false })
+        {
+            _singleInstance.Dispose();
+            base.OnExit(e);
+            return;
+        }
         IsShuttingDown = true;
         FocusModeService.StateChanged -= FocusModeService_StateChanged;
         _routineTimer.Stop();
@@ -196,6 +219,8 @@ public partial class App : System.Windows.Application
         _dashboardWindow?.Close();
         _dashboardWindow = null;
 
+        _singleInstance?.Dispose();
+        _singleInstance = null;
         base.OnExit(e);
     }
 

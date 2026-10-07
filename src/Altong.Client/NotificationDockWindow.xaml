@@ -13,29 +13,55 @@
         </Grid.ColumnDefinitions>
 
         <Grid x:Name="ReminderBubble" Grid.Column="0" Visibility="Collapsed" Margin="8,12,2,12">
-            <Border x:Name="ReminderCard" Margin="0,0,10,0" Padding="18,14" CornerRadius="18"
-                    Background="#F7FFFFFF" BorderBrush="#CFE4E0" BorderThickness="1">
+            <Button x:Name="ReminderDismissButton" Click="CloseReminder_Click" Cursor="Hand"
+                    Background="Transparent" BorderThickness="0" Padding="0"
+                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                    AutomationProperties.Name="닫기: 집중 안내"
+                    AutomationProperties.HelpText="말풍선 어디를 클릭해도 안내만 닫힙니다. 집중 세션은 유지됩니다.">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter />
+                    </ControlTemplate>
+                </Button.Template>
+            <Border x:Name="ReminderCard" Margin="0,0,10,0" Padding="18,10" CornerRadius="18"
+                    BorderBrush="#CFE4E0" BorderThickness="1">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="#F7FFFFFF" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsMouseOver, ElementName=ReminderDismissButton}" Value="True">
+                                <Setter Property="Background" Value="#FFF0F4F3" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsPressed, ElementName=ReminderDismissButton}" Value="True">
+                                <Setter Property="Background" Value="#FFE6EEEC" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="22" Direction="270" Opacity=".24" ShadowDepth="4" Color="#40536A" />
                 </Border.Effect>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="28" />
-                    </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock x:Name="ReminderTitleText" FontSize="15" FontWeight="SemiBold" Foreground="#172033" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ReminderTitleText" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="#172033" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Margin="12,0,0,0"
+                                       Text="어디든 눌러 닫기" FontSize="10"
+                                       Foreground="#68758A" TextAlignment="Right"
+                                       VerticalAlignment="Center" IsHitTestVisible="False" />
+                        </Grid>
                         <TextBlock x:Name="ReminderStatusText" Margin="0,4,0,0" FontSize="12" FontWeight="SemiBold" Foreground="#168C82" />
-                        <TextBlock x:Name="ReminderMessageText" Margin="0,5,0,0" FontSize="11" Foreground="#68758A"
+                        <TextBlock x:Name="ReminderMessageText" Margin="0,7,0,0" FontSize="11" Foreground="#68758A"
                                    TextWrapping="Wrap" MaxHeight="34" />
                     </StackPanel>
-                    <Button Grid.Column="1" Content="×" Click="CloseReminder_Click" Width="26" Height="26"
-                            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4,-5,-5,0"
-                            Padding="0" FontSize="17" Cursor="Hand" Background="Transparent"
-                            BorderThickness="0" Foreground="#68758A" ToolTip="알림 닫기" />
-                </Grid>
             </Border>
-            <Polygon x:Name="ReminderArrow" Points="0,0 12,9 0,18" Fill="#F7FFFFFF" Stroke="#CFE4E0" StrokeThickness="1"
+            </Button>
+            <Polygon x:Name="ReminderArrow" Points="0,0 12,9 0,18" Fill="{Binding Background, ElementName=ReminderCard}" Stroke="#CFE4E0" StrokeThickness="1"
+                     Cursor="Hand" MouseLeftButtonUp="CloseReminder_Click"
                      HorizontalAlignment="Right" VerticalAlignment="Center" />
         </Grid>
 
