@@ -183,11 +183,66 @@ public sealed class DockNotificationUiTests
                 Assert.IsTrue(state.IsPinned);
                 Assert.IsTrue(state.IsPanelOpen);
                 Assert.IsFalse(dock.IsReminderVisible);
+                var dismissTimer = ReminderDismissTimer(dock);
+                Assert.AreEqual(TimeSpan.FromMinutes(1), dismissTimer.Interval);
+                Assert.IsFalse(dismissTimer.IsEnabled, "고정한 패널을 읽는 동안 말풍선의 표시 시간을 소모하지 않습니다.");
                 state.ClosePanel();
                 Assert.IsTrue(dock.IsReminderVisible);
                 Assert.IsFalse(state.IsPinned);
+                Assert.IsTrue(dismissTimer.IsEnabled, "보류한 말풍선이 실제 표시된 때부터 시간을 셉니다.");
+                WaitForReminderDismissal(dismissTimer);
+                Assert.IsFalse(dock.IsReminderVisible);
+                Assert.IsTrue(state.IsActive);
             }
             finally { dock.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void RoutineReminder_AutoDismisses_WithoutClearingNotifications_AndCanBeShownAgain()
+    {
+        RunOnSta(() =>
+        {
+            var state = new DockNotificationState();
+            var dock = new NotificationDockWindow(state) { Left = -10000, Top = -10000 };
+            var dismissTimer = ReminderDismissTimer(dock);
+            try
+            {
+                dock.BeginNotificationSession("ui");
+                dock.ReceiveNotification(Record("preserved", 1));
+                Assert.AreEqual(TimeSpan.FromMinutes(1), dismissTimer.Interval);
+                dock.ShowRoutineReminder("집중", () => "집중 진행 중", "가상 안내");
+                dock.Left = dock.Top = -10000;
+                WaitForReminderDismissal(dismissTimer);
+                Assert.IsFalse(dock.IsReminderVisible);
+                Assert.IsFalse(dismissTimer.IsEnabled);
+                Assert.IsTrue(dock.IsVisible, "집중 중에는 말풍선만 닫고 미니바는 유지합니다.");
+                Assert.AreEqual("ui", state.SessionId);
+                Assert.AreEqual(1, state.Items.Count);
+                Assert.AreEqual(1, state.UnreadCount);
+
+                dock.ShowRoutineReminder("휴식", () => "휴식 진행 중", "새 안내");
+                dock.Left = dock.Top = -10000;
+                Assert.IsTrue(dock.IsReminderVisible);
+                Assert.IsTrue(dismissTimer.IsEnabled, "이전 말풍선이 닫힌 뒤에도 새 안내의 타이머를 시작합니다.");
+                Descendants<Button>((FrameworkElement)dock.FindName("ReminderBubble")).Single()
+                    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.IsFalse(dock.IsReminderVisible);
+                Assert.IsFalse(dismissTimer.IsEnabled, "수동 닫기 시에도 타이머를 정지합니다.");
+
+                dock.ShowRoutineReminder("종료", () => "세션 종료", "종료 안내");
+                dock.Left = dock.Top = -10000;
+                dock.HideAfterCurrentReminder();
+                WaitForReminderDismissal(dismissTimer);
+                Assert.IsFalse(dock.IsVisible, "종료 안내가 닫히면 미니바도 기존 종료 처리에 따라 숨깁니다.");
+                Assert.AreEqual(1, state.UnreadCount);
+
+                dock.ShowRoutineReminder("새 집중", () => "집중 진행 중", "새 안내");
+                dock.Left = dock.Top = -10000;
+                Assert.IsTrue(dismissTimer.IsEnabled);
+            }
+            finally { dock.Close(); }
+            Assert.IsFalse(dismissTimer.IsEnabled, "창이 닫힌 뒤 타이머가 남지 않아야 합니다.");
         });
     }
 
@@ -311,6 +366,33 @@ public sealed class DockNotificationUiTests
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var stream = File.Create(Path.Combine(directory, name));
         encoder.Save(stream);
+    }
+
+    private static DispatcherTimer ReminderDismissTimer(NotificationDockWindow dock) =>
+        (DispatcherTimer)typeof(NotificationDockWindow).GetField("_reminderDismissTimer",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(dock)!;
+
+    private static void WaitForReminderDismissal(DispatcherTimer timer)
+    {
+        // 운영 값이 1분임은 별도로 확인하고, 실제 Dispatcher Tick은 짧은 간격으로 검증합니다.
+        var frame = new DispatcherFrame();
+        bool fired = false;
+        var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        EventHandler onDismiss = (_, _) => { fired = true; frame.Continue = false; };
+        timeout.Tick += (_, _) => frame.Continue = false;
+        timer.Tick += onDismiss;
+        timer.Interval = TimeSpan.FromMilliseconds(50);
+        try
+        {
+            timeout.Start();
+            Dispatcher.PushFrame(frame);
+            Assert.IsTrue(fired, "자동 닫기 타이머의 실제 Tick이 실행되어야 합니다.");
+        }
+        finally
+        {
+            timeout.Stop();
+            timer.Tick -= onDismiss;
+        }
     }
 
     private static void RunOnSta(Action action)

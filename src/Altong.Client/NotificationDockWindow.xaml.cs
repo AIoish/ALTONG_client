@@ -26,6 +26,10 @@ public partial class NotificationDockWindow : Window
         Interval = TimeSpan.FromSeconds(1),
     };
     private Func<string>? _statusProvider;
+    private readonly DispatcherTimer _reminderDismissTimer = new()
+    {
+        Interval = TimeSpan.FromMinutes(1),
+    };
     private bool _hideAfterReminder;
     private bool _reminderPending;
     private readonly DockPositionStore _positionStore = new();
@@ -54,6 +58,7 @@ public partial class NotificationDockWindow : Window
         InitializeComponent();
         SourceInitialized += Dock_SourceInitialized;
         _statusTimer.Tick += (_, _) => RefreshReminderStatus();
+        _reminderDismissTimer.Tick += ReminderDismissTimer_Tick;
         _hoverTimer.Tick += HoverTimer_Tick;
         _leaveTimer.Tick += LeaveTimer_Tick;
         _notifications.Changed += Notifications_Changed;
@@ -145,6 +150,7 @@ public partial class NotificationDockWindow : Window
     public void ShowRoutineReminder(string title, Func<string> statusProvider, string message)
     {
         // 루틴 전환이 사용자가 읽거나 고정한 알림 패널을 닫지 않도록 안내를 보류한다.
+        _reminderDismissTimer.Stop();
         _hideAfterReminder = false;
         _statusProvider = statusProvider;
         ReminderTitleText.Text = title;
@@ -158,6 +164,7 @@ public partial class NotificationDockWindow : Window
         Topmost = true;
         PlayActivationAnimation();
         _statusTimer.Start();
+        if (!_reminderPending) _reminderDismissTimer.Start();
     }
 
     public void KeepVisible()
@@ -186,8 +193,11 @@ public partial class NotificationDockWindow : Window
         NotchSurface.ToolTip = routine.Label;
     }
 
+    private void ReminderDismissTimer_Tick(object? sender, EventArgs e) => HideReminderBubble();
+
     private void HideReminderBubble()
     {
+        _reminderDismissTimer.Stop();
         if (!IsVisible) _statusTimer.Stop();
         _reminderPending = false;
         ReminderBubble.Visibility = Visibility.Collapsed;
@@ -422,6 +432,8 @@ public partial class NotificationDockWindow : Window
         _windowSource?.RemoveHook(Dock_WindowProc);
         _windowSource = null;
         SourceInitialized -= Dock_SourceInitialized;
+        _reminderDismissTimer.Stop();
+        _reminderDismissTimer.Tick -= ReminderDismissTimer_Tick;
         _statusTimer.Stop();
         StopHoverTimers();
         _hoverTimer.Tick -= HoverTimer_Tick;
@@ -557,6 +569,7 @@ public partial class NotificationDockWindow : Window
             {
                 _reminderPending = false;
                 ReminderBubble.Visibility = Visibility.Visible;
+                _reminderDismissTimer.Start();
             }
         }
         UpdateBackground();

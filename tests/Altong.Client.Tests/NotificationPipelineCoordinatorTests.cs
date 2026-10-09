@@ -12,6 +12,58 @@ namespace Altong.Client.Tests;
 [TestClass]
 public sealed class NotificationPipelineCoordinatorTests
 {
+    [TestMethod]
+    public async Task DrainSession_WaitsForOldSessionOnly_AndIncludesItsDelayedNotification()
+    {
+        bool enabled = true;
+        string id = "old-session";
+        var filter = new SessionDrainFilterEngine();
+        using var coordinator = new NotificationPipelineCoordinator(_fakeListener, _fakeTracker,
+            _notificationRepo, filter, () => enabled, () => id);
+        await coordinator.StartAsync();
+        _fakeListener.EmitNotification(new("delayed-old", "Messenger", "", "가상 알림", "", DateTime.UtcNow));
+        enabled = false;
+        var drain = coordinator.DrainSessionAsync(id);
+        Assert.IsFalse(drain.IsCompleted);
+        enabled = true;
+        id = "new-session";
+        _fakeListener.EmitNotification(new("delayed-new", "Messenger", "", "가상 알림", "", DateTime.UtcNow));
+        filter.Old.SetResult(new("delayed-old", false, 1, 1, "fake"));
+        await drain.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.AreEqual("old-session", (await _notificationRepo.GetByIdAsync("delayed-old"))!.SessionId);
+        Assert.IsNull(await _notificationRepo.GetByIdAsync("delayed-new"));
+        enabled = false;
+        var newDrain = coordinator.DrainSessionAsync(id);
+        filter.New.SetResult(new("delayed-new", true, 1, 1, "fake"));
+        await newDrain.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.AreEqual("new-session", (await _notificationRepo.GetByIdAsync("delayed-new"))!.SessionId);
+    }
+
+    private sealed class SessionDrainFilterEngine : IFilterEngine
+    {
+        public TaskCompletionSource<FilterResult> Old { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<FilterResult> New { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<FilterResult> EvaluateAsync(RawNotification notification, CurrentContext context) =>
+            notification.Id == "delayed-old" ? Old.Task : New.Task;
+    }
+
+    [TestMethod]
+    public async Task DrainSession_UiSubscriberFailureDoesNotInvalidateTheStoredNotification()
+    {
+        using var coordinator = new NotificationPipelineCoordinator(_fakeListener, _fakeTracker,
+            _notificationRepo, _filterEngine, () => true, () => "session-ui-failure");
+        var delivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.NotificationProcessed += (_, _) =>
+        {
+            delivered.SetResult();
+            throw new InvalidOperationException("synthetic UI failure");
+        };
+        await coordinator.StartAsync();
+        _fakeListener.EmitNotification(new("saved-ui-failure", "Messenger", "", "가상 알림", "", DateTime.UtcNow));
+        await delivered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await coordinator.DrainSessionAsync("session-ui-failure").WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.IsNotNull(await _notificationRepo.GetByIdAsync("saved-ui-failure"));
+    }
     private IAltongDatabase _database = null!;
     private INotificationRepository _notificationRepo = null!;
     private FakeNotificationListener _fakeListener = null!;
@@ -99,8 +151,6 @@ public sealed class NotificationPipelineCoordinatorTests
             () => isFocusMode,
             () => sessionId);
 
-        StartFocusCaptureSession(DateTime.UtcNow.AddSeconds(-2));
-
         await coordinator.StartAsync();
 
         var noti = new RawNotification(
@@ -141,8 +191,6 @@ public sealed class NotificationPipelineCoordinatorTests
             _filterEngine,
             () => isFocusMode,
             () => sessionId);
-
-        StartFocusCaptureSession(DateTime.UtcNow.AddSeconds(-2));
 
         await coordinator.StartAsync();
 
@@ -269,7 +317,6 @@ public sealed class NotificationPipelineCoordinatorTests
         dock.BeginSession(currentSession);
         using var coordinator = new NotificationPipelineCoordinator(_fakeListener, _fakeTracker,
             _notificationRepo, filter, () => true, () => currentSession);
-        StartFocusCaptureSession(DateTime.UtcNow.AddSeconds(-2));
         var completion = new TaskCompletionSource<NotificationRecord>(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.NotificationProcessed += (_, record) => completion.TrySetResult(record);
         await coordinator.StartAsync();
@@ -305,13 +352,4 @@ public sealed class NotificationPipelineCoordinatorTests
         public void Dispose() { }
     }
 
-    private void StartFocusCaptureSession(DateTime startedAt)
-    {
-        var capture = new SqliteActivitySessionRepository(_database);
-        string activityId = "pipeline-activity-" + Guid.NewGuid().ToString("N");
-        capture.InsertAsync(new ActivitySessionRecord(activityId, startedAt)).GetAwaiter().GetResult();
-        capture.EnableFocusCaptureAsync(activityId).GetAwaiter().GetResult();
-        capture.StartCaptureSegmentAsync(activityId, startedAt).GetAwaiter().GetResult();
-        capture.TouchCaptureSegmentAsync(activityId, DateTime.UtcNow).GetAwaiter().GetResult();
-    }
 }

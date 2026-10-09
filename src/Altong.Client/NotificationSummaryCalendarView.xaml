@@ -1,0 +1,98 @@
+<UserControl x:Class="Altong.Client.NotificationSummaryCalendarView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="CalendarBoolVisibility" />
+        <Style x:Key="CalendarMuted" TargetType="TextBlock"><Setter Property="Foreground" Value="#A6A4AF" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Foreground" Value="#F3F4F6" /><Setter Property="Background" Value="#2D2A33" />
+            <Setter Property="BorderBrush" Value="#48424F" /><Setter Property="Padding" Value="8,6" /><Setter Property="Margin" Value="0,4,0,10" />
+        </Style>
+        <Style TargetType="DatePicker"><Setter Property="Background" Value="#2D2A33" /><Setter Property="Foreground" Value="#F3F4F6" /><Setter Property="BorderBrush" Value="#48424F" /></Style>
+        <Style TargetType="DatePickerTextBox"><Setter Property="Background" Value="#2D2A33" /><Setter Property="Foreground" Value="#F3F4F6" /><Setter Property="BorderThickness" Value="0" /></Style>
+        <Style x:Key="CalendarButton" TargetType="Button">
+            <Setter Property="Background" Value="#2D2A33" /><Setter Property="Foreground" Value="#F3F4F6" />
+            <Setter Property="BorderBrush" Value="#48424F" /><Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+                <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#A679F3" /></Trigger>
+                    <Trigger Property="IsPressed" Value="True"><Setter TargetName="Surface" Property="Opacity" Value=".65" /></Trigger>
+                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#C9ABFF" /></Trigger>
+                    <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Opacity" Value=".4" /></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style TargetType="Button" BasedOn="{StaticResource CalendarButton}" />
+        <Style x:Key="CalendarAction" TargetType="Button" BasedOn="{StaticResource CalendarButton}">
+            <Setter Property="Background" Value="#823DE0" /><Setter Property="BorderBrush" Value="#C9ABFF" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </UserControl.Resources>
+    <StackPanel>
+        <TextBlock x:Name="SummarySourceText" Style="{StaticResource CalendarMuted}" FontSize="12" Margin="0,8,0,12" />
+        <ItemsControl x:Name="SummaryItemsControl"><ItemsControl.ItemTemplate><DataTemplate>
+            <Border Background="#25232A" BorderBrush="#3B3742" BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,0,0,10">
+                <StackPanel>
+                    <WrapPanel Margin="0,0,0,10">
+                        <Border Background="#34303F" CornerRadius="8" Padding="9,4" Margin="0,0,10,4">
+                            <TextBlock Text="{Binding CardLabel}" Foreground="#C9ABFF" FontSize="12" FontWeight="SemiBold" />
+                        </Border>
+                        <TextBlock Text="{Binding SourceText}" Style="{StaticResource CalendarMuted}" FontSize="11" VerticalAlignment="Center" Margin="0,0,0,4" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding Summary.Text}" TextWrapping="Wrap" Foreground="#F3F4F6" FontSize="14" LineHeight="23" />
+                    <StackPanel Visibility="{Binding IsScheduleRelated, Converter={StaticResource CalendarBoolVisibility}}" Margin="0,14,0,0">
+                        <Border Background="#27242D" BorderBrush="#48424F" BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="{Binding ScheduleTitle}" Foreground="#F3F4F6" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding ScheduleWhen}" Foreground="#DDC8FF" FontSize="13" Margin="0,9,0,3" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding ScheduleZone}" Style="{StaticResource CalendarMuted}" FontSize="11" />
+                                <TextBlock Text="장소" Style="{StaticResource CalendarMuted}" FontSize="11" Margin="0,10,0,3" />
+                                <TextBlock Text="{Binding ScheduleLocation}" Foreground="#F3F4F6" FontSize="13" TextWrapping="Wrap" />
+                                <Expander Header="약속 세부사항" Foreground="#A6A4AF" FontSize="12" Margin="0,10,0,0">
+                                    <TextBlock Text="{Binding ScheduleDetails}" Style="{StaticResource CalendarMuted}" Margin="0,6,0,0" />
+                                </Expander>
+                            </StackPanel>
+                        </Border>
+                        <WrapPanel>
+                            <Button Content="{Binding ButtonText}" Click="SaveCalendar_Click" IsEnabled="{Binding CanAct}" Style="{StaticResource CalendarAction}" FontSize="12" Padding="12,8" Margin="0,0,8,8" />
+                            <Button Content="일정 정보 보완" Click="EditSchedule_Click" IsEnabled="{Binding CanEdit}" FontSize="12" Padding="12,6" Margin="0,0,0,8" />
+                        </WrapPanel>
+                        <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource CalendarBoolVisibility}}" IsEnabled="{Binding CanEdit}" Margin="0,4,0,0">
+                            <TextBlock Text="일정 제목" Style="{StaticResource CalendarMuted}" FontSize="12" />
+                            <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="일정 제목" />
+                            <WrapPanel>
+                                <StackPanel Margin="0,0,12,8"><TextBlock Text="시작 날짜" Style="{StaticResource CalendarMuted}" FontSize="12" /><DatePicker SelectedDate="{Binding StartDate}" Width="155" Margin="0,4,0,0" AutomationProperties.Name="시작 날짜" /></StackPanel>
+                                <StackPanel><TextBlock Text="시작 시각 · HH:mm" Style="{StaticResource CalendarMuted}" FontSize="12" /><TextBox Text="{Binding StartTime, UpdateSourceTrigger=PropertyChanged}" Width="110" AutomationProperties.Name="시작 시각" /></StackPanel>
+                            </WrapPanel>
+                            <WrapPanel>
+                                <StackPanel Margin="0,0,12,8"><TextBlock Text="종료 날짜" Style="{StaticResource CalendarMuted}" FontSize="12" /><DatePicker SelectedDate="{Binding EndDate}" Width="155" Margin="0,4,0,0" AutomationProperties.Name="종료 날짜" /></StackPanel>
+                                <StackPanel><TextBlock Text="종료 시각 · HH:mm" Style="{StaticResource CalendarMuted}" FontSize="12" /><TextBox Text="{Binding EndTime, UpdateSourceTrigger=PropertyChanged}" Width="110" AutomationProperties.Name="종료 시각" /></StackPanel>
+                            </WrapPanel>
+                            <TextBlock Text="시간대 · 예: Asia/Seoul" Style="{StaticResource CalendarMuted}" FontSize="12" />
+                            <TextBox Text="{Binding TimeZone, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="일정 시간대" />
+                            <TextBlock Text="장소 · 선택" Style="{StaticResource CalendarMuted}" FontSize="12" />
+                            <TextBox Text="{Binding Location, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="일정 장소" />
+                            <TextBlock Text="약속 세부사항 · 선택" Style="{StaticResource CalendarMuted}" FontSize="12" />
+                            <TextBox Text="{Binding Details, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" AutomationProperties.Name="약속 세부사항" />
+                            <Button Content="보완 내용 적용" Click="ApplySchedule_Click" HorizontalAlignment="Left" FontSize="12" Padding="12,6" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Status}" Style="{StaticResource CalendarMuted}" FontSize="12" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                    <Button Content="목록에서 제거" Click="DismissSummary_Click" HorizontalAlignment="Right" FontSize="11" Padding="10,6" Margin="0,10,0,0"
+                            ToolTip="알림 요약 목록에서만 제거합니다. 원본 알림·리포트·저장한 일정은 유지됩니다.">
+                        <Button.Style><Style TargetType="Button" BasedOn="{StaticResource CalendarButton}">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers><DataTrigger Binding="{Binding SessionId}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>
+                        </Style></Button.Style>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+        <TextBlock x:Name="CalendarLinkHint" Text="저장한 일정은 대시보드의 캘린더에서 확인하고 Google Calendar로 보낼 수 있어요." Style="{StaticResource CalendarMuted}" FontSize="12" Margin="0,0,0,16" Visibility="Collapsed" />
+    </StackPanel>
+</UserControl>

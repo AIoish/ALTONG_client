@@ -22,18 +22,139 @@ public sealed class SessionResultsTests
         _database.Initialize();
         _notifications = new SqliteNotificationRepository(_database);
         _results = new SessionResultsService(_database, new SqliteFocusSessionRepository(_database));
-        // 이 테스트의 과거 알림 시각을 ON 구간에 놓고, 현재 heartbeat도 유지한다.
-        var capture = new SqliteActivitySessionRepository(_database);
-        const string activityId = "session-results-test-activity";
-        capture.InsertAsync(new ActivitySessionRecord(activityId, _start.AddMinutes(-1)))
-            .GetAwaiter().GetResult();
-        capture.EnableFocusCaptureAsync(activityId).GetAwaiter().GetResult();
-        capture.StartCaptureSegmentAsync(activityId, _start.AddMinutes(-1)).GetAwaiter().GetResult();
-        capture.TouchCaptureSegmentAsync(activityId, DateTime.UtcNow).GetAwaiter().GetResult();
     }
 
     [TestCleanup]
     public void Cleanup() => _database.Dispose();
+
+    [TestMethod]
+    public async Task FocusModeOff_CreatesSeparateReportsWithoutActivityRecording()
+    {
+        var windows = new SqliteWindowSessionRepository(_database);
+        _results.Begin(_start, 25);
+        string firstId = _results.CurrentSessionId!;
+        await _notifications.InsertAsync(new("first-blocked", "Messenger", "동료",
+            "확인 요청", "내용", _start.AddSeconds(10), false, SessionId: firstId));
+        await windows.InsertAsync(new(0, "Editor.exe", "", _start, _start.AddMinutes(1), 60, firstId));
+
+        var first = await _results.CompleteFocusSessionAsync(_start.AddMinutes(1));
+
+        Assert.IsNotNull(first);
+        Assert.IsTrue(first.IsFocusSessionReport);
+        Assert.AreEqual(1, first.BlockedCount);
+        Assert.AreEqual(1, first.ApplicationCount);
+        Assert.AreEqual("Editor.exe", first.Apps[0].AppName);
+        Assert.AreEqual(1, first.QuickReplies.Count);
+        StringAssert.Contains(first.NotificationSummary, "차단 1개");
+        Assert.AreEqual(1, first.NotificationHighlights.Count);
+
+        _results.Begin(_start.AddMinutes(2), 25);
+        string secondId = _results.CurrentSessionId!;
+        await _notifications.InsertAsync(new("second-passed", "Calendar", null,
+            "회의", "내용", _start.AddMinutes(2).AddSeconds(10), true, SessionId: secondId));
+
+        var second = await _results.CompleteFocusSessionAsync(_start.AddMinutes(3));
+
+        Assert.IsNotNull(second);
+        Assert.AreEqual(1, second.NotificationCount);
+        Assert.AreEqual(0, second.BlockedCount);
+        Assert.AreEqual(0, second.ApplicationCount);
+        Assert.AreEqual(0, second.QuickReplies.Count);
+        Assert.AreEqual(_start.AddMinutes(2), second.StartedAt);
+    }
+
+    [TestMethod]
+    public async Task FocusModeOff_ReportSurvivesAnImmediateNextFocusSession()
+    {
+        _results.Begin(_start, 25);
+        var pendingWrite = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstReport = _results.CompleteFocusSessionAsync(_start.AddMinutes(1), pendingWrite.Task);
+        _results.Begin(_start.AddMinutes(2), 25);
+        pendingWrite.SetResult();
+
+        var first = await firstReport;
+
+        Assert.IsNotNull(first);
+        Assert.AreEqual(_start, first.StartedAt);
+        Assert.IsNull(_results.Latest, "이전 결과가 새 세션의 최신 결과를 덮어쓰면 안 됩니다.");
+        var second = await _results.CompleteFocusSessionAsync(_start.AddMinutes(3));
+        Assert.AreEqual(_start.AddMinutes(2), second!.StartedAt);
+    }
+
+    [TestMethod]
+    public async Task FocusModeOff_NotificationFailureKeepsStoredDataAndPersistsTheWarning()
+    {
+        _results.Begin(_start, 25);
+        string focusId = _results.CurrentSessionId!;
+        await _notifications.InsertAsync(new("saved-before-failure", "Slack", null,
+            "가상 알림", "", _start.AddSeconds(10), false, SessionId: focusId));
+        var report = await _results.CompleteFocusSessionAsync(_start.AddMinutes(1),
+            notificationWrites: Task.FromException(new IOException("synthetic notification failure")));
+        Assert.IsNotNull(report);
+        Assert.AreEqual(1, report.NotificationCount);
+        StringAssert.Contains(report.NotificationSummary, "일부 알림 처리가 실패했습니다");
+        Assert.IsTrue((await new SqliteFocusSessionRepository(_database).GetByIdAsync(focusId))!.IsCompleted);
+        await _results.Reports.SaveAsync(report);
+        Assert.AreEqual(report.NotificationSummary, (await _results.Reports.GetSnapshotAsync(focusId))!.NotificationSummary);
+    }
+
+    [TestMethod]
+    public void PendingSave_WaitsForEveryCompletedSessionWithoutPumpingTheUi()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext());
+            try
+            {
+                using var database = SqliteDatabase.CreateInMemory();
+                database.Initialize();
+                var sessions = new SqliteFocusSessionRepository(database);
+                var results = new SessionResultsService(database, sessions);
+                var firstGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var secondGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                results.Begin(_start, 0);
+                string firstId = results.CurrentSessionId!;
+                var first = results.CompleteFocusSessionAsync(_start.AddMinutes(1), notificationWrites: firstGate.Task);
+                results.Begin(_start.AddMinutes(2), 0);
+                string secondId = results.CurrentSessionId!;
+                var second = results.CompleteFocusSessionAsync(_start.AddMinutes(3), notificationWrites: secondGate.Task);
+                Assert.IsNull(results.ActiveSession);
+                var pending = results.PendingSave;
+                Assert.IsFalse(pending.IsCompleted, "빠른 ON/OFF 후에도 이전 세션의 저장 작업을 추적합니다.");
+                firstGate.SetResult();
+                Assert.IsFalse(pending.IsCompleted, "두 번째 세션의 저장도 기다립니다.");
+                secondGate.SetResult();
+                pending.WaitAsync(TimeSpan.FromSeconds(3)).GetAwaiter().GetResult();
+                Assert.IsTrue(sessions.GetByIdAsync(firstId).GetAwaiter().GetResult()!.IsCompleted);
+                Assert.IsTrue(sessions.GetByIdAsync(secondId).GetAwaiter().GetResult()!.IsCompleted);
+                Assert.IsFalse(first.IsCompleted || second.IsCompleted,
+                    "앱 종료는 UI에 결과를 표시하는 후속 처리를 기다리지 않습니다.");
+            }
+            catch (Exception ex) { failure = ex; }
+            finally { System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown(); }
+        }) { IsBackground = true };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.IsTrue(thread.Join(TimeSpan.FromSeconds(5)), "UI 스레드에서 종료 저장 대기가 멈추면 안 됩니다.");
+        if (failure is not null) throw new AssertFailedException(failure.ToString(), failure);
+    }
+
+    [TestMethod]
+    public async Task FocusModeOff_StillShowsNotificationsWhenAnAppWriteFails()
+    {
+        _results.Begin(_start, 25);
+        string focusId = _results.CurrentSessionId!;
+        await _notifications.InsertAsync(new("saved-notification", "Slack", null,
+            "확인 요청", "", _start.AddSeconds(10), false, SessionId: focusId));
+
+        var report = await _results.CompleteFocusSessionAsync(_start.AddMinutes(1),
+            Task.FromException(new IOException("app write failed")));
+
+        Assert.IsNotNull(report);
+        Assert.AreEqual(1, report.NotificationCount);
+        Assert.AreEqual(1, report.QuickReplies.Count);
+    }
 
     [TestMethod]
     public async Task Journal_ReadsSavedWindowsInReverseOrder_AndClipsRange()
@@ -144,18 +265,6 @@ public sealed class SessionResultsTests
         await refresh;
         Assert.IsNull(_results.Latest);
         Assert.IsFalse(_results.IsCollecting);
-    }
-
-    [TestMethod]
-    public async Task ClearResult_InvalidatesAnInFlightActivityReport()
-    {
-        var writes = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var build = _results.BuildActivityResultAsync(_start, _start.AddMinutes(1), CurrentContext.Empty, writes.Task);
-        _results.ClearResult();
-        writes.SetResult();
-        await build;
-        Assert.IsNull(_results.Latest);
-        Assert.AreEqual("", _results.Status);
     }
 
     [TestMethod]

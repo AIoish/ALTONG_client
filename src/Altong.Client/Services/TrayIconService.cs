@@ -10,7 +10,9 @@ public sealed class TrayIconService : IDisposable
 {
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _contextMenu;
+    private readonly ToolStripItem _closeDashboardItem;
     private Action? _openDashboard;
+    private Action? _closeDashboard;
     private bool _isDisposed;
 
     public TrayIconService(
@@ -18,6 +20,8 @@ public sealed class TrayIconService : IDisposable
     {
         _contextMenu = new ContextMenuStrip();
         _contextMenu.Items.Add("대시보드 열기", null, (_, _) => openApplication());
+        _closeDashboardItem = _contextMenu.Items.Add("대시보드 닫기", null, (_, _) => _closeDashboard?.Invoke());
+        _closeDashboardItem.Enabled = false;
 
         _notifyIcon = new NotifyIcon
         {
@@ -37,6 +41,13 @@ public sealed class TrayIconService : IDisposable
     public void SetDashboardAction(Action openDashboard)
     {
         _openDashboard = openDashboard ?? throw new ArgumentNullException(nameof(openDashboard));
+    }
+
+    /// <summary>앱을 종료하지 않고 대시보드만 숨기는 트레이 메뉴 동작을 연결한다.</summary>
+    public void SetDashboardCloseAction(Action closeDashboard)
+    {
+        _closeDashboard = closeDashboard ?? throw new ArgumentNullException(nameof(closeDashboard));
+        _closeDashboardItem.Enabled = true;
     }
 
     /// <summary>
