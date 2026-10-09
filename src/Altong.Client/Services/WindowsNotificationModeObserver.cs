@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Windows.Foundation.Metadata;
 using Windows.UI.Notifications;
 
@@ -134,29 +135,30 @@ public sealed class WindowsNotificationModeObserver : IWindowsNotificationModeOb
             && ApiInformation.IsEventPresent(ManagerRuntimeClass, "NotificationModeChanged");
     }
 
-    private static WindowsNotificationModeState ReadState(
+    private WindowsNotificationModeState ReadState(
         ToastNotificationManagerForUser manager)
     {
         try
         {
-            return manager.NotificationMode switch
+            var mode = manager.NotificationMode;
+            WindowsUserNotificationState? userState = null;
+            if (mode == ToastNotificationMode.AlarmsOnly)
             {
-                ToastNotificationMode.Unrestricted =>
-                    new(WindowsNotificationModeKind.Unrestricted),
-                ToastNotificationMode.PriorityOnly =>
-                    new(WindowsNotificationModeKind.PriorityOnly),
-                ToastNotificationMode.AlarmsOnly =>
-                    new(WindowsNotificationModeKind.AlarmsOnly),
-                _ => new(
-                    WindowsNotificationModeKind.Unknown,
-                    "Windows가 알 수 없는 알림 모드를 반환했습니다."),
-            };
+                if (SHQueryUserNotificationState(out var shellState) >= 0)
+                    userState = shellState;
+                // Capture may have ended between the two native reads.
+                mode = manager.NotificationMode;
+            }
+            return WindowsNotificationModeResolver.Resolve(mode, userState, CurrentState);
         }
         catch (Exception exception)
         {
             return CreateErrorState(exception);
         }
     }
+
+    [DllImport("shell32.dll", ExactSpelling = true)]
+    private static extern int SHQueryUserNotificationState(out WindowsUserNotificationState state);
 
     private static WindowsNotificationModeState CreateErrorState(Exception exception)
     {

@@ -83,6 +83,13 @@ public sealed class SqliteDatabase : IAltongDatabase
             CREATE INDEX IF NOT EXISTS idx_notifications_received_at ON notifications(received_at);
             CREATE INDEX IF NOT EXISTS idx_notifications_is_passed ON notifications(is_passed);
 
+            -- 대시보드 목록에서 제거한 알림만 기록한다. 알림 원본은 유지한다.
+            CREATE TABLE IF NOT EXISTS dashboard_notification_dismissals (
+                notification_id TEXT PRIMARY KEY,
+                dismissed_at TEXT NOT NULL,
+                FOREIGN KEY(notification_id) REFERENCES notifications(id) ON DELETE CASCADE
+            );
+
             -- 2. 활성 창 작업 세션 로그 테이블 (GitHub TIL 업무 일지 자동 생성 원천)
             CREATE TABLE IF NOT EXISTS window_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,70 +122,49 @@ public sealed class SqliteDatabase : IAltongDatabase
                 FOREIGN KEY(notification_id) REFERENCES notifications(id) ON DELETE CASCADE
             );
 
-            -- 5. 사용자가 명시적으로 시작하고 마친 활동 기록 범위
-            CREATE TABLE IF NOT EXISTS activity_sessions (
-                activity_session_id TEXT PRIMARY KEY,
-                started_at TEXT NOT NULL,
-                ended_at TEXT,
-                status TEXT NOT NULL CHECK(status IN ('active', 'completed')),
-                last_seen_at TEXT,
-                created_at TEXT DEFAULT (datetime('now', 'utc'))
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_activity_sessions_started_at
-                ON activity_sessions(started_at);
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_sessions_single_active
-                ON activity_sessions(status) WHERE status = 'active';
-
-            -- 앱 종료, 절전, 재실행 사이 구간은 기록 시간에서 제외한다.
-            CREATE TABLE IF NOT EXISTS activity_session_segments (
-                segment_id TEXT PRIMARY KEY,
-                activity_session_id TEXT NOT NULL,
-                started_at TEXT NOT NULL,
-                ended_at TEXT,
-                last_seen_at TEXT NOT NULL,
-                FOREIGN KEY(activity_session_id) REFERENCES activity_sessions(activity_session_id) ON DELETE CASCADE
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_activity_session_segments_activity
-                ON activity_session_segments(activity_session_id, started_at);
-
-            -- 새 기록만 집중모드 ON 구간으로 집계한다. 이전 기록과 구분하는 표식이다.
-            CREATE TABLE IF NOT EXISTS activity_capture_policy (
-                activity_session_id TEXT PRIMARY KEY,
-                FOREIGN KEY(activity_session_id) REFERENCES activity_sessions(activity_session_id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS activity_capture_segments (
-                segment_id TEXT PRIMARY KEY,
-                activity_session_id TEXT NOT NULL,
-                started_at TEXT NOT NULL,
-                ended_at TEXT,
-                last_seen_at TEXT NOT NULL,
-                FOREIGN KEY(activity_session_id) REFERENCES activity_sessions(activity_session_id) ON DELETE CASCADE
-            );
-            CREATE INDEX IF NOT EXISTS idx_activity_capture_segments_activity
-                ON activity_capture_segments(activity_session_id, started_at);
-
-            -- 외부 알림 작성자도 같은 DB를 사용하므로 저장 경계는 DB에서 강제한다.
-            -- 절전/비정상 종료 후 열린 구간은 최근 heartbeat가 없으면 인정하지 않는다.
-            CREATE TRIGGER IF NOT EXISTS trg_notifications_focus_capture
-            BEFORE INSERT ON notifications
-            WHEN NOT EXISTS (
-                SELECT 1 FROM activity_capture_segments capture
-                JOIN activity_sessions activity
-                  ON activity.activity_session_id = capture.activity_session_id
-                WHERE activity.status = 'active'
-                  AND capture.ended_at IS NULL
-                  AND julianday(NEW.received_at) >= julianday(capture.started_at)
-                  AND julianday('now') - julianday(capture.last_seen_at) <= 10.0 / 86400.0
-            )
-            BEGIN
-                SELECT RAISE(IGNORE);
-            END;
             """;
 
         command.ExecuteNonQuery();
+        InitializeReports(connection);
+        using var removeTrigger = connection.CreateCommand();
+        removeTrigger.CommandText = "DROP TRIGGER IF EXISTS trg_notifications_focus_capture;";
+        removeTrigger.ExecuteNonQuery();
+    }
+
+    private static void InitializeReports(SqliteConnection connection)
+    {
+        // Schema creation and the one-time legacy index must succeed or roll back together.
+        // Otherwise an interrupted migration could lose history or later resurrect deletions.
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'focus_session_reports';";
+        bool reportsAlreadyExist = Convert.ToInt32(command.ExecuteScalar()) != 0;
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS focus_session_reports (
+                session_id TEXT PRIMARY KEY,
+                started_at TEXT NOT NULL,
+                ended_at TEXT NOT NULL,
+                saved_at TEXT,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                snapshot_json TEXT,
+                FOREIGN KEY(session_id) REFERENCES focus_sessions(session_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_focus_reports_end
+                ON focus_session_reports(julianday(ended_at), session_id);
+            """;
+        command.ExecuteNonQuery();
+        if (!reportsAlreadyExist)
+        {
+            command.CommandText = """
+                INSERT OR IGNORE INTO focus_session_reports (session_id, started_at, ended_at)
+                SELECT session_id, started_at, ended_at FROM focus_sessions
+                WHERE ended_at IS NOT NULL AND is_completed = 1
+                  AND julianday(ended_at) >= julianday(started_at);
+                """;
+            command.ExecuteNonQuery();
+        }
+        transaction.Commit();
     }
 
     public void Dispose()

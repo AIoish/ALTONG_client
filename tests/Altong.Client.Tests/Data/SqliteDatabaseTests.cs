@@ -1,6 +1,7 @@
 using Altong.Client.Data;
 using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
+using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Altong.Client.Tests.Data;
@@ -27,14 +28,6 @@ public class SqliteDatabaseTests
         _windowSessionRepo = new SqliteWindowSessionRepository(_database);
         _focusSessionRepo = new SqliteFocusSessionRepository(_database);
 
-        // 알림은 활동 기록과 집중모드가 함께 켜진 동안에만 저장된다.
-        var capture = new SqliteActivitySessionRepository(_database);
-        var startedAt = DateTime.UtcNow.AddSeconds(-1);
-        capture.InsertAsync(new ActivitySessionRecord("notification-test-activity", startedAt))
-            .GetAwaiter().GetResult();
-        capture.EnableFocusCaptureAsync("notification-test-activity").GetAwaiter().GetResult();
-        capture.StartCaptureSegmentAsync("notification-test-activity", startedAt)
-            .GetAwaiter().GetResult();
     }
 
     [TestCleanup]
@@ -82,14 +75,104 @@ public class SqliteDatabaseTests
     }
 
     [TestMethod]
-    public async Task NotificationRepository_AfterFocusCaptureEnds_DoesNotStoreNotification()
+    public async Task NotificationRepository_DoesNotRequireActivityRecording()
     {
-        var capture = new SqliteActivitySessionRepository(_database);
-        await capture.EndCaptureSegmentAsync("notification-test-activity", DateTime.UtcNow);
         await _notificationRepo.InsertAsync(new NotificationRecord(
-            "off-notification", "Slack", null, "집중모드 OFF", "", DateTime.UtcNow));
+            "focus-notification", "Slack", null, "집중모드 ON", "", DateTime.UtcNow,
+            SessionId: "focus-session"));
 
-        Assert.IsNull(await _notificationRepo.GetByIdAsync("off-notification"));
+        Assert.IsNotNull(await _notificationRepo.GetByIdAsync("focus-notification"));
+    }
+
+    [TestMethod]
+    public async Task Initialize_RemovesLegacyActivityCaptureTrigger_WithoutDeletingNotifications()
+    {
+        using (var connection = _database.CreateOpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                CREATE TRIGGER trg_notifications_focus_capture
+                BEFORE INSERT ON notifications
+                BEGIN SELECT RAISE(IGNORE); END;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        _database.Initialize();
+        await _notificationRepo.InsertAsync(new NotificationRecord(
+            "after-migration", "Slack", null, "알림", "", DateTime.UtcNow,
+            SessionId: "focus-session"));
+
+        Assert.IsNotNull(await _notificationRepo.GetByIdAsync("after-migration"));
+    }
+
+    [TestMethod]
+    public async Task Initialize_PreservesExistingLegacyActivityTables_AndSharedRecords()
+    {
+        using (var connection = _database.CreateOpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                CREATE TABLE activity_sessions (activity_session_id TEXT PRIMARY KEY);
+                CREATE TABLE activity_session_segments (
+                    segment_id TEXT PRIMARY KEY,
+                    activity_session_id TEXT REFERENCES activity_sessions(activity_session_id));
+                CREATE TABLE activity_capture_policy (
+                    activity_session_id TEXT PRIMARY KEY REFERENCES activity_sessions(activity_session_id));
+                CREATE TABLE activity_capture_segments (
+                    segment_id TEXT PRIMARY KEY,
+                    activity_session_id TEXT REFERENCES activity_sessions(activity_session_id));
+                INSERT INTO activity_sessions VALUES ('legacy-activity');
+                INSERT INTO activity_session_segments VALUES ('segment', 'legacy-activity');
+                INSERT INTO activity_capture_policy VALUES ('legacy-activity');
+                INSERT INTO activity_capture_segments VALUES ('capture', 'legacy-activity');
+                INSERT INTO window_sessions (process_name, window_title, started_at, ended_at,
+                    duration_seconds, session_id)
+                VALUES ('Editor.exe', '', '2026-09-30T10:00:00Z', '2026-09-30T10:01:00Z', 60,
+                    'legacy-activity');
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        await _notificationRepo.InsertAsync(new NotificationRecord(
+            "shared-notification", "Slack", null, "title", "body", DateTime.UtcNow));
+
+        _database.Initialize();
+
+        using var verify = _database.CreateOpenConnection();
+        using var count = verify.CreateCommand();
+        count.CommandText = """
+            SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN (
+                'activity_sessions', 'activity_session_segments',
+                'activity_capture_policy', 'activity_capture_segments');
+            """;
+        Assert.AreEqual(4L, (long)count.ExecuteScalar()!);
+        foreach (string table in new[] { "activity_sessions", "activity_session_segments", "activity_capture_policy", "activity_capture_segments" })
+        {
+            count.CommandText = $"SELECT COUNT(*) FROM {table};";
+            Assert.AreEqual(1L, (long)count.ExecuteScalar()!);
+        }
+        count.CommandText = "SELECT COUNT(*) FROM window_sessions WHERE session_id = 'legacy-activity';";
+        Assert.AreEqual(1L, (long)count.ExecuteScalar()!);
+        Assert.IsNotNull(await _notificationRepo.GetByIdAsync("shared-notification"));
+
+        // Repeated initialization must also preserve the dormant legacy data.
+        _database.Initialize();
+        count.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE name = 'activity_sessions';";
+        Assert.AreEqual(1L, (long)count.ExecuteScalar()!);
+    }
+
+    [TestMethod]
+    public void Initialize_DoesNotCreateLegacyActivityTables()
+    {
+        _database.Initialize();
+        using var connection = _database.CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN (
+                'activity_sessions', 'activity_session_segments',
+                'activity_capture_policy', 'activity_capture_segments');
+            """;
+        Assert.AreEqual(0L, (long)command.ExecuteScalar()!);
     }
 
     [TestMethod]

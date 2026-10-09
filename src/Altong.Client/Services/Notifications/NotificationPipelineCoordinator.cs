@@ -19,6 +19,7 @@ public sealed class NotificationPipelineCoordinator : IDisposable
 
     private readonly object _syncRoot = new();
     private bool _isDisposed;
+    private readonly Dictionary<string, List<Task>> _sessionWrites = new();
 
     /// <summary>
     /// 알림이 평가되고 DB에 저장된 직후 발행되는 이벤트 (UI 표시 및 독 카운터 연동용).
@@ -55,14 +56,30 @@ public sealed class NotificationPipelineCoordinator : IDisposable
 
     private async void OnNotificationReceived(object? sender, RawNotification notification)
     {
+        TaskCompletionSource? completion = null;
         try
         {
             // 1. 현재 활성 창 맥락 스냅샷 획득
             CurrentContext context = _windowTracker.CurrentContext;
 
             // 2. 집중 모드 여부 및 세션 ID 확인
-            bool isFocusMode = _isFocusModeEnabled();
-            string? sessionId = isFocusMode ? _getCurrentSessionId() : null;
+            bool isFocusMode;
+            string? sessionId;
+            lock (_syncRoot)
+            {
+                if (_isDisposed) return;
+                isFocusMode = _isFocusModeEnabled();
+                sessionId = isFocusMode ? _getCurrentSessionId() : null;
+                if (sessionId is not null)
+                {
+                    completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    if (!_sessionWrites.TryGetValue(sessionId, out var writes))
+                        _sessionWrites[sessionId] = writes = new List<Task>();
+                    writes.RemoveAll(task => task.IsCompletedSuccessfully);
+                    writes.Add(completion.Task);
+                    _ = completion.Task.ContinueWith(task => { _ = task.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
+                }
+            }
 
             // 3. AI 필터 엔진 평가
             FilterResult filterResult = await _filterEngine.EvaluateAsync(notification, context).ConfigureAwait(false);
@@ -90,6 +107,8 @@ public sealed class NotificationPipelineCoordinator : IDisposable
             {
                 await _notificationRepository.InsertAsync(record).ConfigureAwait(false);
             }
+            // The report depends on persistence, not logging or UI subscriber success.
+            completion?.TrySetResult();
 
             // 5. 콘솔 실시간 로깅
             string senderPart = string.IsNullOrEmpty(notification.Sender) ? "" : $" ({notification.Sender})";
@@ -108,7 +127,18 @@ public sealed class NotificationPipelineCoordinator : IDisposable
         }
         catch (Exception ex)
         {
+            completion?.TrySetException(ex);
             AppLogger.Error($"[NotificationPipeline] 알림 파이프라인 처리 오류: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>Call after focus mode is disabled, before collecting that session's report.</summary>
+    public Task DrainSessionAsync(string sessionId)
+    {
+        lock (_syncRoot)
+        {
+            if (!_sessionWrites.Remove(sessionId, out var writes)) return Task.CompletedTask;
+            return Task.WhenAll(writes);
         }
     }
 

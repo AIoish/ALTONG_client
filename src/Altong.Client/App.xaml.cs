@@ -20,7 +20,6 @@ public partial class App : System.Windows.Application
     public FocusSettingsStore FocusSettings { get; } = new();
     public FocusRoutineService FocusRoutine { get; private set; } = null!;
     public SessionResultsService SessionResults { get; private set; } = null!;
-    public ActivitySessionService ActivitySession { get; private set; } = null!;
     private readonly System.Windows.Threading.DispatcherTimer _routineTimer = new()
     {
         Interval = TimeSpan.FromSeconds(1)
@@ -34,7 +33,6 @@ public partial class App : System.Windows.Application
     public NotificationPipelineCoordinator NotificationPipeline { get; private set; } = null!;
     public KakaoNotificationInterceptor KakaoInterceptor { get; private set; } = null!;
     public IKakaoAudioOperator KakaoAudioOperator { get; private set; } = null!;
-    public SqliteActivitySessionRepository ActivitySessionRepository { get; private set; } = null!;
 
     internal bool IsShuttingDown { get; private set; }
 
@@ -84,18 +82,15 @@ public partial class App : System.Windows.Application
         NotificationRepository = new SqliteNotificationRepository(Database);
         WindowSessionRepository = new SqliteWindowSessionRepository(Database);
         FocusSessionRepository = new SqliteFocusSessionRepository(Database);
-        ActivitySessionRepository = new SqliteActivitySessionRepository(Database);
         SessionResults = new SessionResultsService(Database, FocusSessionRepository);
-        ActivitySession = new ActivitySessionService(ActivitySessionRepository);
-        ActivitySession.RestoreAsync().GetAwaiter().GetResult();
 
-        // 안정 창의 종료 시각을 집중모드 ON 구간과 교차시켜 저장한다.
+        // 활성 창 기록은 현재 집중 세션에만 연결한다.
         ActiveWindowTracker.WindowSessionEnded += (_, e) =>
         {
-            if (ActivitySession.Current is not { } active)
+            if (!FocusModeService.IsEnabled || SessionResults.ActiveSession is not { } focus)
                 return;
             // Tracker events can be raised while holding its state lock; do not perform SQLite I/O there.
-            var write = Task.Run(() => PersistWindowIntervalAsync(active, e.ProcessName, e.WindowTitle,
+            var write = Task.Run(() => PersistFocusWindowIntervalAsync(focus, e.ProcessName, e.WindowTitle,
                 e.StartedAt.UtcDateTime, e.EndedAt.UtcDateTime));
             lock (_windowWrites)
             {
@@ -156,6 +151,7 @@ public partial class App : System.Windows.Application
 
         _trayIconService = new TrayIconService(ShowDashboard);
         _trayIconService.SetDashboardAction(ToggleDashboard);
+        _trayIconService.SetDashboardCloseAction(HideDashboard);
 
         FocusModeService.StateChanged += FocusModeService_StateChanged;
         _focusModeCoordinator.StateChanged += FocusModeCoordinator_StateChanged;
@@ -181,7 +177,7 @@ public partial class App : System.Windows.Application
         _routineTimer.Tick -= RoutineTimer_Tick;
         if (FocusRoutine is not null)
             FocusRoutine.PhaseChanged -= FocusRoutine_PhaseChanged;
-        PersistActivityStateForExit();
+        PersistFocusStateForExit();
         ActiveWindowTracker.Dispose();
         if (NotificationPipeline is not null)
         {
@@ -224,21 +220,35 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
-    private void PersistActivityStateForExit()
+    private void PersistFocusStateForExit()
     {
-        if (ActivitySession?.Current is not { } active)
-            return;
+        if (SessionResults is null) return;
+        DateTime endedAt = DateTime.UtcNow;
+        CurrentContext? context = null;
+        if (SessionResults.ActiveSession is { } focus)
+        {
+            context = ActiveWindowTracker.CaptureNow();
+            try
+            {
+                PersistCurrentFocusWindowSnapshotAsync(focus, endedAt, context).GetAwaiter().GetResult();
+                Task pendingWrites;
+                lock (_windowWrites) pendingWrites = Task.WhenAll(_windowWrites);
+                pendingWrites.GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Database] 앱 사용 기록 저장 실패: {ex.GetBaseException().Message}");
+            }
+        }
         try
         {
-            DateTime endedAt = DateTime.UtcNow;
-            ActivitySession.TouchIfDueAsync(endedAt).GetAwaiter().GetResult();
-            CurrentContext context = ActiveWindowTracker.CaptureNow();
-            PersistCurrentWindowSnapshotAsync(active.StartedAt, endedAt, context).GetAwaiter().GetResult();
-            ActivitySession.PauseForShutdownAsync(endedAt).GetAwaiter().GetResult();
+            if (context is not null) SessionResults.End(endedAt, context, collectResult: false);
+            // OFF may already have cleared ActiveSession while its background writes are still pending.
+            SessionResults.PendingSave.GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Database] 종료 상태 저장 실패: {ex.GetBaseException().Message}");
+            Console.WriteLine($"[Database] 집중 상태 저장 실패: {ex.GetBaseException().Message}");
         }
     }
 
@@ -255,9 +265,6 @@ public partial class App : System.Windows.Application
                     ActiveWindowTracker,
                     FocusModeService,
                     _focusModeCoordinator,
-                    ActivitySession,
-                    StartActivityAsync,
-                    CompleteActivityAsync,
                     ShowCurrentRoutineReminder,
                     RequestShutdown);
                 _dashboardWindow.Closed += DashboardWindow_Closed;
@@ -285,88 +292,26 @@ public partial class App : System.Windows.Application
         _dashboardWindow = null;
     }
 
-    private async Task StartActivityAsync()
-    {
-        lock (_windowWrites)
-            _windowWrites.RemoveAll(task => task.IsCompleted);
-        await ActivitySession.StartAsync(DateTime.UtcNow);
-        if (FocusModeService.IsEnabled)
-            await ActivitySession.SetFocusCaptureAsync(true, DateTime.UtcNow);
-        _lastWindowCheckpointAt = DateTime.MinValue;
-        SessionResults.ClearResult();
-    }
-
-    private async Task CompleteActivityAsync()
-    {
-        if (ActivitySession.Current is not { } active)
-            return;
-
-        DateTime endedAt = DateTime.UtcNow;
-        await ActivitySession.TouchIfDueAsync(endedAt);
-        CurrentContext context = ActiveWindowTracker.CaptureNow();
-        Task finalWindowWrite = PersistCurrentWindowSnapshotAsync(active.StartedAt, endedAt, context);
-        var completed = await ActivitySession.CompleteAsync(endedAt);
-        if (completed is null)
-            return;
-
-        Task pendingWrites;
-        lock (_windowWrites)
-            pendingWrites = Task.WhenAll(_windowWrites.Append(finalWindowWrite));
-        await SessionResults.BuildActivityResultAsync(
-            completed.StartedAt,
-            completed.EndedAt!.Value,
-            context,
-            pendingWrites,
-            await ActivitySession.GetRecordedDurationAsync(completed.ActivitySessionId),
-            await ActivitySession.UsesFocusCaptureAsync(completed.ActivitySessionId)
-                ? completed.ActivitySessionId : null);
-    }
-
-    private Task PersistCurrentWindowSnapshotAsync(
-        DateTime activityStartedAt,
-        DateTime endedAt,
-        CurrentContext context)
+    private Task PersistCurrentFocusWindowSnapshotAsync(
+        FocusSessionRecord focus, DateTime endedAt, CurrentContext context)
     {
         if (string.IsNullOrWhiteSpace(context.ActiveProcess) || context.DurationSeconds <= 0)
             return Task.CompletedTask;
-
         DateTime startedAt = context.LastUpdated.AddSeconds(-context.DurationSeconds);
-        if (startedAt < activityStartedAt)
-            startedAt = activityStartedAt;
-        if (ActivitySession.UsesFocusCapture && startedAt < _lastWindowCheckpointAt)
-            startedAt = _lastWindowCheckpointAt;
-        if (endedAt <= startedAt)
-            return Task.CompletedTask;
-
-        return PersistWindowIntervalAsync(ActivitySession.Current!, context.ActiveProcess,
-            context.WindowTitle, startedAt, endedAt, latestCaptureOnly: true);
+        if (startedAt < _lastWindowCheckpointAt) startedAt = _lastWindowCheckpointAt;
+        return PersistFocusWindowIntervalAsync(focus, context.ActiveProcess, context.WindowTitle,
+            startedAt, endedAt);
     }
 
-    private async Task PersistWindowIntervalAsync(ActivitySessionRecord activity, string process,
-        string title, DateTime startedAt, DateTime endedAt, bool latestCaptureOnly = false)
+    private Task PersistFocusWindowIntervalAsync(FocusSessionRecord focus, string process,
+        string title, DateTime startedAt, DateTime endedAt)
     {
-        if (endedAt <= startedAt) return;
-        if (await ActivitySession.UsesFocusCaptureAsync(activity.ActivitySessionId).ConfigureAwait(false))
-        {
-            var captures = await ActivitySession.GetCaptureIntervalsAsync(activity.ActivitySessionId, endedAt).ConfigureAwait(false);
-            foreach (var capture in latestCaptureOnly ? captures.TakeLast(1) : captures)
-            {
-                var start = startedAt > capture.Start ? startedAt : capture.Start;
-                var end = endedAt < capture.End ? endedAt : capture.End;
-                if (end > start)
-                    await SaveWindowIntervalAsync(process, title, start, end, activity.ActivitySessionId).ConfigureAwait(false);
-            }
-        }
-        else
-        {
-            // 이전 버전의 진행 중 기록은 기존 저장 형식을 유지한다.
-            await SaveWindowIntervalAsync(process, title, startedAt, endedAt, null).ConfigureAwait(false);
-        }
+        var start = startedAt > focus.StartedAt ? startedAt : focus.StartedAt;
+        var end = focus.EndedAt is { } focusEnd && focusEnd < endedAt ? focusEnd : endedAt;
+        if (end <= start) return Task.CompletedTask;
+        return WindowSessionRepository.InsertAsync(new WindowSessionRecord(0, process, title, start, end,
+            Math.Max(1, (int)Math.Ceiling((end - start).TotalSeconds)), focus.SessionId));
     }
-
-    private Task SaveWindowIntervalAsync(string process, string title, DateTime start, DateTime end, string? activityId) =>
-        WindowSessionRepository.InsertAsync(new WindowSessionRecord(0, process, title, start, end,
-            Math.Max(1, (int)Math.Ceiling((end - start).TotalSeconds)), activityId));
 
     internal void RequestShutdown()
     {
@@ -391,22 +336,13 @@ public partial class App : System.Windows.Application
         RunOnUiThread(() =>
         {
             if (!enabled) _notificationDockWindow?.EndNotificationSession();
-            if (ActivitySession.IsRecording)
-            {
-                ActivitySession.SetFocusCaptureAsync(enabled, changedAt).GetAwaiter().GetResult();
-                if (enabled) _lastWindowCheckpointAt = DateTime.MinValue;
-                var context = ActiveWindowTracker.CaptureNow();
-                if (!enabled && ActivitySession.Current is { } active)
-                {
-                    var write = PersistCurrentWindowSnapshotAsync(active.StartedAt, changedAt, context);
-                    lock (_windowWrites) _windowWrites.Add(write);
-                }
-            }
             FocusRoutine.Refresh();
             if (enabled)
             {
                 KakaoAudioOperator?.Mute();
-                SessionResults.Begin(changedAt, FocusSettings.Current.FocusMinutes);
+                lock (_windowWrites) _windowWrites.RemoveAll(task => task.IsCompleted);
+                _lastWindowCheckpointAt = DateTime.MinValue;
+                SessionResults.Begin(changedAt, FocusSettings.Current.TimerEnabled ? FocusSettings.Current.FocusMinutes : 0);
                 if (SessionResults.CurrentSessionId is { } sessionId)
                     _notificationDockWindow?.BeginNotificationSession(sessionId);
             }
@@ -414,15 +350,43 @@ public partial class App : System.Windows.Application
             {
                 KakaoAudioOperator?.Unmute();
                 var lastContext = ActiveWindowTracker.CaptureNow();
-                Task pendingWrites;
-                lock (_windowWrites) pendingWrites = Task.WhenAll(_windowWrites);
-                SessionResults.End(changedAt, lastContext, pendingWrites, collectResult: false);
+                if (SessionResults.ActiveSession is { } focus)
+                {
+                    var snapshotWrite = PersistCurrentFocusWindowSnapshotAsync(focus, changedAt, lastContext);
+                    Task pendingWrites;
+                    lock (_windowWrites) pendingWrites = Task.WhenAll(_windowWrites.Append(snapshotWrite));
+                    _ = CompleteAndShowFocusReportAsync(changedAt, pendingWrites,
+                        NotificationPipeline.DrainSessionAsync(focus.SessionId));
+                }
             }
 
             UpdateFocusModeShell();
             UpdateRoutineView();
         });
     }
+
+    private async Task CompleteAndShowFocusReportAsync(DateTime endedAt, Task pendingWrites, Task notificationWrites)
+    {
+        try
+        {
+            var result = await SessionResults.CompleteFocusSessionAsync(endedAt, pendingWrites, notificationWrites);
+            if (result is null || IsShuttingDown) return;
+            await Dispatcher.InvokeAsync(() => { });
+            if (IsShuttingDown) return;
+            var report = new SessionReportWindow(result, SessionResults.Reports);
+            if (_dashboardWindow?.IsVisible == true)
+                report.Owner = _dashboardWindow;
+            else
+                report.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            report.Show();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error($"[SessionResults] 집중 결과 표시 실패: {ex.GetBaseException().Message}", ex);
+        }
+    }
+
+    private void HideDashboard() => RunOnUiThread(() => _dashboardWindow?.Hide());
 
     private void ToggleDashboard()
     {
@@ -447,20 +411,19 @@ public partial class App : System.Windows.Application
             FocusRoutine.Refresh();
             UpdateRoutineView();
             await SessionResults.RefreshAsync();
-            await ActivitySession.TouchIfDueAsync(DateTime.UtcNow);
             if (!IsShuttingDown) await CheckpointActiveWindowAsync();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Database] 활동 상태 갱신 실패: {ex.GetBaseException().Message}");
+            Console.WriteLine($"[Database] 집중 상태 갱신 실패: {ex.GetBaseException().Message}");
         }
         finally { _routineTickInProgress = false; }
     }
 
     private async Task CheckpointActiveWindowAsync()
     {
-        if (_windowCheckpointInProgress || ActivitySession?.Current is not { } active ||
-            !ActivitySession.UsesFocusCapture || !FocusModeService.IsEnabled)
+        if (_windowCheckpointInProgress || !FocusModeService.IsEnabled ||
+            SessionResults.ActiveSession is not { } focus)
             return;
         var now = DateTime.UtcNow;
         if (_lastWindowCheckpointAt != DateTime.MinValue &&
@@ -470,7 +433,7 @@ public partial class App : System.Windows.Application
         try
         {
             var context = ActiveWindowTracker.CaptureNow();
-            var write = PersistCurrentWindowSnapshotAsync(active.StartedAt, now, context);
+            var write = PersistCurrentFocusWindowSnapshotAsync(focus, now, context);
             lock (_windowWrites)
             {
                 _windowWrites.RemoveAll(task => task.IsCompletedSuccessfully);
@@ -498,9 +461,9 @@ public partial class App : System.Windows.Application
         {
             case FocusRoutinePhase.Focus:
                 _notificationDockWindow?.ShowRoutineReminder(
-                    "집중 시간이 시작됐어요.",
+                    FocusRoutine.UsesTimer ? "집중 시간이 시작됐어요." : "집중 모드가 켜졌어요.",
                     () => FocusRoutine.StatusText,
-                    "집중에 필요한 작업을 시작해보세요.");
+                    FocusRoutine.UsesTimer ? "집중에 필요한 작업을 시작해보세요." : "시간 제한 없이 집중하세요. 종료할 때 집중 모드를 꺼 주세요.");
                 break;
 
             case FocusRoutinePhase.Break:
@@ -510,13 +473,18 @@ public partial class App : System.Windows.Application
                     "잠시 쉬어가세요. 방해 금지 모드는 직접 조절할 수 있어요.");
                 break;
 
+            case FocusRoutinePhase.Completed:
+                _notificationDockWindow?.ShowRoutineReminder(
+                    "설정한 집중 시간이 끝났어요.",
+                    () => FocusRoutine.StatusText,
+                    "집중 모드는 계속 켜져 있어요. 마치려면 직접 꺼 주세요.");
+                break;
+
             case FocusRoutinePhase.Idle:
                 _notificationDockWindow?.ShowRoutineReminder(
                     "집중 모드가 종료됐어요.",
                     () => "세션 종료",
-                    ActivitySession.IsRecording
-                        ? "집중 기록을 저장했어요. 활동 기록은 계속됩니다."
-                        : "집중 기록을 저장했어요.");
+                    "집중 결과 리포트를 준비하고 있어요.");
                 break;
         }
     }
@@ -530,9 +498,11 @@ public partial class App : System.Windows.Application
 
             bool isBreak = FocusRoutine.Phase == FocusRoutinePhase.Break;
             _notificationDockWindow.ShowRoutineReminder(
-                isBreak ? "휴식 시간이 진행 중이에요." : "집중 시간이 진행 중이에요.",
+                isBreak ? "휴식 시간이 진행 중이에요."
+                    : FocusRoutine.Phase == FocusRoutinePhase.Completed ? "설정한 집중 시간이 끝났어요."
+                    : FocusRoutine.UsesTimer ? "집중 시간이 진행 중이에요." : "집중 모드가 켜져 있어요.",
                 () => FocusRoutine.StatusText,
-                isBreak ? "충분히 쉬고 다음 집중을 준비해보세요." : "현재 작업에 집중해보세요.");
+                isBreak ? "충분히 쉬고 다음 집중을 준비해보세요." : "집중 모드를 끌 때까지 현재 상태가 유지됩니다.");
         });
     }
 

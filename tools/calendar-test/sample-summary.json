@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "session_id": "manual-session",
+  "items": [
+    {
+      "summary_id": "manual-meeting-summary",
+      "app_name": "KakaoTalk",
+      "text": "개발팀 테스트 회의는 2026년 10월 12일 오후 7시부터 8시까지 창의관 402호에서 진행됩니다.",
+      "is_schedule_related": true,
+      "schedule": {
+        "event_id": "altong-calendar-manual-20261007-001",
+        "title": "ALTONG 테스트 회의",
+        "start": "2026-10-12T19:00:00+09:00",
+        "end": "2026-10-12T20:00:00+09:00",
+        "time_zone": "Asia/Seoul",
+        "location": "창의관 402호",
+        "details": "가상 알림 요약으로 만든 테스트 일정입니다. 개발팀 중간 점검 및 다음 작업을 논의합니다."
+      }
+    },
+    {
+      "summary_id": "manual-normal-summary",
+      "app_name": "KakaoTalk",
+      "text": "공유한 자료를 확인해 달라는 메시지가 왔습니다.",
+      "is_schedule_related": false,
+      "schedule": null
+    }
+  ]
+}

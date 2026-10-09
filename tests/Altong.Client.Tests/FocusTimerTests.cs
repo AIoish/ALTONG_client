@@ -23,7 +23,7 @@ public sealed class FocusTimerTests
     public void FirstRun_UsesDefaultsWithoutWriting()
     {
         var store = new FocusSettingsStore(SettingsPath);
-        Assert.AreEqual(new FocusTimerSettings(25, 5), store.Current);
+        Assert.AreEqual(new FocusTimerSettings(25, 0, false), store.Current);
         Assert.IsFalse(File.Exists(SettingsPath));
         Assert.IsNull(store.LoadWarning);
     }
@@ -32,22 +32,22 @@ public sealed class FocusTimerTests
     public void Save_ReloadsCustomDurations()
     {
         var store = new FocusSettingsStore(SettingsPath);
-        store.Save(new(50, 10));
-        Assert.AreEqual(new FocusTimerSettings(50, 10), new FocusSettingsStore(SettingsPath).Current);
+        store.Save(new(50, 10, true));
+        Assert.AreEqual(new FocusTimerSettings(50, 10, true), new FocusSettingsStore(SettingsPath).Current);
         Assert.AreEqual(1, Directory.GetFiles(_directory).Length);
     }
 
     [DataTestMethod]
     [DataRow(0, 5)]
     [DataRow(181, 5)]
-    [DataRow(25, 0)]
+    [DataRow(25, -1)]
     [DataRow(25, 61)]
     public void InvalidSettings_DoNotReplaceSavedValues(int focus, int rest)
     {
         var store = new FocusSettingsStore(SettingsPath);
-        store.Save(new(50, 10));
-        Assert.ThrowsException<ArgumentOutOfRangeException>(() => store.Save(new(focus, rest)));
-        Assert.AreEqual(new FocusTimerSettings(50, 10), store.Current);
+        store.Save(new(50, 10, true));
+        Assert.ThrowsException<ArgumentOutOfRangeException>(() => store.Save(new(focus, rest, true)));
+        Assert.AreEqual(new FocusTimerSettings(50, 10, true), store.Current);
         Assert.AreEqual(store.Current, new FocusSettingsStore(SettingsPath).Current);
     }
 
@@ -59,7 +59,7 @@ public sealed class FocusTimerTests
     {
         File.WriteAllText(SettingsPath, content);
         var store = new FocusSettingsStore(SettingsPath);
-        Assert.AreEqual(new FocusTimerSettings(25, 5), store.Current);
+        Assert.AreEqual(new FocusTimerSettings(25, 0, false), store.Current);
         Assert.IsNotNull(store.LoadWarning);
         Assert.AreEqual(content, File.ReadAllText(SettingsPath));
     }
@@ -71,11 +71,11 @@ public sealed class FocusTimerTests
         Directory.CreateDirectory(SettingsPath); // A directory cannot be replaced by the settings file.
         try
         {
-            store.Save(new(50, 10));
+            store.Save(new(50, 10, true));
             Assert.Fail("Saving over a directory must fail.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-        Assert.AreEqual(new FocusTimerSettings(25, 5), store.Current);
+        Assert.AreEqual(new FocusTimerSettings(25, 0, false), store.Current);
         Assert.AreEqual(0, Directory.GetFiles(_directory).Length);
     }
 
@@ -83,7 +83,7 @@ public sealed class FocusTimerTests
     public void Routine_TransitionsAtConfiguredBoundariesAndStopsWithFocusMode()
     {
         var store = new FocusSettingsStore(SettingsPath);
-        store.Save(new(2, 1));
+        store.Save(new(2, 1, true));
         var mode = new FocusModeService();
         var clock = new ManualClock();
         var routine = new FocusRoutineService(mode, store, clock);
@@ -117,12 +117,13 @@ public sealed class FocusTimerTests
     public void ChangedSettings_ApplyOnlyAfterRestart()
     {
         var store = new FocusSettingsStore(SettingsPath);
+        store.Save(new(25, 5, true));
         var mode = new FocusModeService();
         var clock = new ManualClock();
         var routine = new FocusRoutineService(mode, store, clock);
         mode.Start();
         routine.Refresh();
-        store.Save(new(50, 10));
+        store.Save(new(50, 10, true));
         clock.Advance(TimeSpan.FromMinutes(25));
         routine.Refresh();
         Assert.AreEqual(FocusRoutinePhase.Break, routine.Phase);
@@ -138,6 +139,7 @@ public sealed class FocusTimerTests
     public void DelayedTick_CatchesUpWithoutReplayingAllTransitions()
     {
         var store = new FocusSettingsStore(SettingsPath);
+        store.Save(new(25, 5, true));
         var mode = new FocusModeService();
         var clock = new ManualClock();
         var routine = new FocusRoutineService(mode, store, clock);
@@ -147,6 +149,97 @@ public sealed class FocusTimerTests
         routine.Refresh();
         Assert.AreEqual(FocusRoutinePhase.Break, routine.Phase);
         Assert.AreEqual(TimeSpan.FromMinutes(3), routine.Remaining);
+    }
+
+    [TestMethod]
+    public void DefaultMode_HasNoTimeLimitOrBreakPhase()
+    {
+        var store = new FocusSettingsStore(SettingsPath);
+        var mode = new FocusModeService();
+        var clock = new ManualClock();
+        var routine = new FocusRoutineService(mode, store, clock);
+        mode.Start();
+        routine.Refresh();
+        clock.Advance(TimeSpan.FromHours(3));
+        routine.Refresh();
+        Assert.IsFalse(routine.UsesTimer);
+        Assert.AreEqual(FocusRoutinePhase.Focus, routine.Phase);
+        Assert.AreEqual(TimeSpan.Zero, routine.Remaining);
+        Assert.AreEqual(TimeSpan.FromHours(3), routine.Elapsed);
+        Assert.IsTrue(mode.IsEnabled);
+        mode.Stop();
+        routine.Refresh();
+        Assert.AreEqual(FocusRoutinePhase.Idle, routine.Phase);
+        Assert.AreEqual(TimeSpan.Zero, routine.Elapsed);
+    }
+
+    [TestMethod]
+    public void FocusOnlyTimer_CompletesOnceWithoutBreakOrChangingFocusMode()
+    {
+        var store = new FocusSettingsStore(SettingsPath);
+        store.Save(new(2, 0, true));
+        Assert.AreEqual(store.Current, new FocusSettingsStore(SettingsPath).Current);
+        var mode = new FocusModeService();
+        var clock = new ManualClock();
+        var routine = new FocusRoutineService(mode, store, clock);
+        int completions = 0;
+        routine.PhaseChanged += (_, _) => { if (routine.Phase == FocusRoutinePhase.Completed) completions++; };
+        mode.Start();
+        routine.Refresh();
+        clock.Advance(TimeSpan.FromSeconds(119));
+        routine.Refresh();
+        Assert.AreEqual(TimeSpan.FromSeconds(1), routine.Remaining);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        routine.Refresh();
+        Assert.AreEqual(FocusRoutinePhase.Completed, routine.Phase);
+        Assert.AreEqual("집중 시간 완료 · 집중모드 켜짐", new DockRoutineStatus(routine.Phase).Label);
+        Assert.AreEqual(TimeSpan.Zero, routine.Remaining);
+        clock.Advance(TimeSpan.FromHours(1));
+        routine.Refresh();
+        Assert.AreEqual(FocusRoutinePhase.Completed, routine.Phase);
+        Assert.AreEqual(1, completions);
+        Assert.IsTrue(mode.IsEnabled);
+        mode.Stop();
+        routine.Refresh();
+        mode.Start();
+        routine.Refresh();
+        Assert.AreEqual(TimeSpan.FromMinutes(2), routine.Remaining);
+    }
+
+    [TestMethod]
+    public void LegacySettings_KeepDurationsWithTimerDisabled()
+    {
+        const string legacy = "{\"FocusMinutes\":50,\"BreakMinutes\":10}";
+        File.WriteAllText(SettingsPath, legacy);
+        var store = new FocusSettingsStore(SettingsPath);
+        Assert.AreEqual(new FocusTimerSettings(50, 10, false), store.Current);
+        Assert.AreEqual(legacy, File.ReadAllText(SettingsPath));
+        Assert.IsNull(store.LoadWarning);
+    }
+
+    [TestMethod]
+    public void DisableTimer_AppliesAtNextStartAndKeepsDurations()
+    {
+        var store = new FocusSettingsStore(SettingsPath);
+        store.Save(new(2, 1, true));
+        var mode = new FocusModeService();
+        var clock = new ManualClock();
+        var routine = new FocusRoutineService(mode, store, clock);
+        mode.Start();
+        routine.Refresh();
+        store.Save(store.Current with { TimerEnabled = false });
+        clock.Advance(TimeSpan.FromMinutes(2));
+        routine.Refresh();
+        Assert.AreEqual(FocusRoutinePhase.Break, routine.Phase);
+        mode.Stop();
+        routine.Refresh();
+        mode.Start();
+        routine.Refresh();
+        clock.Advance(TimeSpan.FromMinutes(10));
+        routine.Refresh();
+        Assert.IsFalse(routine.UsesTimer);
+        Assert.AreEqual(FocusRoutinePhase.Focus, routine.Phase);
+        Assert.AreEqual(new FocusTimerSettings(2, 1, false), new FocusSettingsStore(SettingsPath).Current);
     }
 
     private sealed class ManualClock : TimeProvider
