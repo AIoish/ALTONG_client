@@ -1,6 +1,6 @@
 namespace Altong.Client.Services;
 
-public enum DockPresentation { Classic, RightNotch }
+public enum DockPresentation { Classic, RightNotch, Stealth }
 
 public sealed record DockRoutineStatus(FocusRoutinePhase Phase)
 {
