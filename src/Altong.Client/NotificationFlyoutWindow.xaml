@@ -344,6 +344,10 @@
                                 <Button x:Name="ClassicDesignButton" Content="기존" Tag="{x:Static services:DockPresentation.Classic}"
                                         Click="SwitchPresentation_Click" Style="{StaticResource HeaderButton}" Width="64" Height="26" Margin="1" FontSize="11"
                                         ToolTip="기존 미니바" AutomationProperties.Name="기존 미니바 디자인" />
+                                <Button x:Name="StealthDesignButton" Content="라벤더" Tag="{x:Static services:DockPresentation.Stealth}"
+                                        Click="SwitchPresentation_Click" Style="{StaticResource HeaderButton}" Width="64" Height="26" Margin="1" FontSize="11"
+                                        ToolTip="평소에는 작은 동그라미로 숨고, 새 중요 알림은 빛으로 알리는 미니바"
+                                        AutomationProperties.Name="라벤더 미니바 디자인" />
                             </StackPanel>
                         </Border>
                     </Grid>

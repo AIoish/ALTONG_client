@@ -6,6 +6,22 @@
         AllowsTransparency="True" Background="Transparent" Focusable="False"
         ResizeMode="NoResize" ShowActivated="False" ShowInTaskbar="False"
         Topmost="True" WindowStartupLocation="Manual" WindowStyle="None">
+    <Window.Resources>
+        <!-- 은신형 그립: 평소 흐리게, 미니바 위에 커서가 있으면 밝혀 잡을 수 있음을 알린다. -->
+        <Style x:Key="StealthGripDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="2" />
+            <Setter Property="Height" Value="2" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Fill" Value="#4DFFFFFF" />
+            <Style.Triggers>
+                <!-- 미니바 어디에든 커서가 있거나 끄는 중(표면이 캡처)이면 밝힌다. -->
+                <DataTrigger Binding="{Binding IsMouseOver, ElementName=StealthSurface}" Value="True">
+                    <Setter Property="Fill" Value="#CCFFFFFF" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -163,5 +179,66 @@
                 <Ellipse Width="2" Height="2" Fill="#656B75" Margin="3,0,0,0" />
             </StackPanel>
         </Grid>
+        <!--
+            은신형: 평소에는 작은 점으로 남고, 호버·패널·안내·새 중요 알림일 때만 캡슐로 펼친다.
+            점과 캡슐의 상태 점은 같은 기준점을 공유한다. 위치는 코드에서 Canvas 좌표로 정한다.
+            Canvas 자체는 배경이 없어 투명 영역의 클릭은 아래 앱으로 그대로 전달된다.
+        -->
+        <Canvas x:Name="StealthSurface" Grid.ColumnSpan="2" Visibility="Collapsed"
+                MouseLeftButtonDown="DockSurface_MouseLeftButtonDown"
+                MouseMove="DockSurface_MouseMove" MouseLeftButtonUp="DockSurface_MouseLeftButtonUp"
+                LostMouseCapture="DockSurface_LostMouseCapture"
+                MouseEnter="DockSurface_MouseEnter" MouseLeave="DockSurface_MouseLeave"
+                AutomationProperties.Name="Altong 라벤더 미니바"
+                AutomationProperties.HelpText="커서를 올려 펼치기, 클릭하여 대시보드 열기, 아무 곳이나 잡고 끌어 이동">
+            <!--
+                몸체 하나가 동그라미(지름 12, 미확인 14)와 펼친 캡슐(높이 28) 사이를 늘어나고 줄어든다.
+                상태 점도 같은 자리에서 크기만 바뀐다. 그립·개수는 몸체 위에 겹쳐 펼친 뒤에만 나타난다.
+            -->
+            <!-- 새 중요 알림 때 한 번만 퍼지는 빛. 몸체 뒤에서 신호색으로 번졌다가 사라진다. -->
+            <Ellipse x:Name="StealthFlash" Width="14" Height="14" Opacity="0" IsHitTestVisible="False"
+                     RenderTransformOrigin="0.5,0.5">
+                <Ellipse.Fill><SolidColorBrush x:Name="StealthFlashBrush" Color="#FF8B6B" /></Ellipse.Fill>
+                <Ellipse.RenderTransform><ScaleTransform x:Name="StealthFlashScale" /></Ellipse.RenderTransform>
+                <Ellipse.Effect><BlurEffect Radius="6" /></Ellipse.Effect>
+            </Ellipse>
+            <Rectangle x:Name="StealthBody" Width="10" Height="10" RadiusX="5" RadiusY="5" Fill="#000000"
+                       IsHitTestVisible="False" RenderTransformOrigin="0.5,0.5">
+                <Rectangle.RenderTransform><ScaleTransform x:Name="StealthClickScale" /></Rectangle.RenderTransform>
+                <Rectangle.Effect>
+                    <!-- 밝은 배경에서 살짝 떠 보이게 하는 짧은 그림자. 빛 번짐은 쓰지 않는다. -->
+                    <DropShadowEffect BlurRadius="8" Direction="270" ShadowDepth="1.5" Opacity=".28" Color="#000000" />
+                </Rectangle.Effect>
+            </Rectangle>
+            <Ellipse x:Name="StealthStatusDot" Width="5" Height="5" IsHitTestVisible="False">
+                <Ellipse.Fill><SolidColorBrush x:Name="StealthStatusBrush" Color="#72B5A6" /></Ellipse.Fill>
+            </Ellipse>
+            <!-- 접힌 상태의 인식 영역은 펼친 캡슐의 그립 자리까지 덮어, 손잡이 쪽에 올려도 펼쳐진다. -->
+            <Grid x:Name="StealthDot" Width="46" Height="30" Background="#01000000" Cursor="Hand" />
+            <Border x:Name="StealthCapsule" Height="28" Opacity="0" IsHitTestVisible="False"
+                    Background="#01000000" CornerRadius="14" Cursor="Hand">
+                <!-- 상태 점 중심은 캡슐 왼쪽 끝에서 29.5 DIP(StealthDockPositioning.DotCenterX)다. -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="1,0,13,0">
+                    <Grid x:Name="StealthGrip" Width="22" Height="26" Background="#01000000" Cursor="Hand"
+                          AutomationProperties.Name="미니바 이동 손잡이">
+                        <UniformGrid Rows="3" Columns="2" Width="7" Height="12" Margin="10,0,0,0"
+                                     HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False">
+                            <Ellipse Style="{StaticResource StealthGripDot}" />
+                            <Ellipse Style="{StaticResource StealthGripDot}" />
+                            <Ellipse Style="{StaticResource StealthGripDot}" />
+                            <Ellipse Style="{StaticResource StealthGripDot}" />
+                            <Ellipse Style="{StaticResource StealthGripDot}" />
+                            <Ellipse Style="{StaticResource StealthGripDot}" />
+                        </UniformGrid>
+                    </Grid>
+                    <!-- 상태 점 자리. 실제 점은 위의 StealthStatusDot이 같은 위치에 그린다. -->
+                    <Border Width="7" Margin="3,0,0,0" />
+                    <TextBlock x:Name="StealthCountText" Margin="8,0,0,0" Visibility="Collapsed"
+                               FontSize="12" FontWeight="SemiBold" Foreground="#E6FFFFFF"
+                               Typography.NumeralAlignment="Tabular"
+                               VerticalAlignment="Center" IsHitTestVisible="False" />
+                </StackPanel>
+            </Border>
+        </Canvas>
     </Grid>
 </Window>

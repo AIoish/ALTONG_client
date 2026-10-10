@@ -39,7 +39,7 @@ public partial class NotificationFlyoutWindow : Window
         _presentation = presentation;
         bool notch = presentation != DockPresentation.Classic;
         ListColumn.Width = new GridLength((notch ? NotchListWidth : ListWidth) - 16);
-        foreach (var button in new[] { NotchDesignButton, ClassicDesignButton })
+        foreach (var button in new[] { NotchDesignButton, ClassicDesignButton, StealthDesignButton })
         {
             bool selected = button.Tag is DockPresentation option && option == presentation;
             button.Background = selected ? (System.Windows.Media.Brush)FindResource("Accent") : Brushes.Transparent;
