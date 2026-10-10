@@ -394,11 +394,12 @@ public sealed class StealthDockUiTests
         Assert.IsTrue(flyout.IsVisible);
         Assert.IsTrue(flyout.Left >= workArea.Left - .01 && flyout.Left + flyout.Width <= workArea.Right + .01);
         Assert.IsTrue(flyout.Top >= workArea.Top - .01);
+        // 창 위치는 Windows가 화면 픽셀 단위로 맞추므로 1픽셀 이내 차이는 허용한다.
         if (dock.StealthAnchor.Y >= workArea.Top + workArea.Height / 2)
-            Assert.AreEqual(capsuleTop, flyout.Top + flyout.Height, .01, "아래쪽에 있으면 패널이 위로 펼쳐집니다.");
+            Assert.AreEqual(capsuleTop, flyout.Top + flyout.Height, 1, "아래쪽에 있으면 패널이 위로 펼쳐집니다.");
         if (dock.StealthAnchor.X >= workArea.Left + workArea.Width / 2
             && capsuleRight + 8 - flyout.Width >= workArea.Left)
-            Assert.AreEqual(capsuleRight + 8, flyout.Left + flyout.Width, .01, "오른쪽에 있으면 캡슐 오른쪽 끝에 맞춥니다.");
+            Assert.AreEqual(capsuleRight + 8, flyout.Left + flyout.Width, 1, "오른쪽에 있으면 캡슐 오른쪽 끝에 맞춥니다.");
     }
 
     private static void RunOnSta(Action action)
