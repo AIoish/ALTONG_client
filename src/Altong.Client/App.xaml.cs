@@ -46,6 +46,7 @@ public partial class App : System.Windows.Application
     private bool _windowCheckpointInProgress;
     private bool _routineTickInProgress;
     private SingleInstanceService? _singleInstance;
+    private KlueFilterEngine? _klueFilterEngine;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -114,7 +115,17 @@ public partial class App : System.Windows.Application
             audioOperator: KakaoAudioOperator);
         var compositeListener = new CompositeNotificationListener(winRtListener, KakaoInterceptor);
 
-        var filterEngine = new RuleBasedFilterEngine();
+        var modelDir = Path.Combine(AppContext.BaseDirectory,
+            "models", "filtering", "klue-base-safety-v1");
+
+        _klueFilterEngine = new KlueFilterEngine(
+            Path.Combine(modelDir, "model-fp32.onnx"),
+            Path.Combine(modelDir, "tokenizer.json"),
+            shadow: false,
+            observe: d => AppLogger.Info(
+                $"[KLUE] {d.Status}: U={d.UrgencyScore}, R={d.RelevanceScore}, modelPass={d.ModelPassed}"));
+
+        IFilterEngine filterEngine = _klueFilterEngine;
         NotificationPipeline = new NotificationPipelineCoordinator(
             compositeListener,
             ActiveWindowTracker,
@@ -184,6 +195,7 @@ public partial class App : System.Windows.Application
             NotificationPipeline.NotificationProcessed -= NotificationPipeline_NotificationProcessed;
             NotificationPipeline.Dispose();
         }
+        _klueFilterEngine?.Dispose();
         KakaoAudioOperator?.Dispose();
 
         if (_focusModeCoordinator is not null)

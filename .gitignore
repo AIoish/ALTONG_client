@@ -55,3 +55,9 @@ Thumbs.db
 
 # Gemini Agents
 .agents/rules/
+
+# AI Models & Archives
+*.onnx
+*.zip
+integration/csharp/Verification/bin/
+integration/csharp/Verification/obj/

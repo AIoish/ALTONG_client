@@ -1,0 +1,27 @@
+{
+  "purpose": "Verified native C# filtering handoff; training candidate rejected",
+  "created_date": "2026-10-10",
+  "version": "klue-base-safety-v1",
+  "model_run": "2026-10-10-base-safety-continue-01",
+  "model_sha256": "315bb0778e47a84bfa2e5b705edb0daeb5164fa3057546109e425f749bc61a1a",
+  "tokenizer_sha256": "cc02cedb56df2e4d3bb6b5478cef6aa0daa98930c96b46976c8acdd2432459a8",
+  "model_bytes": 440349542,
+  "onnxruntime": "1.31.0",
+  "inputs": {
+    "input_ids": "Int64 [batch,sequence]",
+    "attention_mask": "Int64 [batch,sequence]"
+  },
+  "output": "logits float [batch,2,5]",
+  "heads": [
+    "urgency",
+    "relevance"
+  ],
+  "max_tokens": 512,
+  "policy": "urgency >= 4 OR relevance >= 4",
+  "default_shadow": false,
+  "client_commit": "4fb6b75022309e3019b31c0b5d339142c635173b",
+  "original_policy_correct": "68/74",
+  "original_urgent_policy_misses": "2/17",
+  "new_training_candidate_adopted": false,
+  "real_notification_accuracy_measured": false
+}

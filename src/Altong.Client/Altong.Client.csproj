@@ -16,4 +16,15 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\integration\csharp\Altong.Filtering\Altong.Filtering.csproj" />
+    <Compile Include="..\..\integration\csharp\ClientAdapter\KlueFilterEngine.cs"
+             Link="Services\AI\Filtering\KlueFilterEngine.cs" />
+    <Content Include="..\..\models\filtering\klue-base-safety-v1\**\*">
+      <Link>models\filtering\klue-base-safety-v1\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
