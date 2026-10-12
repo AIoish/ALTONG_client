@@ -58,6 +58,7 @@ Thumbs.db
 
 # AI Models & Archives
 *.onnx
+*.gguf
 *.zip
 integration/csharp/Verification/bin/
 integration/csharp/Verification/obj/

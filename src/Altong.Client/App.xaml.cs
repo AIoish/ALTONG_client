@@ -6,6 +6,7 @@ using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
 using Altong.Client.Services;
+using Altong.Client.Services.AI.Briefing;
 using Altong.Client.Services.Notifications;
 
 namespace Altong.Client;
@@ -47,6 +48,7 @@ public partial class App : System.Windows.Application
     private bool _routineTickInProgress;
     private SingleInstanceService? _singleInstance;
     private KlueFilterEngine? _klueFilterEngine;
+    private LlamaReportSummaryProvider? _reportSummaryProvider;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -125,6 +127,12 @@ public partial class App : System.Windows.Application
             observe: d => AppLogger.Info(
                 $"[KLUE] {d.Status}: U={d.UrgencyScore}, R={d.RelevanceScore}, modelPass={d.ModelPassed}"));
 
+        var briefingModelPath = Path.Combine(AppContext.BaseDirectory,
+            "models", "briefing", "qwen_briefing_v8_q8_0.gguf");
+        _reportSummaryProvider = new LlamaReportSummaryProvider(
+            NotificationRepository,
+            briefingModelPath);
+
         IFilterEngine filterEngine = _klueFilterEngine;
         NotificationPipeline = new NotificationPipelineCoordinator(
             compositeListener,
@@ -196,6 +204,7 @@ public partial class App : System.Windows.Application
             NotificationPipeline.Dispose();
         }
         _klueFilterEngine?.Dispose();
+        _reportSummaryProvider?.Dispose();
         KakaoAudioOperator?.Dispose();
 
         if (_focusModeCoordinator is not null)
@@ -278,7 +287,8 @@ public partial class App : System.Windows.Application
                     FocusModeService,
                     _focusModeCoordinator,
                     ShowCurrentRoutineReminder,
-                    RequestShutdown);
+                    RequestShutdown,
+                    summaryProvider: null);
                 _dashboardWindow.Closed += DashboardWindow_Closed;
                 MainWindow = _dashboardWindow;
             }
@@ -385,7 +395,7 @@ public partial class App : System.Windows.Application
             if (result is null || IsShuttingDown) return;
             await Dispatcher.InvokeAsync(() => { });
             if (IsShuttingDown) return;
-            var report = new SessionReportWindow(result, SessionResults.Reports);
+            var report = new SessionReportWindow(result, SessionResults.Reports, isSaved: false, summaryProvider: _reportSummaryProvider);
             if (_dashboardWindow?.IsVisible == true)
                 report.Owner = _dashboardWindow;
             else
