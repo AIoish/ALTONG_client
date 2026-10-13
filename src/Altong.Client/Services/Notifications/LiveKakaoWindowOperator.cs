@@ -593,11 +593,12 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
             {
                 g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                // PixelOffsetMode.HighQuality는 내부적으로 -0.5px 하프 픽셀 쉬프트를 일으켜 좁은 한글 자간(예: '현우' -> '혀O')을 뭉개므로 배제
                 g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
                 g.DrawImage(bmp, new Rectangle(0, 0, scaledWidth, scaledHeight), 0, 0, width, effectiveHeight, GraphicsUnit.Pixel);
             }
 
+#if DEBUG
             try
             {
                 string debugDir = Path.Combine(
@@ -608,6 +609,7 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
                 scaledBmp.Save(Path.Combine(debugDir, "last_kakao_capture_upscaled.png"), ImageFormat.Png);
             }
             catch { }
+#endif
 
             using var ms = new MemoryStream();
             scaledBmp.Save(ms, ImageFormat.Bmp);

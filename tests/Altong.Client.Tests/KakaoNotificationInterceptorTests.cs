@@ -141,8 +141,9 @@ public sealed class KakaoNotificationInterceptorTests
     }
 
     [TestMethod]
-    public void HandleWindowShowEvent_FocusModeOn_EnsuresAudioOperatorMuteCalled()
+    public void HandleWindowShowEvent_FocusModeOn_DoesNotCallAudioOperatorDirectly()
     {
+        // 알림 수신마다 오디오 제어를 호출하던 기존 방식에서, 집중 모드 수명주기 전용 작업자 제어로 디커플링됨
         var fakeOp = new FakeKakaoWindowOperator();
         var fakeAudio = new FakeKakaoAudioOperator();
         nint notiHwnd = 55555;
@@ -153,8 +154,7 @@ public sealed class KakaoNotificationInterceptorTests
 
         interceptor.HandleWindowShowEvent(notiHwnd);
 
-        Assert.IsTrue(fakeAudio.IsMuted, "집중 모드 중 알림 발생 시 오디오 음소거가 활성화되어야 합니다.");
-        Assert.IsTrue(fakeAudio.MuteCallCount >= 1, "Mute() 메서드가 최소 1회 호출되어야 합니다.");
+        Assert.AreEqual(0, fakeAudio.MuteCallCount, "알림 수신 시 오디오 제어를 직접 호출하지 않고 집중 모드 수명주기에 위임해야 합니다.");
     }
 
     [TestMethod]
@@ -242,7 +242,52 @@ public sealed class KakaoNotificationInterceptorTests
     public void LiveKakaoAudioOperator_InitializesWithoutException()
     {
         using var liveAudio = new LiveKakaoAudioOperator();
+        Assert.IsFalse(liveAudio.IsMuted);
         liveAudio.Mute();
+        Assert.IsTrue(liveAudio.IsMuted);
         liveAudio.Unmute();
+        Assert.IsFalse(liveAudio.IsMuted);
+    }
+
+    [TestMethod]
+    public void LiveKakaoAudioOperator_MultipleMuteCalls_AreIdempotent()
+    {
+        using var liveAudio = new LiveKakaoAudioOperator();
+        liveAudio.Mute();
+        liveAudio.Mute();
+        liveAudio.Mute();
+        Assert.IsTrue(liveAudio.IsMuted, "연속 Mute() 호출에도 IsMuted는 true여야 합니다.");
+
+        liveAudio.Unmute();
+        liveAudio.Unmute();
+        Assert.IsFalse(liveAudio.IsMuted, "연속 Unmute() 호출에도 IsMuted는 false여야 합니다.");
+    }
+
+    [TestMethod]
+    public void LiveKakaoAudioOperator_FastOnOffCycles_SucceedWithoutException()
+    {
+        using var liveAudio = new LiveKakaoAudioOperator();
+        for (int i = 0; i < 5; i++)
+        {
+            liveAudio.Mute();
+            Assert.IsTrue(liveAudio.IsMuted);
+            liveAudio.Unmute();
+            Assert.IsFalse(liveAudio.IsMuted);
+        }
+    }
+
+    [TestMethod]
+    public void LiveKakaoAudioOperator_Dispose_IsIdempotentAndUnmutes()
+    {
+        var liveAudio = new LiveKakaoAudioOperator();
+        liveAudio.Mute();
+        Assert.IsTrue(liveAudio.IsMuted);
+
+        liveAudio.Dispose();
+        Assert.IsFalse(liveAudio.IsMuted, "Dispose 시 자동으로 음소거가 해제되어야 합니다.");
+
+        // 중복 Dispose 호출 안전성
+        liveAudio.Dispose();
+        Assert.IsFalse(liveAudio.IsMuted);
     }
 }

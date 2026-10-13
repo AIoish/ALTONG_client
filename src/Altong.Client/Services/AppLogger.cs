@@ -42,7 +42,8 @@ public static class AppLogger
         // 1. 콘솔 출력 (표준 시간 및 레벨 정렬)
         Console.WriteLine(consoleLine);
 
-        // 2. 파일 출력 (비동기 잠금)
+#if DEBUG
+        // 2. 파일 출력 (디버그 빌드에서만 점검용 로컬 파일 기록)
         try
         {
             lock (SyncLock)
@@ -54,5 +55,6 @@ public static class AppLogger
         {
             // 로깅 실패가 앱 동작을 방해하지 않음
         }
+#endif
     }
 }
