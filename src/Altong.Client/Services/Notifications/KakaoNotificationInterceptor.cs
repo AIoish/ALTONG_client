@@ -456,12 +456,11 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
             string stealthTag = isFocusMode ? "스텔스 은닉" : "일반 표시";
             AppLogger.Info($"[KakaoInterceptor] 카카오톡 알림 팝업 포착 & {stealthTag} (hWnd=0x{hWnd:X8})");
 
-            // 3. 집중 모드: 보류 목록에 먼저 등록(판정/타임아웃/종료 시 반드시 닫힘)한 뒤 즉시 숨김 및 오디오 음소거
+            // 3. 집중 모드: 보류 목록에 먼저 등록(판정/타임아웃/종료 시 반드시 닫힘)한 뒤 즉시 숨김
             if (isFocusMode)
             {
                 _pendingWindows[capture.Id] = new PendingWindowEntry(hWnd, DateTimeOffset.UtcNow);
                 _windowOperator.HideWindow(hWnd);
-                _audioOperator?.Mute();
             }
 
             return true;
@@ -481,6 +480,16 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
             // 팝업 UI로부터 발신자 및 메시지 본문 추출
             KakaoNotificationText extracted = _windowOperator.ExtractNotificationText(capture.Hwnd);
 
+            // 집중 모드인 경우: OCR 텍스트 추출 직후 원래 카카오톡 창을 즉시 닫습니다.
+            // 카카오톡은 창이 열려있는 동안 연속 알림이 오면 기존 창 위에 덮어쓰기(재렌더링)하므로,
+            // 텍스트 추출 직후 창을 닫아 후속 알림이 독립된 새 창(New hWnd)으로 뜨도록 보장합니다.
+            if (capture.IsFocusMode)
+            {
+                _pendingWindows.TryRemove(capture.Id, out _);
+                _windowOperator.CloseWindow(capture.Hwnd);
+                AppLogger.Info($"[KakaoInterceptor] OCR 완료 직후 팝업 조기 닫기 완료 (hWnd=0x{capture.Hwnd:X8})");
+            }
+
             var rawNotification = new RawNotification(
                 Id: capture.Id,
                 AppName: "KakaoTalk.exe",
@@ -495,6 +504,11 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
         catch (Exception ex)
         {
             AppLogger.Error($"[KakaoInterceptor] 알림 텍스트 추출/전달 중 오류: {ex.Message}", ex);
+            // OCR 추출 중 오류가 발생하더라도 집중 모드 팝업은 안전하게 닫히도록 처리
+            if (capture.IsFocusMode && _pendingWindows.TryRemove(capture.Id, out var entry))
+            {
+                _windowOperator.CloseWindow(entry.Hwnd);
+            }
         }
     }
 
