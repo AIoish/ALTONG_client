@@ -1,0 +1,235 @@
+{
+  "purpose": "Frozen synthetic challenge evaluation of existing base; provisional labels",
+  "created_date": "2026-10-10",
+  "dataset_sha256": "646c8c799a8032bc604b79f92e938b381993f77b938fde80b61a754a958f6b49",
+  "model_sha256": "315bb0778e47a84bfa2e5b705edb0daeb5164fa3057546109e425f749bc61a1a",
+  "policy_version": "urgency4_or_relevance4_v2",
+  "model_run": "filtering_training\\outputs\\runs\\2026-10-10-base-safety-continue-01",
+  "label_status": "AI proposed; user authorized training; no individual human review",
+  "human_approved_rows": 0,
+  "training_executed": false,
+  "final_test_used": false,
+  "threshold_changed": false,
+  "original_validation_parity_rows": 74,
+  "protected_sources_unchanged": true,
+  "parity_reference": "filtering_training\\outputs\\runs\\2026-10-10-base-safety-continue-01\\epoch-1.predictions.json",
+  "metrics": {
+    "rows": 14,
+    "policy_correct": 13,
+    "gold_pass_count": 6,
+    "gold_block_count": 8,
+    "policy_miss_ids": [],
+    "false_pass_ids": [
+      "b11_test4"
+    ],
+    "urgent_count": 4,
+    "urgent_policy_miss_ids": [],
+    "urgent_threshold_miss_ids": [],
+    "urgency": {
+      "exact_correct": 13,
+      "transitions": {
+        "4->4": 2,
+        "3->3": 3,
+        "2->4": 1,
+        "5->5": 2,
+        "2->2": 5,
+        "1->1": 1
+      },
+      "confusion_matrix": [
+        [
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          5,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          3,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          2,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          2
+        ]
+      ]
+    },
+    "relevance": {
+      "exact_correct": 14,
+      "transitions": {
+        "1->1": 12,
+        "4->4": 2
+      },
+      "confusion_matrix": [
+        [
+          12,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          2,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    }
+  },
+  "by_group": {
+    "unclassified": {
+      "rows": 14,
+      "policy_correct": 13,
+      "gold_pass_count": 6,
+      "gold_block_count": 8,
+      "policy_miss_ids": [],
+      "false_pass_ids": [
+        "b11_test4"
+      ],
+      "urgent_count": 4,
+      "urgent_policy_miss_ids": [],
+      "urgent_threshold_miss_ids": [],
+      "urgency": {
+        "exact_correct": 13,
+        "transitions": {
+          "4->4": 2,
+          "3->3": 3,
+          "2->4": 1,
+          "5->5": 2,
+          "2->2": 5,
+          "1->1": 1
+        },
+        "confusion_matrix": [
+          [
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            5,
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            3,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            2,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            2
+          ]
+        ]
+      },
+      "relevance": {
+        "exact_correct": 14,
+        "transitions": {
+          "1->1": 12,
+          "4->4": 2
+        },
+        "confusion_matrix": [
+          [
+            12,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            2,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      }
+    }
+  },
+  "timing_scope": "Two CPU ONNX calls including serialization/tokenization; excludes app capture/queue/UI",
+  "mean_seconds": 0.13191341428565856,
+  "limitations": [
+    "Exact exclusion is not semantic independence",
+    "Small synthetic diagnostic, not real traffic",
+    "Prior evaluation errors informed topics"
+  ]
+}

@@ -1,0 +1,5 @@
+bin/
+obj/
+models/
+fixtures.json
+verification-result.json

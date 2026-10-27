@@ -1,0 +1,313 @@
+{
+  "original": {
+    "count": 74,
+    "valid_outputs": 74,
+    "policy_correct": 68,
+    "policy_accuracy": 0.918918918918919,
+    "urgent_count": 17,
+    "urgent_false_blocks": 2,
+    "urgent_invalid": 0,
+    "urgent_failures": 2,
+    "gold_block_count": 40,
+    "false_passes": 3,
+    "by_context": {
+      "related": {
+        "urgent": 2,
+        "urgent_failures": 0
+      },
+      "unrelated": {
+        "urgent": 5,
+        "urgent_failures": 1
+      },
+      "empty": {
+        "urgent": 5,
+        "urgent_failures": 1
+      },
+      "primary": {
+        "urgent": 3,
+        "urgent_failures": 0
+      },
+      "supporting": {
+        "urgent": 0,
+        "urgent_failures": 0
+      },
+      "distracting": {
+        "urgent": 0,
+        "urgent_failures": 0
+      },
+      "matching": {
+        "urgent": 0,
+        "urgent_failures": 0
+      },
+      "switched": {
+        "urgent": 1,
+        "urgent_failures": 0
+      },
+      "unknown": {
+        "urgent": 1,
+        "urgent_failures": 0
+      },
+      "recent": {
+        "urgent": 0,
+        "urgent_failures": 0
+      }
+    },
+    "urgency_invariance": {
+      "v3_20": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "v3_26": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "v3_32": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "v3_36": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "v3_44": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "v3_50": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "v3_56": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "v3_60": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "val05_01": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "val05_02": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "val05_03": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "val05_04": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "val05_05": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "val05_06": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "val05_07": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "val05_08": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "val05_09": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "val05_10": {
+        "count": 3,
+        "valid": 3,
+        "range": 0
+      },
+      "hist05_01": {
+        "count": 2,
+        "valid": 2,
+        "range": 0
+      },
+      "hist05_02": {
+        "count": 2,
+        "valid": 2,
+        "range": 0
+      },
+      "hist05_03": {
+        "count": 2,
+        "valid": 2,
+        "range": 0
+      },
+      "hist05_04": {
+        "count": 2,
+        "valid": 2,
+        "range": 0
+      },
+      "hist05_05": {
+        "count": 2,
+        "valid": 2,
+        "range": 0
+      },
+      "valpool05_01_reference": {
+        "count": 2,
+        "valid": 2,
+        "range": 0
+      },
+      "valpool05_01_critical_empty": {
+        "count": 1,
+        "valid": 1,
+        "range": 0
+      },
+      "valpool05_02_reference": {
+        "count": 1,
+        "valid": 1,
+        "range": 0
+      },
+      "valpool05_02_reference_empty": {
+        "count": 1,
+        "valid": 1,
+        "range": 0
+      },
+      "valpool05_03_reference": {
+        "count": 1,
+        "valid": 1,
+        "range": 0
+      },
+      "valpool05_04_reference": {
+        "count": 1,
+        "valid": 1,
+        "range": 0
+      },
+      "valpool05_05_reference": {
+        "count": 1,
+        "valid": 1,
+        "range": 0
+      },
+      "valpool05_06_planned": {
+        "count": 1,
+        "valid": 1,
+        "range": 0
+      },
+      "valpool05_06_waiting": {
+        "count": 1,
+        "valid": 1,
+        "range": 0
+      }
+    },
+    "fully_invariant_groups": 24,
+    "urgency_score": {
+      "exact_accuracy": 0.7972972972972973,
+      "within_one_accuracy": 0.9594594594594594,
+      "mae_on_valid": 0.24324324324324326,
+      "macro_f1": 0.8040613618805871,
+      "confusion_matrix": [
+        [
+          14,
+          6,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          16,
+          3,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          15,
+          0,
+          3
+        ],
+        [
+          0,
+          0,
+          3,
+          7,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          7
+        ]
+      ]
+    },
+    "relevance_score": {
+      "exact_accuracy": 0.9054054054054054,
+      "within_one_accuracy": 0.972972972972973,
+      "mae_on_valid": 0.13513513513513514,
+      "macro_f1": 0.7912714776632302,
+      "confusion_matrix": [
+        [
+          48,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          2,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          7,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          4,
+          8
+        ]
+      ]
+    }
+  },
+  "development": {
+    "count": 56,
+    "urgent_count": 35,
+    "urgent_threshold_misses": 0,
+    "urgent_misses": 0,
+    "false_passes": 0,
+    "policy_correct": 54
+  }
+}

@@ -6,6 +6,8 @@ namespace Altong.MockGenerator;
 
 public partial class MainWindow : Window
 {
+    private readonly List<Button> _scenarioButtons = [];
+
     public MainWindow()
     {
         InitializeComponent();
@@ -13,20 +15,37 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 프리셋 버튼들을 동적으로 생성하여 패널에 추가합니다.
+    /// 단일 알림 프리셋 및 시나리오 시퀀스 버튼들을 생성하여 패널에 추가합니다.
     /// </summary>
     private void LoadPresetButtons()
     {
-        foreach (var preset in NotificationPresets.All)
+        // 1. 단일 알림 프리셋
+        foreach (var preset in NotificationPresets.SinglePresets)
         {
             var button = new Button
             {
                 Content = preset.Label,
                 Style = (Style)FindResource("PresetButtonStyle"),
                 Tag = preset,
+                ToolTip = $"[{preset.ExpectedCategory}] {preset.AppName} - {preset.Sender}"
             };
             button.Click += PresetButton_Click;
             PresetPanel.Children.Add(button);
+        }
+
+        // 2. 시나리오 시퀀스 프리셋
+        foreach (var scenario in NotificationPresets.Scenarios)
+        {
+            var button = new Button
+            {
+                Content = scenario.Label,
+                Style = (Style)FindResource("ScenarioButtonStyle"),
+                Tag = scenario,
+                ToolTip = $"{scenario.Description} (알림 {scenario.Items.Length}건 연속 발송)"
+            };
+            button.Click += ScenarioButton_Click;
+            _scenarioButtons.Add(button);
+            ScenarioPanel.Children.Add(button);
         }
     }
 
@@ -41,6 +60,46 @@ public partial class MainWindow : Window
             SenderTextBox.Text = preset.Sender;
             TitleTextBox.Text = preset.Title;
             BodyTextBox.Text = preset.Body;
+            ShowStatus($"📋 '{preset.Label}' 프리셋 로드 완료 (예상 분류: {preset.ExpectedCategory})");
+        }
+    }
+
+    /// <summary>
+    /// 시나리오 시퀀스를 1-Click으로 연속 발송합니다.
+    /// </summary>
+    private async void ScenarioButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: ScenarioPreset scenario })
+        {
+            return;
+        }
+
+        SetControlsEnabled(false);
+        ShowStatus($"🎬 '{scenario.Label}' 발송 시작 (총 {scenario.Items.Length}건)...");
+
+        try
+        {
+            for (int i = 0; i < scenario.Items.Length; i++)
+            {
+                var item = scenario.Items[i];
+                ExecuteSendItem(item.AppName, item.Sender, item.Title, item.Body, isScenario: true);
+
+                if (i < scenario.Items.Length - 1)
+                {
+                    // 알림 간 500ms 간격을 두어 순차 수신 보장
+                    await Task.Delay(500);
+                }
+            }
+
+            ShowStatus($"✅ 시나리오 전송 완료! ({scenario.Items.Length}건 전송됨 - Altong에서 요약을 확인하세요)");
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"❌ 시나리오 전송 실패: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            SetControlsEnabled(true);
         }
     }
 
@@ -64,8 +123,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        SendButton.IsEnabled = false;
-        DelaySendButton.IsEnabled = false;
+        SetControlsEnabled(false);
 
         try
         {
@@ -79,13 +137,22 @@ public partial class MainWindow : Window
         }
         finally
         {
-            SendButton.IsEnabled = true;
-            DelaySendButton.IsEnabled = true;
+            SetControlsEnabled(true);
+        }
+    }
+
+    private void SetControlsEnabled(bool isEnabled)
+    {
+        SendButton.IsEnabled = isEnabled;
+        DelaySendButton.IsEnabled = isEnabled;
+        foreach (var btn in _scenarioButtons)
+        {
+            btn.IsEnabled = isEnabled;
         }
     }
 
     /// <summary>
-    /// 실제 Windows 토스트 알림을 시스템에 전송합니다.
+    /// 현재 입력 필드의 내용으로 알림을 전송합니다.
     /// </summary>
     private void ExecuteSend()
     {
@@ -100,6 +167,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        ExecuteSendItem(appName, senderName, title, body, isScenario: false);
+    }
+
+    /// <summary>
+    /// 실제 Windows 토스트 알림 및 로컬 파이프로 전송합니다.
+    /// </summary>
+    private void ExecuteSendItem(string appName, string senderName, string title, string body, bool isScenario)
+    {
         try
         {
             var builder = new ToastContentBuilder()
@@ -111,6 +186,8 @@ public partial class MainWindow : Window
                 var attribution = string.Join(" · ",
                     new[] { appName, senderName }.Where(s => !string.IsNullOrEmpty(s)));
                 builder.AddAttributionText(attribution);
+                // WinRT UserNotificationListener(Windows 11)에서 확실히 텍스트 라인으로 수신할 수 있도록 보조 텍스트 추가
+                builder.AddText(attribution);
             }
 
             builder.Show();
@@ -119,10 +196,13 @@ public partial class MainWindow : Window
             TrySendToClientPipe(appName, senderName, title, body);
 
             var timestamp = DateTime.Now.ToString("HH:mm:ss");
-            var historyEntry = $"{timestamp}  {appName} / {senderName} / {title}";
+            var historyEntry = $"{timestamp}  {(isScenario ? "🎬 " : "")}{appName} / {senderName} / {title}";
             HistoryListView.Items.Insert(0, historyEntry);
 
-            ShowStatus($"✅ 알림 전송 완료 ({timestamp})");
+            if (!isScenario)
+            {
+                ShowStatus($"✅ 알림 전송 완료 ({timestamp})");
+            }
         }
         catch (Exception ex)
         {
@@ -141,7 +221,7 @@ public partial class MainWindow : Window
                 using var writer = new System.IO.StreamWriter(client, System.Text.Encoding.UTF8);
                 var json = System.Text.Json.JsonSerializer.Serialize(new
                 {
-                    id = $"mock_{DateTime.UtcNow:yyyyMMddHHmmssfff}",
+                    id = $"mock_{DateTime.UtcNow:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}"[..32],
                     app_name = string.IsNullOrEmpty(appName) ? "Altong.MockGenerator" : appName,
                     sender = sender,
                     title = title,
