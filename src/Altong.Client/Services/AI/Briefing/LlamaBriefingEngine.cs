@@ -91,7 +91,8 @@ public sealed class LlamaBriefingEngine : IDisposable
 
             if (_weights is null)
             {
-                _parameters = new ModelParams(_modelPath)
+                var effectivePath = ResolveNativeModelPath(_modelPath);
+                _parameters = new ModelParams(effectivePath)
                 {
                     ContextSize = 2048,
                     GpuLayerCount = 0 // CPU 고속 구동 기본
@@ -223,6 +224,33 @@ public sealed class LlamaBriefingEngine : IDisposable
             fallbackLines = fallbackLines.Take(BriefingPromptBuilder.MaxSummaryLines).ToList();
 
         return fallbackLines.Count > 0 ? new BriefingRawOutput(primaryCategory, fallbackLines) : null;
+    }
+
+    private static string ResolveNativeModelPath(string modelPath)
+    {
+        if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath))
+            return modelPath;
+
+        // LLamaSharp P/Invoke(Windows)의 ANSI/CP949 마샬링으로 인해 경로에 비-ASCII 문자가 있으면
+        // llama.cpp의 UTF-8 파서(ggml_fopen)에서 열지 못할 수 있습니다.
+        // 현재 작업 디렉터리 기준 상대 경로가 순수 ASCII이면 이를 우선 전달합니다.
+        if (modelPath.Any(c => c > 127))
+        {
+            try
+            {
+                var rel = Path.GetRelativePath(Directory.GetCurrentDirectory(), modelPath);
+                if (!rel.Any(c => c > 127) && File.Exists(rel))
+                {
+                    return rel;
+                }
+            }
+            catch
+            {
+                // Fallback to original path
+            }
+        }
+
+        return modelPath;
     }
 
     public void Dispose()
