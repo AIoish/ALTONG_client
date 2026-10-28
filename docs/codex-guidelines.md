@@ -8,6 +8,11 @@ C# Windows 집중 모드 앱 Repository다. 사용자 로그인 세션에서 트
 
 - 프로젝트 소개·설치·실행·구조 변경: [README.md](../README.md)
 - 브랜치·커밋·PR·CI: [CONTRIBUTING.md](CONTRIBUTING.md)
+- 문제 정의·설계 철학·학술 근거: [OVERVIEW.md](OVERVIEW.md)
+- 시스템 구조·데이터 계약·DB 스키마: [ARCHITECTURE.md](ARCHITECTURE.md)
+- AI 모델·연동·브리핑 개선 계획: [AI_MODELS.md](AI_MODELS.md)
+- 집중 모드·기록·미니바 동작 규칙: [CLIENT_BEHAVIOR.md](CLIENT_BEHAVIOR.md)
+- 기능 백로그·출시 계획: [ROADMAP.md](ROADMAP.md)
 
 ## 작업 원칙
 
