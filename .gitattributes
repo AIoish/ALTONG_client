@@ -1,0 +1,10 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Preserve LF line endings for model metadata and tokenizer configs to prevent hash mismatches
+models/**/*.json text eol=lf
+models/*.json text eol=lf
+
+# Binary model files
+*.onnx binary
+*.gguf binary
