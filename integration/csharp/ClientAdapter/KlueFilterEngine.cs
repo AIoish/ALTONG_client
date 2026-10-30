@@ -18,7 +18,7 @@ public sealed class KlueFilterEngine : IFilterEngine, IDisposable
         _initialization=Task.Run<KlueFilter?>(()=>
         {
             try { return new KlueFilter(modelPath,tokenizerPath); }
-            catch (Exception ex) when (ex is System.IO.IOException or ArgumentException or System.Text.Json.JsonException or
+            catch (Exception ex) when (ex is System.IO.IOException or System.IO.InvalidDataException or InvalidOperationException or FormatException or ArgumentException or System.Text.Json.JsonException or
                 NotSupportedException or Microsoft.ML.OnnxRuntime.OnnxRuntimeException or DllNotFoundException or BadImageFormatException or
                 UnauthorizedAccessException or KeyNotFoundException or TypeInitializationException)
             { _loadError=ex.Message; return null; }
@@ -39,6 +39,7 @@ public sealed class KlueFilterEngine : IFilterEngine, IDisposable
             decision=filter is null ? KlueFilter.Failure("model_unavailable",_loadError) : await filter.EvaluateAsync(input,context,_shadow).ConfigureAwait(false);
         }
         catch (TimeoutException) { decision=KlueFilter.Failure("model_loading"); }
+        catch (Exception ex) { decision=KlueFilter.Failure("model_unavailable", _loadError ?? ex.Message); }
         try { _observe?.Invoke(decision); } catch { /* Diagnostic observer cannot suppress notifications. */ }
         return ToResult(n.Id,decision);
     }
@@ -46,5 +47,9 @@ public sealed class KlueFilterEngine : IFilterEngine, IDisposable
         d.UrgencyScore ?? 0,d.RelevanceScore ?? 0,d.UrgencyScore is null ? "판정 실패" : "미분류",
         d.UrgencyScore is null ? $"AI 평가 실패로 통과 ({d.Status}); 점수 0은 미평가 표시" :
             $"긴급도 {d.UrgencyScore}, 관련도 {d.RelevanceScore}; 모델 {(d.ModelPassed ? "통과" : "차단")}{(d.Status=="shadow" ? "; 시험 모드로 실제 통과" : "")}");
-    public void Dispose()=>_initialization.GetAwaiter().GetResult()?.Dispose();
+    public void Dispose()
+    {
+        try { _initialization.GetAwaiter().GetResult()?.Dispose(); }
+        catch { /* Diagnostic/load failures must not throw on disposal. */ }
+    }
 }
