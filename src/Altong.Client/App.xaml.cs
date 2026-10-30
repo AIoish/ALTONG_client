@@ -8,6 +8,7 @@ using Altong.Client.Models;
 using Altong.Client.Services;
 using Altong.Client.Services.AI.Briefing;
 using Altong.Client.Services.Notifications;
+using Altong.Client.Services.NotificationControl;
 
 namespace Altong.Client;
 
@@ -52,6 +53,12 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.FirstOrDefault() == "--notification-guardian")
+        {
+            int result = NotificationRecoveryGuardian.Run(e.Args);
+            Shutdown(result);
+            return;
+        }
         base.OnStartup(e);
 
         _singleInstance = new SingleInstanceService();
@@ -77,6 +84,9 @@ public partial class App : System.Windows.Application
             Console.SetOut(stdOut);
             AppLogger.Info("[Altong] 터미널 콘솔 로그 연결 완료 (ActiveWindow 실시간 추적 시작)");
         }
+
+        // Recover before database/model loading: a startup failure must not strand suppressed notifications.
+        var nativeFocusController = new NativeFocusController();
 
         // 로컬 SQLite 데이터베이스 초기화 및 저장소 바인딩
         Database = new SqliteDatabase();
@@ -150,7 +160,8 @@ public partial class App : System.Windows.Application
             FocusModeService,
             new WindowsNotificationModeObserver(),
             new WindowsNotificationSettingsLauncher(),
-            new WpfUiDispatcher(Dispatcher));
+            new WpfUiDispatcher(Dispatcher),
+            nativeFocusController);
 
         FocusRoutine = new FocusRoutineService(FocusModeService, FocusSettings);
         _routineTimer.Tick += RoutineTimer_Tick;
@@ -158,6 +169,7 @@ public partial class App : System.Windows.Application
         _routineTimer.Start();
 
         _notificationDockWindow = new NotificationDockWindow();
+        _notificationDockWindow.SetPresentation(DockPresentation.Stealth);
         _notificationDockWindow.RoutineStatusProvider = () => new DockRoutineStatus(FocusRoutine.Phase);
         _notificationDockWindow.ShowDashboardRequested +=
             NotificationDockWindow_ShowDashboardRequested;
@@ -430,6 +442,7 @@ public partial class App : System.Windows.Application
         _routineTickInProgress = true;
         try
         {
+            _focusModeCoordinator?.CheckNativeHealth();
             FocusRoutine.Refresh();
             UpdateRoutineView();
             await SessionResults.RefreshAsync();

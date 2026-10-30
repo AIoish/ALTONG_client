@@ -474,7 +474,7 @@
                         </StackPanel></ScrollViewer>
                     </TabItem>
                     <TabItem Header="설정">
-                        <ScrollViewer><StackPanel>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
                             <Border Style="{StaticResource Card}"><StackPanel>
                                 <TextBlock Text="집중·휴식 루틴" Style="{StaticResource Heading}" Margin="0,0,0,8" />
                                 <TextBlock Text="집중할 시간과 쉴 시간을 정하고, 시간이 되면 알림을 받으세요." Style="{StaticResource Muted}" Margin="0,0,0,16" />
@@ -517,6 +517,20 @@
                                 </WrapPanel>
                                 <TextBlock x:Name="AppVersionText" Style="{StaticResource Muted}" Margin="0,4" />
                                 <Button Content="ALTONG 종료" Click="ExitApplicationButton_Click" HorizontalAlignment="Left" Margin="0,12,0,0" />
+                            </StackPanel></Border>
+                            <Border x:Name="NativeNotificationControlCard" Style="{StaticResource Card}" AutomationProperties.Name="알통 자체 방해금지 프로토타입"><StackPanel>
+                                <TextBlock Text="알통 자체 방해금지 · 프로토타입" Style="{StaticResource Heading}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                <TextBlock Text="선택한 앱의 알림 배너와 소리를 집중 중 제어하는 프로토타입입니다." Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,16" />
+                                <TextBlock x:Name="NotificationControlStatusText" TextWrapping="Wrap" Margin="0,0,0,8" AutomationProperties.LiveSetting="Polite" />
+                                <TextBlock Text="비교 테스트용 전환 · 전환하면 현재 집중이 종료되고 알림 설정이 복구됩니다." Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" />
+                                <WrapPanel Margin="0,8,0,8">
+                                    <Button x:Name="UseAltongControlButton" Content="알통 자체 제어" Click="UseAltongControl_Click" Margin="0,0,8,8" />
+                                    <Button x:Name="UseWindowsControlButton" Content="기존 Windows 방식" Click="UseWindowsControl_Click" Margin="0,0,8,8" />
+                                    <Button x:Name="RefreshNotificationAppsButton" Content="앱 목록 새로 조회" Click="RefreshNotificationApps_Click" Margin="0,0,8,8" />
+                                    <Button x:Name="RestoreNotificationAppsButton" Content="문제 발생 시 알림 설정 복구" Click="RestoreNotificationApps_Click" ToolTip="알통이 변경한 배너·알림음 설정의 복구를 다시 시도합니다. 자체 집중 중 실행하면 집중이 종료됩니다." Margin="0,0,8,8" />
+                                </WrapPanel>
+                                <TextBlock Text="선택 앱은 다음 집중부터 배너와 Windows 알림음만 숨깁니다. 알림센터 보관과 기존 알림 수집·미니바 연결은 유지합니다. 새 앱은 다시 조회하면 기본 선택됩니다. 보호된 시스템 항목은 제어하지 않습니다. 카카오톡은 기존 전용 팝업 제어·음소거 기능을 두 방식 모두에서 유지합니다." Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12" />
+                                <StackPanel x:Name="NotificationSenderList" />
                             </StackPanel></Border>
                         </StackPanel></ScrollViewer>
                     </TabItem>

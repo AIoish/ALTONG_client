@@ -1,3 +1,5 @@
+using Altong.Client.Services.NotificationControl;
+
 namespace Altong.Client.Services;
 
 /// <summary>
@@ -11,17 +13,21 @@ public sealed class FocusModeCoordinator : IDisposable
     private readonly IUiDispatcher _dispatcher;
     private bool _isStarted;
     private bool _isDisposed;
+    public INativeFocusController? NativeControl { get; }
+    public FocusControlBackend Backend => NativeControl?.Backend ?? FocusControlBackend.Windows;
 
     public FocusModeCoordinator(
         FocusModeService focusModeService,
         IWindowsNotificationModeObserver notificationModeObserver,
         IWindowsNotificationSettingsLauncher settingsLauncher,
-        IUiDispatcher dispatcher)
+        IUiDispatcher dispatcher,
+        INativeFocusController? nativeControl = null)
     {
         _focusModeService = focusModeService;
         _notificationModeObserver = notificationModeObserver;
         _settingsLauncher = settingsLauncher;
         _dispatcher = dispatcher;
+        NativeControl = nativeControl;
     }
 
     public WindowsNotificationModeState WindowsState { get; private set; } =
@@ -57,6 +63,57 @@ public sealed class FocusModeCoordinator : IDisposable
         _dispatcher.Invoke(() => SetGuidance(null));
     }
 
+    public void SwitchBackend(FocusControlBackend backend)
+    {
+        ThrowIfDisposed();
+        if (NativeControl is null || Backend == backend) return;
+        _dispatcher.Invoke(() =>
+        {
+            try
+            {
+                NativeControl.Stop();
+                _focusModeService.Stop();
+                NativeControl.SetBackend(backend);
+                Guidance = null;
+                WindowsState = WindowsNotificationModeState.Unknown;
+                ApplyWindowsState(_notificationModeObserver.Refresh());
+            }
+            catch (Exception ex) { ShowNativeError(ex); }
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        });
+    }
+
+    public void RefreshNativeControl()
+    {
+        NativeControl?.Refresh();
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void RetryNativeRecovery()
+    {
+        try
+        {
+            NativeControl?.Stop();
+            if (Backend == FocusControlBackend.Altong) _focusModeService.Stop();
+            SetGuidance(null);
+        }
+        catch (Exception ex) { ShowNativeError(ex); }
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void CheckNativeHealth()
+    {
+        if (Backend != FocusControlBackend.Altong || NativeControl is null) return;
+        try { NativeControl.CheckHealth(); }
+        catch (Exception ex)
+        {
+            if (!NativeControl.IsActive) _focusModeService.Stop();
+            ShowNativeError(ex);
+        }
+    }
+
+    private void ShowNativeError(Exception ex) => SetGuidance(new(FocusModeGuidanceKind.Unavailable, ex.Message, false));
+
     public void OpenSettingsAgain()
     {
         ThrowIfDisposed();
@@ -86,10 +143,31 @@ public sealed class FocusModeCoordinator : IDisposable
         _isDisposed = true;
         _notificationModeObserver.ModeChanged -= NotificationModeObserver_ModeChanged;
         _notificationModeObserver.Dispose();
+        NativeControl?.Dispose();
     }
 
     private void RequestToggleOnUiThread()
     {
+        if (Backend == FocusControlBackend.Altong && NativeControl is not null)
+        {
+            try
+            {
+                if (_focusModeService.IsEnabled)
+                {
+                    NativeControl.Stop();
+                    _focusModeService.Stop();
+                }
+                else
+                {
+                    NativeControl.Start();
+                    _focusModeService.Start();
+                }
+                SetGuidance(null);
+            }
+            catch (Exception ex) { ShowNativeError(ex); }
+            StateChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
         var state = _notificationModeObserver.Refresh();
         ApplyWindowsState(state);
 
@@ -144,6 +222,13 @@ public sealed class FocusModeCoordinator : IDisposable
         }
 
         WindowsState = state;
+
+        // Windows DND is informational in Altong mode; external OS changes cannot toggle our session.
+        if (Backend == FocusControlBackend.Altong)
+        {
+            StateChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
 
         switch (state.Kind)
         {
