@@ -8,6 +8,7 @@ using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Services;
 using Altong.Client.Services.Calendar;
+using Altong.Client.Services.NotificationControl;
 using Color = System.Windows.Media.Color;
 using ContentControl = System.Windows.Controls.ContentControl;
 
@@ -756,7 +757,57 @@ public partial class DashboardWindow : Window
         WindowsDndStatusText.Text = _focusModeCoordinator is null
             ? "Windows 방해 금지 상태를 확인할 수 없습니다."
             : GetWindowsNotificationModeDescription(_focusModeCoordinator.WindowsState);
+        UpdateNotificationControlView();
     }
+
+    private void UpdateNotificationControlView()
+    {
+        var control = _focusModeCoordinator?.NativeControl;
+        NotificationControlStatusText.Text = control is null ? "알통 자체 제어가 연결되지 않았습니다."
+            : $"현재 방식: {(_focusModeCoordinator!.Backend == FocusControlBackend.Altong ? "알통 자체 제어" : "Windows 방해 금지")}\n{control.Status}";
+        UseAltongControlButton.IsEnabled = control is not null && _focusModeCoordinator!.Backend != FocusControlBackend.Altong;
+        UseWindowsControlButton.IsEnabled = control is not null && _focusModeCoordinator!.Backend != FocusControlBackend.Windows;
+        RefreshNotificationAppsButton.IsEnabled = control is not null;
+        RestoreNotificationAppsButton.IsEnabled = control is not null;
+        NotificationSenderList.Children.Clear();
+        if (control is null) return;
+        foreach (var row in control.Senders.Where(row => row.IsEligible))
+        {
+            var check = new System.Windows.Controls.CheckBox
+            {
+                Content = row.Name,
+                IsChecked = control.IsSelected(row.Id),
+                IsEnabled = !control.IsActive,
+                ToolTip = row.Name,
+                Margin = new Thickness(0, 4, 0, 4)
+            };
+            System.Windows.Automation.AutomationProperties.SetName(check, row.Name);
+            check.Click += (_, _) =>
+            {
+                try { control.SetSelected(row.Id, check.IsChecked == true); }
+                catch (Exception ex)
+                {
+                    check.IsChecked = control.IsSelected(row.Id);
+                    NotificationControlStatusText.Text = ex.Message;
+                }
+            };
+            NotificationSenderList.Children.Add(check);
+        }
+        if (NotificationSenderList.Children.Count == 0)
+        {
+            NotificationSenderList.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "표시할 제어 대상 앱이 없습니다.",
+                Foreground = (System.Windows.Media.Brush)FindResource("MutedText"),
+                Margin = new Thickness(0, 4, 0, 4)
+            });
+        }
+    }
+
+    private void UseAltongControl_Click(object sender, RoutedEventArgs e) => _focusModeCoordinator?.SwitchBackend(FocusControlBackend.Altong);
+    private void UseWindowsControl_Click(object sender, RoutedEventArgs e) => _focusModeCoordinator?.SwitchBackend(FocusControlBackend.Windows);
+    private void RefreshNotificationApps_Click(object sender, RoutedEventArgs e) => _focusModeCoordinator?.RefreshNativeControl();
+    private void RestoreNotificationApps_Click(object sender, RoutedEventArgs e) => _focusModeCoordinator?.RetryNativeRecovery();
 
     private static string GetWindowsNotificationModeDescription(WindowsNotificationModeState state)
     {
