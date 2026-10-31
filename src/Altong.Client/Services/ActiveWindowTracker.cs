@@ -16,6 +16,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     private static readonly TimeSpan DefaultStabilizationThreshold = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaximumObservedGap = TimeSpan.FromSeconds(10);
     private const int MaxRecentProcesses = 3;
+    private const int MaxRecentWindows = 3;
 
     private readonly IWindowInfoProvider _windowInfoProvider;
     private readonly TimeSpan _pollingInterval;
@@ -25,6 +26,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
 
     private readonly object _syncRoot = new();
     private readonly List<string> _recentProcesses = [];
+    private readonly List<RecentWindowInfo> _recentWindows = [];
 
     private WindowInfo? _stableWindow;
     private DateTimeOffset _stableEnteredAt;
@@ -294,6 +296,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         _candidateWindow = null;
 
         UpdateRecentProcesses(window.ProcessName);
+        UpdateRecentWindows(window.ProcessName, window.WindowTitle);
 
         int durationSeconds = Math.Max(0, (int)(currentNow - _stableEnteredAt).TotalSeconds);
 
@@ -302,7 +305,8 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
             WindowTitle: window.WindowTitle,
             LastUpdated: currentNow.UtcDateTime,
             DurationSeconds: durationSeconds,
-            RecentProcesses: [.. _recentProcesses]);
+            RecentProcesses: [.. _recentProcesses],
+            RecentWindows: [.. _recentWindows]);
 
         AppLogger.Info($"[WindowTracker] [CONFIRM] {window.ProcessName} ('{TruncateTitle(window.WindowTitle)}') | 콤비: [{string.Join(", ", _recentProcesses)}]");
 
@@ -325,6 +329,22 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         };
 
         return _currentContext;
+    }
+
+    private void UpdateRecentWindows(string processName, string windowTitle)
+    {
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return;
+        }
+
+        _recentWindows.RemoveAll(w => w.AppName == processName && w.WindowTitle == windowTitle);
+        _recentWindows.Insert(0, new RecentWindowInfo(processName, windowTitle));
+
+        if (_recentWindows.Count > MaxRecentWindows)
+        {
+            _recentWindows.RemoveRange(MaxRecentWindows, _recentWindows.Count - MaxRecentWindows);
+        }
     }
 
     private void UpdateRecentProcesses(string processName)

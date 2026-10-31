@@ -30,8 +30,8 @@ public sealed class KlueFilterEngine : IFilterEngine, IDisposable
         if (n.Timestamp.Kind==DateTimeKind.Unspecified)
             return ToResult(n.Id,KlueFilter.Failure("invalid_timestamp","Timestamp must carry UTC/local kind."));
         var input=new NotificationInput(n.AppName ?? "",n.Sender,n.Title ?? "",n.Body ?? "",n.Timestamp.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'",CultureInfo.InvariantCulture));
-        // The current app does not expose recent window titles. Do not invent them.
-        var context=new ContextInput(c.ActiveProcess,c.WindowTitle,c.RecentProcesses,[]);
+        var recentWindows = c.RecentWindows?.Select(w => new RecentWindow(w.AppName, w.WindowTitle)).ToArray() ?? [];
+        var context = new ContextInput(c.ActiveProcess, c.WindowTitle, c.RecentProcesses, recentWindows);
         FilterDecision decision;
         try
         {

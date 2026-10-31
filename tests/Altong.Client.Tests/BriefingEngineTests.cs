@@ -74,6 +74,28 @@ public sealed class BriefingEngineTests
     }
 
     [TestMethod]
+    public void BriefingScheduleExtractor_AssignmentDeadlineInGeneralWork_ExtractsScheduleCorrectly()
+    {
+        var refTime = new DateTime(2026, 10, 27, 18, 46, 0);
+        var notifications = new[]
+        {
+            "10월 28일 18시까지 데이터베이스 과제 제출 하십시오."
+        };
+
+        var (isScheduleRelated, schedule) = BriefingScheduleExtractor.Extract(
+            groupSummary: "10월 28일 18시까지 데이터베이스 과제 제출 하십시오.",
+            primaryCategory: "일반 업무",
+            notificationTexts: notifications,
+            referenceTime: refTime);
+
+        Assert.IsTrue(isScheduleRelated, "과제 제출 마감은 일정/스케줄로 인정되어야 합니다.");
+        Assert.IsNotNull(schedule);
+        StringAssert.Contains(schedule.Title, "과제");
+        Assert.AreEqual(new DateTimeOffset(2026, 10, 28, 18, 0, 0, TimeSpan.FromHours(9)), schedule.Start);
+        Assert.AreEqual(new DateTimeOffset(2026, 10, 28, 19, 0, 0, TimeSpan.FromHours(9)), schedule.End);
+    }
+
+    [TestMethod]
     public void BriefingScheduleExtractor_Cancellation_IncludesStatus()
     {
         var refTime = new DateTime(2026, 10, 13, 9, 0, 0);
