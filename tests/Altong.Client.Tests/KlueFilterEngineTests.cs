@@ -299,4 +299,49 @@ public sealed class KlueFilterEngineTests
         Assert.AreNotEqual("판정 실패", result.Category, "정상 모델 로드 시 판정 실패가 아니어야 합니다.");
         Assert.IsTrue(result.UrgencyScore >= 1, "긴급도 점수가 정상 산출되어야 합니다.");
     }
+
+    [TestMethod]
+    public async Task RealKlueFilterEngine_WithRecentWindows_EvaluatesSuccessfully()
+    {
+        string baseDir = AppContext.BaseDirectory;
+        string modelDir = Path.Combine(baseDir, "models", "filtering", "klue-base-safety-v1");
+        string modelPath = Path.Combine(modelDir, "model-fp32.onnx");
+        string tokenizerPath = Path.Combine(modelDir, "tokenizer.json");
+
+        if (!File.Exists(modelPath) || !File.Exists(tokenizerPath))
+        {
+            modelDir = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "models", "filtering", "klue-base-safety-v1"));
+            modelPath = Path.Combine(modelDir, "model-fp32.onnx");
+            tokenizerPath = Path.Combine(modelDir, "tokenizer.json");
+        }
+
+        if (!File.Exists(modelPath) || !File.Exists(tokenizerPath))
+        {
+            Assert.Inconclusive("Real model or tokenizer file not found.");
+            return;
+        }
+
+        using var engine = new KlueFilterEngine(modelPath, tokenizerPath);
+        await engine.InitializeAsync();
+
+        var notification = new RawNotification(
+            "live-test-rw", "Slack", "동료", "코드 리뷰", "PR #39 리뷰 부탁드립니다", DateTime.UtcNow);
+        var recentWindows = new List<RecentWindowInfo>
+        {
+            new("Code.exe", "Controller.cs - Visual Studio Code"),
+            new("chrome.exe", "GitHub Pull Requests")
+        };
+        var context = new CurrentContext(
+            "Code.exe",
+            "Controller.cs - Visual Studio Code",
+            DateTime.UtcNow,
+            DurationSeconds: 120,
+            RecentProcesses: new[] { "Code.exe", "chrome.exe" },
+            RecentWindows: recentWindows);
+
+        var result = await engine.EvaluateAsync(notification, context);
+
+        Assert.AreNotEqual("판정 실패", result.Category, "RecentWindows가 포함된 맥락에서도 정상 평가되어야 합니다.");
+        Assert.IsTrue(result.RelevanceScore >= 1, "관련도 점수가 정상 산출되어야 합니다.");
+    }
 }

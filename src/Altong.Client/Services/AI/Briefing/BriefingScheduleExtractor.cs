@@ -41,7 +41,9 @@ public static class BriefingScheduleExtractor
     private static readonly string[] ScheduleKeywords =
     [
         "회의", "미팅", "미팅룸", "세미나", "스터디", "면담", "면접", "행사", "발표",
-        "워크숍", "오리엔테이션", "점검", "진료", "예약", "약속", "일정", "식사"
+        "워크숍", "오리엔테이션", "점검", "진료", "예약", "약속", "일정", "식사",
+        "과제", "제출", "마감", "기한", "시험", "고사", "등록", "납부", "수강", "신청",
+        "티켓팅", "체크인", "출발", "도착"
     ];
 
     private static readonly string[] CancellationKeywords = ["취소", "연기", "취소되었습니다", "미뤄"];
@@ -63,7 +65,12 @@ public static class BriefingScheduleExtractor
         bool hasKeywordCue = ScheduleKeywords.Any(k => combinedText.Contains(k, StringComparison.OrdinalIgnoreCase));
         var (start, end) = ParseTimeRange(combinedText, referenceTime);
 
-        bool isScheduleRelated = hasCategoryCue || (hasKeywordCue && start.HasValue);
+        bool hasExplicitDateTime = (DatePattern.IsMatch(combinedText) || RelativeDatePattern.IsMatch(combinedText) || DayOfWeekPattern.IsMatch(combinedText))
+            && (TimePattern.IsMatch(combinedText) || ColonTimePattern.IsMatch(combinedText) || TimeRangePattern.IsMatch(combinedText));
+
+        bool isNonSpamCategory = primaryCategory is not "광고/홍보" and not "기타";
+
+        bool isScheduleRelated = hasCategoryCue || (hasKeywordCue && start.HasValue) || (hasExplicitDateTime && isNonSpamCategory && start.HasValue);
         if (!isScheduleRelated)
         {
             return (false, null);

@@ -179,6 +179,54 @@ public sealed class ActiveWindowTrackerTests
             finalContext.RecentProcesses?.ToArray());
     }
 
+    [TestMethod]
+    public void WorkingSet_MaintainsUpTo3_UniqueRecentWindows()
+    {
+        var timeProvider = new TestTimeProvider();
+        var windowProvider = new FakeWindowInfoProvider();
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromSeconds(2),
+            stabilizationThreshold: TimeSpan.FromSeconds(5),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        // 1. VS Code 진입
+        windowProvider.Current = new WindowInfo(1, 101, "Code.exe", "main.cs");
+        tracker.Start();
+
+        // 2. Chrome 진입 후 6초
+        windowProvider.Current = new WindowInfo(2, 102, "chrome.exe", "Google Search");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        tracker.CaptureNow();
+
+        // 3. Slack 진입 후 6초
+        windowProvider.Current = new WindowInfo(3, 103, "slack.exe", "General");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        tracker.CaptureNow();
+
+        // 4. Notion 진입 후 6초 (총 4개 -> 최대 3개 유지)
+        windowProvider.Current = new WindowInfo(4, 104, "Notion.exe", "Docs");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        CurrentContext finalContext = tracker.CaptureNow();
+
+        Assert.IsNotNull(finalContext.RecentWindows);
+        Assert.AreEqual(3, finalContext.RecentWindows.Count);
+        Assert.AreEqual("Notion.exe", finalContext.RecentWindows[0].AppName);
+        Assert.AreEqual("Docs", finalContext.RecentWindows[0].WindowTitle);
+        Assert.AreEqual("slack.exe", finalContext.RecentWindows[1].AppName);
+        Assert.AreEqual("General", finalContext.RecentWindows[1].WindowTitle);
+        Assert.AreEqual("chrome.exe", finalContext.RecentWindows[2].AppName);
+        Assert.AreEqual("Google Search", finalContext.RecentWindows[2].WindowTitle);
+    }
+
     private sealed class FakeWindowInfoProvider : IWindowInfoProvider
     {
         public WindowInfo? Current { get; set; }
