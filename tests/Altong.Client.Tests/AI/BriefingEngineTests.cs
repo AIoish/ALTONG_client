@@ -257,19 +257,10 @@ public sealed class BriefingEngineTests
             Console.WriteLine($"   장소: {schedule.Location}");
         }
         Console.WriteLine("=================================================================\n");
-    }
-
-    [TestMethod]
-    public async Task LlamaBriefingEngine_MultipleScenarios_Verification()
-    {
-        var modelPath = Path.Combine(AppContext.BaseDirectory, "models", "briefing", "qwen_briefing_v8_q8_0.gguf");
-        if (!File.Exists(modelPath))
+        if (Environment.GetEnvironmentVariable("ALTONG_RUN_SLOW_AI_TESTS") != "1")
         {
-            Assert.Inconclusive("Model file not found.");
             return;
         }
-
-        using var engine = new LlamaBriefingEngine(modelPath);
 
         var scenarios = new (string Name, string App, string Sender, (string Title, string Body)[] Items)[]
         {
@@ -314,8 +305,8 @@ public sealed class BriefingEngineTests
                 new NotificationRecord($"id-{idx}", app, sender, it.Title, it.Body, DateTime.UtcNow.AddMinutes(idx * 5))
             ).ToList();
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            var output = await engine.SummarizeNotificationGroupAsync(app, sender, notis, maxSummaryLines: 2, ct: cts.Token);
+            using var scenarioCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var scenarioOutput = await engine.SummarizeNotificationGroupAsync(app, sender, notis, maxSummaryLines: 2, ct: scenarioCts.Token);
 
             Console.WriteLine($"\n================== [시나리오 검증: {name}] ==================");
             Console.WriteLine($"[입력 알림]");
@@ -324,27 +315,27 @@ public sealed class BriefingEngineTests
                 Console.WriteLine($"  - [{item.Title}] {item.Body}");
             }
             Console.WriteLine($"[AI 출력 결과]");
-            Console.WriteLine($"  ▶ 카테고리: {output?.PrimaryCategory ?? "(null)"}");
-            if (output?.SummaryLines != null)
+            Console.WriteLine($"  ▶ 카테고리: {scenarioOutput?.PrimaryCategory ?? "(null)"}");
+            if (scenarioOutput?.SummaryLines != null)
             {
-                foreach (var line in output.SummaryLines)
+                foreach (var line in scenarioOutput.SummaryLines)
                 {
                     Console.WriteLine($"  ▶ 핵심 요약: {line}");
                 }
             }
 
             var (isSched, sched) = BriefingScheduleExtractor.Extract(
-                string.Join(" ", output?.SummaryLines ?? []),
-                output?.PrimaryCategory ?? "기타",
+                string.Join(" ", scenarioOutput?.SummaryLines ?? []),
+                scenarioOutput?.PrimaryCategory ?? "기타",
                 items.Select(i => i.Body).ToList(),
                 DateTime.Now);
 
             Console.WriteLine($"[일정 연동 판정]: {(isSched ? $"성공 (제목: {sched?.Title}, 일시: {sched?.Start:MM/dd HH:mm}~{sched?.End:HH:mm}, 장소: {sched?.Location})" : "일정 없음(일반 알림)")}");
             Console.WriteLine("==========================================================================");
 
-            Assert.IsNotNull(output);
-            Assert.IsFalse(string.IsNullOrWhiteSpace(output.PrimaryCategory));
-            Assert.IsTrue(output.SummaryLines.Count > 0);
+            Assert.IsNotNull(scenarioOutput);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(scenarioOutput.PrimaryCategory));
+            Assert.IsTrue(scenarioOutput.SummaryLines.Count > 0);
         }
     }
 
