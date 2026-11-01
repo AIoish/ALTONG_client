@@ -120,6 +120,6 @@ public static class BriefingPromptBuilder
 
     public static string RenderChatMl(string systemPrompt, string userPrompt)
     {
-        return $"<|im_start|>system\n{systemPrompt}<|im_end|>\n<|im_start|>user\n{userPrompt}<|im_end|>\n<|im_start|>assistant\n";
+        return $"<|im_start|>system\n{systemPrompt}<|im_end|>\n<|im_start|>user\n{userPrompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
     }
 }

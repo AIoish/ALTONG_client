@@ -1,3 +1,4 @@
+using System.IO;
 using Altong.Client.Models;
 using Altong.Client.Services.Win32;
 
@@ -5,18 +6,38 @@ namespace Altong.Client.Services;
 
 /// <summary>
 /// Win32 API 기반으로 활성 창을 주기적으로 감지하고,
-/// 5초 안정화 룰(포커스 튐 방어) 및 최근 작업 세트(Recent Working Set)를 관리하는 트래커 구현체.
+/// 3초 안정화 룰(포커스 튐 방어) 및 최근 작업 세트(Recent Working Set)를 관리하는 트래커 구현체.
 /// </summary>
 public sealed class ActiveWindowTracker : IActiveWindowTracker
 {
     // Keep the tracker responsive enough for the dashboard to feel live.  The
     // threshold still filters out brief task-switches, while the shorter
     // interval avoids making every transition wait for a multi-second poll.
-    private static readonly TimeSpan DefaultPollingInterval = TimeSpan.FromMilliseconds(500);
-    private static readonly TimeSpan DefaultStabilizationThreshold = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan MaximumObservedGap = TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan DefaultPollingInterval = TimeSpan.FromMilliseconds(500);
+    public static readonly TimeSpan DefaultStabilizationThreshold = TimeSpan.FromSeconds(3);
+    public static readonly TimeSpan MaximumObservedGap = TimeSpan.FromSeconds(10);
     private const int MaxRecentProcesses = 3;
     private const int MaxRecentWindows = 3;
+
+    private static readonly HashSet<string> IgnoredProcessNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SnippingTool",
+        "SnippingTool.exe",
+        "ScreenClippingHost",
+        "ScreenClippingHost.exe",
+        "ScreenSketch",
+        "ScreenSketch.exe",
+        "ShellExperienceHost",
+        "ShellExperienceHost.exe",
+        "SearchHost",
+        "SearchHost.exe",
+        "StartMenuExperienceHost",
+        "StartMenuExperienceHost.exe",
+        "SearchApp",
+        "SearchApp.exe",
+        "TextInputHost",
+        "TextInputHost.exe",
+    };
 
     private readonly IWindowInfoProvider _windowInfoProvider;
     private readonly TimeSpan _pollingInterval;
@@ -56,6 +77,14 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
 
     public ActiveWindowTracker()
         : this(new LiveWindowInfoProvider(), DefaultPollingInterval, DefaultStabilizationThreshold)
+    {
+    }
+
+    public ActiveWindowTracker(
+        IWindowInfoProvider windowInfoProvider,
+        TimeProvider? timeProvider = null,
+        int? selfProcessId = null)
+        : this(windowInfoProvider, DefaultPollingInterval, DefaultStabilizationThreshold, selfProcessId, timeProvider)
     {
     }
 
@@ -221,9 +250,13 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     {
         WindowInfo? window = _windowInfoProvider.GetForegroundWindowInfo();
 
-        // 1. 유효하지 않은 창 핸들이거나 알통 자체 창인 경우 직전 안정 맥락 유지
-        if (window is null || window.Handle == nint.Zero || window.ProcessId == _selfProcessId)
+        // 1. 유효하지 않은 창 핸들이거나 알통 자체 창, 빈 창 제목, 시스템 임시 오버레이 창인 경우 직전 안정 맥락 유지
+        if (window is null ||
+            window.Handle == nint.Zero ||
+            window.ProcessId == _selfProcessId ||
+            IsTransientOrOverlayWindow(window))
         {
+            _candidateWindow = null;
             return UpdateDurationForStableWindow(now);
         }
 
@@ -238,14 +271,14 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         {
             if (_candidateWindow is not null)
             {
-                AppLogger.Info($"[WindowTracker] [DEFENSE] {_candidateWindow.ProcessName} (<5s) -> 유지: {_stableWindow.ProcessName}");
+                AppLogger.Info($"[WindowTracker] [DEFENSE] {_candidateWindow.ProcessName} (<{_stabilizationThreshold.TotalSeconds:0.#}s) -> 유지: {_stableWindow.ProcessName}");
                 _candidateWindow = null;
             }
 
             return UpdateDurationForStableWindow(now);
         }
 
-        // 4. 창이 변경되었거나 동일 창 내 탭(타이틀)이 변경된 경우 -> 5초 룰 검증
+        // 4. 창이 변경되었거나 동일 창 내 탭(타이틀)이 변경된 경우 -> 3초 룰 검증
         if (_candidateWindow is null ||
             _candidateWindow.Handle != window.Handle ||
             _candidateWindow.WindowTitle != window.WindowTitle)
@@ -254,19 +287,19 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
             _candidateWindow = window;
             _candidateEnteredAt = now;
 
-            // 아직 5초가 안 되었으므로 기존 안정 작업 맥락 유지
+            // 아직 3초가 안 되었으므로 기존 안정 작업 맥락 유지
             return UpdateDurationForStableWindow(now);
         }
 
-        // 동일 후보 창에 계속 머무르는 중 -> 5초 경과 여부 확인
+        // 동일 후보 창에 계속 머무르는 중 -> 3초 경과 여부 확인
         TimeSpan candidateDuration = now - _candidateEnteredAt;
         if (candidateDuration >= _stabilizationThreshold)
         {
-            // 5초 룰 통과: 정식 안정 창으로 승격!
+            // 3초 룰 통과: 정식 안정 창으로 승격!
             return StabilizeWindow(_candidateWindow, _candidateEnteredAt, now);
         }
 
-        // 아직 5초 미만: 직전 안정 맥락 유지
+        // 아직 3초 미만: 직전 안정 맥락 유지
         return UpdateDurationForStableWindow(now);
     }
 
@@ -367,6 +400,26 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     {
         return previous.ActiveProcess != current.ActiveProcess ||
                previous.WindowTitle != current.WindowTitle;
+    }
+
+    private static bool IsTransientOrOverlayWindow(WindowInfo window)
+    {
+        if (string.IsNullOrWhiteSpace(window.WindowTitle))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(window.ProcessName))
+        {
+            return true;
+        }
+
+        string rawName = window.ProcessName.Trim();
+        string fileName = Path.GetFileName(rawName);
+        string baseName = Path.GetFileNameWithoutExtension(rawName);
+        return IgnoredProcessNames.Contains(rawName) ||
+               IgnoredProcessNames.Contains(fileName) ||
+               IgnoredProcessNames.Contains(baseName);
     }
 
     private static string TruncateTitle(string title, int maxLength = 65)

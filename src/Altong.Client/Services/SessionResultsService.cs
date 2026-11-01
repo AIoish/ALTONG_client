@@ -274,7 +274,8 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
         using var connection = database.CreateOpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, app_name, sender, title, body, received_at, is_passed
+            SELECT id, app_name, sender, title, body, received_at,
+                   is_passed, urgency_score, relevance_score, category, ai_summary_reason, session_id, created_at
             FROM notifications
             WHERE julianday(received_at) >= julianday($from) AND julianday(received_at) < julianday($to)
               AND ($focus_id IS NULL OR session_id = $focus_id)
@@ -286,10 +287,20 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
         var list = new List<NotificationRecord>();
         using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
-            list.Add(new NotificationRecord(reader.GetString(0), reader.GetString(1),
-                reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetString(3), reader.GetString(4),
+            list.Add(new NotificationRecord(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
                 DateTime.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-                reader.IsDBNull(6) ? null : reader.GetInt32(6) == 1));
+                reader.IsDBNull(6) ? null : reader.GetInt32(6) == 1,
+                reader.IsDBNull(7) ? null : reader.GetInt32(7),
+                reader.IsDBNull(8) ? null : reader.GetInt32(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.IsDBNull(10) ? null : reader.GetString(10),
+                reader.IsDBNull(11) ? null : reader.GetString(11),
+                reader.IsDBNull(12) ? null : DateTime.Parse(reader.GetString(12), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)));
         return list;
     }
 

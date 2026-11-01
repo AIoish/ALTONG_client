@@ -23,7 +23,8 @@ public sealed class LlamaBriefingEngine : IDisposable
     private readonly string _modelPath;
     private LLamaWeights? _weights;
     private ModelParams? _parameters;
-    private readonly object _lock = new();
+    private readonly SemaphoreSlim _inferenceGate = new(1, 1);
+    private bool _disposed;
 
     public LlamaBriefingEngine(string modelPath)
     {
@@ -83,10 +84,10 @@ public sealed class LlamaBriefingEngine : IDisposable
 
     private async Task<string> GenerateResponseAsync(string chatMlPrompt, CancellationToken ct)
     {
-        LLamaWeights weights;
-        ModelParams parameters;
-        lock (_lock)
+        await _inferenceGate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             ct.ThrowIfCancellationRequested();
 
             if (_weights is null)
@@ -100,38 +101,62 @@ public sealed class LlamaBriefingEngine : IDisposable
                 _weights = LLamaWeights.LoadFromFile(_parameters);
             }
 
-            weights = _weights;
-            parameters = _parameters!;
-        }
+            using var context = _weights.CreateContext(_parameters!);
+            var executor = new InteractiveExecutor(context);
 
-        using var context = weights.CreateContext(parameters);
-        var executor = new InteractiveExecutor(context);
-
-        var inferenceParams = new InferenceParams
-        {
-            MaxTokens = 256,
-            AntiPrompts = ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
-            SamplingPipeline = new DefaultSamplingPipeline
+            using var samplingPipeline = new DefaultSamplingPipeline
             {
                 Temperature = 0.0f // AI 레포와 동일한 Greedy 디코딩
+            };
+
+            var inferenceParams = new InferenceParams
+            {
+                MaxTokens = 256,
+                AntiPrompts = ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+                SamplingPipeline = samplingPipeline
+            };
+
+            var sb = new StringBuilder();
+            await foreach (var token in executor.InferAsync(chatMlPrompt, inferenceParams, ct).ConfigureAwait(false))
+            {
+                sb.Append(token);
             }
-        };
 
-        var sb = new StringBuilder();
-        await foreach (var token in executor.InferAsync(chatMlPrompt, inferenceParams, ct).ConfigureAwait(false))
-        {
-            sb.Append(token);
+            return sb.ToString();
         }
-
-        return sb.ToString();
+        finally
+        {
+            _inferenceGate.Release();
+        }
     }
 
     public static BriefingRawOutput? ParseResponse(string raw, IReadOnlyList<NotificationRecord> fallbackNotifications)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
 
-        // 마크다운 코드 블록 제거 (```json ... ```)
         var cleaned = raw.Trim();
+
+        // Qwen3 <think>...</think> 블록 안전 제거
+        const string closeThinkTag = "</think>";
+        int closeThinkIdx = cleaned.LastIndexOf(closeThinkTag, StringComparison.OrdinalIgnoreCase);
+        if (closeThinkIdx >= 0)
+        {
+            cleaned = cleaned[(closeThinkIdx + closeThinkTag.Length)..].Trim();
+        }
+
+        if (cleaned.Contains("<think>", StringComparison.OrdinalIgnoreCase))
+        {
+            // <think>가 열렸으나 </think> 없이 토큰 상한으로 잘린 불완전 응답은
+            // 정규식이 <think> 내부 영문 문장을 긁어오지 않도록 즉시 폴백 처리
+            return BuildNotificationFallback(fallbackNotifications);
+        }
+
+        if (string.IsNullOrWhiteSpace(cleaned))
+        {
+            return BuildNotificationFallback(fallbackNotifications);
+        }
+
+        // 마크다운 코드 블록 제거 (```json ... ```)
         if (cleaned.StartsWith("```", StringComparison.Ordinal))
         {
             int firstNewline = cleaned.IndexOf('\n');
@@ -215,15 +240,27 @@ public sealed class LlamaBriefingEngine : IDisposable
 
         if (fallbackLines.Count == 0 && fallbackNotifications.Count > 0)
         {
-            var last = fallbackNotifications[^1];
-            var line = string.IsNullOrWhiteSpace(last.Sender) ? last.Body : $"{last.Sender}: {last.Body}";
-            fallbackLines.Add(line);
+            return BuildNotificationFallback(fallbackNotifications, primaryCategory);
         }
 
         if (fallbackLines.Count > BriefingPromptBuilder.MaxSummaryLines)
             fallbackLines = fallbackLines.Take(BriefingPromptBuilder.MaxSummaryLines).ToList();
 
         return fallbackLines.Count > 0 ? new BriefingRawOutput(primaryCategory, fallbackLines) : null;
+    }
+
+    private static BriefingRawOutput? BuildNotificationFallback(
+        IReadOnlyList<NotificationRecord> fallbackNotifications,
+        string primaryCategory = "기타")
+    {
+        if (fallbackNotifications.Count == 0) return null;
+
+        var last = fallbackNotifications[^1];
+        var line = string.IsNullOrWhiteSpace(last.Sender) ? last.Body : $"{last.Sender}: {last.Body}";
+        if (line.Length > BriefingPromptBuilder.MaxLineLength)
+            line = line[..BriefingPromptBuilder.MaxLineLength];
+
+        return new BriefingRawOutput(primaryCategory, [line]);
     }
 
     private static string ResolveNativeModelPath(string modelPath)
@@ -255,10 +292,17 @@ public sealed class LlamaBriefingEngine : IDisposable
 
     public void Dispose()
     {
-        lock (_lock)
+        _inferenceGate.Wait();
+        try
         {
+            if (_disposed) return;
+            _disposed = true;
             _weights?.Dispose();
             _weights = null;
+        }
+        finally
+        {
+            _inferenceGate.Release();
         }
     }
 }

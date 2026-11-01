@@ -227,6 +227,400 @@ public sealed class ActiveWindowTrackerTests
         Assert.AreEqual("Google Search", finalContext.RecentWindows[2].WindowTitle);
     }
 
+    [TestMethod]
+    public void EmptyOrWhitespaceWindowTitle_IsIgnored_RetainsPreviousStableContext()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var emptyExplorerWindow = new WindowInfo(200, 5678, "explorer.exe", "");
+        var whitespaceExplorerWindow = new WindowInfo(201, 5678, "explorer.exe", "   ");
+
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // 초기 작업 맥락 확인
+        Assert.AreEqual("Antigravity IDE.exe", tracker.CurrentContext.ActiveProcess);
+        Assert.AreEqual("ALTONG_client - Antigravity", tracker.CurrentContext.WindowTitle);
+
+        // 빈 제목 창으로 전환 (바탕화면/작업표시줄 클릭 등) 후 임계값(3초) 초과 체류
+        windowProvider.Current = emptyExplorerWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        CurrentContext context = tracker.CaptureNow();
+
+        // 빈 제목 창은 무시되고 기존 작업 맥락 유지
+        Assert.AreEqual("Antigravity IDE.exe", context.ActiveProcess);
+        Assert.AreEqual("ALTONG_client - Antigravity", context.WindowTitle);
+        Assert.AreEqual(5, context.DurationSeconds);
+
+        // 공백 제목 창으로 전환 후 추가 체류
+        windowProvider.Current = whitespaceExplorerWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        CurrentContext contextAfterWhitespace = tracker.CaptureNow();
+
+        // 공백 제목 창도 무시되고 기존 작업 맥락 유지
+        Assert.AreEqual("Antigravity IDE.exe", contextAfterWhitespace.ActiveProcess);
+        Assert.AreEqual("ALTONG_client - Antigravity", contextAfterWhitespace.WindowTitle);
+        Assert.AreEqual(10, contextAfterWhitespace.DurationSeconds);
+    }
+
+    [TestMethod]
+    public void SystemOverlayProcess_SnippingTool_IsIgnored_RetainsPreviousContext()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var snippingToolWindow = new WindowInfo(200, 5678, "SnippingTool.exe", "캡처 및 스케치");
+
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // 캡처 도구 활성화 (1.5초 동안 화면 캡처 진행)
+        windowProvider.Current = snippingToolWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(1.5));
+        CurrentContext contextAt1500Ms = tracker.CaptureNow();
+
+        Assert.AreEqual("Antigravity IDE.exe", contextAt1500Ms.ActiveProcess);
+
+        // 캡처 도구에 5초 이상 오래 머물러도 작업 맥락을 빼앗기지 않아야 함
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        CurrentContext contextAfterLongWait = tracker.CaptureNow();
+
+        Assert.AreEqual("Antigravity IDE.exe", contextAfterLongWait.ActiveProcess);
+        Assert.AreEqual("ALTONG_client - Antigravity", contextAfterLongWait.WindowTitle);
+    }
+
+    [TestMethod]
+    public void SystemOverlayProcess_ScreenClippingHost_IsIgnored_RetainsPreviousContext()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var screenClippingWindow = new WindowInfo(200, 5678, "ScreenClippingHost.exe", "Screen Clipping");
+
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // Win+Shift+S 화면 캡처 오버레이 발동 (2초 경과)
+        windowProvider.Current = screenClippingWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        CurrentContext contextDuringClipping = tracker.CaptureNow();
+
+        Assert.AreEqual("Antigravity IDE.exe", contextDuringClipping.ActiveProcess);
+
+        // 캡처 완료 후 원래 창으로 복귀
+        windowProvider.Current = ideWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        CurrentContext contextAfterClipping = tracker.CaptureNow();
+
+        Assert.AreEqual("Antigravity IDE.exe", contextAfterClipping.ActiveProcess);
+        // RecentProcesses에 ScreenClippingHost가 오염되지 않아야 함
+        CollectionAssert.AreEqual(
+            new[] { "Antigravity IDE.exe" },
+            contextAfterClipping.RecentProcesses?.ToArray());
+    }
+
+    [TestMethod]
+    public void OtherSystemOverlays_ShellExperienceHostAndSearchHost_AreIgnored()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var shellExpWindow = new WindowInfo(200, 5678, "ShellExperienceHost.exe", "Windows Shell Experience");
+        var searchHostWindow = new WindowInfo(300, 9101, "SearchHost.exe", "Search");
+
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // ShellExperienceHost 진입
+        windowProvider.Current = shellExpWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        CurrentContext context1 = tracker.CaptureNow();
+        Assert.AreEqual("Antigravity IDE.exe", context1.ActiveProcess);
+
+        // SearchHost 진입
+        windowProvider.Current = searchHostWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        CurrentContext context2 = tracker.CaptureNow();
+        Assert.AreEqual("Antigravity IDE.exe", context2.ActiveProcess);
+    }
+
+    [TestMethod]
+    public void ValidExplorerWindow_WithNonEmptyTitle_IsNotIgnored()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var normalExplorerWindow = new WindowInfo(200, 5678, "explorer.exe", "내 PC");
+
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // 정상 파일 탐색기 창으로 전환 (유효한 타이틀 보유)
+        windowProvider.Current = normalExplorerWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+
+        // 3초 이상 경과 시 정상적으로 탐색기 맥락으로 전환되어야 함
+        timeProvider.Advance(TimeSpan.FromSeconds(3.5));
+        CurrentContext context = tracker.CaptureNow();
+
+        Assert.AreEqual("explorer.exe", context.ActiveProcess);
+        Assert.AreEqual("내 PC", context.WindowTitle);
+    }
+
+    [TestMethod]
+    public void DefaultStabilizationThreshold_Is3Seconds_DefendsBrief2SecondSwitch()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var kakaoWindow = new WindowInfo(200, 5678, "KakaoTalk.exe", "카카오톡");
+
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        // 기본 안정화 임계값(DefaultStabilizationThreshold = 3초) 적용 생성자 사용
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            timeProvider: timeProvider,
+            selfProcessId: 9999);
+
+        Assert.AreEqual(TimeSpan.FromSeconds(3), ActiveWindowTracker.DefaultStabilizationThreshold);
+        Assert.AreEqual(TimeSpan.FromMilliseconds(500), ActiveWindowTracker.DefaultPollingInterval);
+
+        tracker.Start();
+
+        // 카카오톡으로 전환 감지 (후보 창 진입)
+        windowProvider.Current = kakaoWindow;
+        tracker.CaptureNow();
+
+        // 2초 경과 (1~2초 스치는 포커스 튐 시뮬레이션: 2초 < 3초 임계값)
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        CurrentContext contextAt2Sec = tracker.CaptureNow();
+
+        // 3초 임계값에 의해 여전히 기존 작업 맥락(IDE)을 방어해야 함!
+        Assert.AreEqual("Antigravity IDE.exe", contextAt2Sec.ActiveProcess);
+
+        // 추가 1.5초 경과 (총 3.5초 체류 -> 3초 룰 통과)
+        timeProvider.Advance(TimeSpan.FromSeconds(1.5));
+        CurrentContext contextAt35Sec = tracker.CaptureNow();
+
+        // 3초 경과 후 정상 전환!
+        Assert.AreEqual("KakaoTalk.exe", contextAt35Sec.ActiveProcess);
+        Assert.AreEqual("카카오톡", contextAt35Sec.WindowTitle);
+    }
+
+    [TestMethod]
+    public void StartupWithOverlayOrEmptyTitleWindow_WaitsForFirstValidWindow()
+    {
+        var timeProvider = new TestTimeProvider();
+        var snippingToolWindow = new WindowInfo(100, 1234, "SnippingTool.exe", "Snipping Tool");
+        var ideWindow = new WindowInfo(200, 5678, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+
+        // 시작 시점이 캡처 도구인 경우
+        var windowProvider = new FakeWindowInfoProvider { Current = snippingToolWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // 캡처 도구는 무시되므로 맥락은 Empty여야 함
+        Assert.AreEqual(string.Empty, tracker.CurrentContext.ActiveProcess);
+
+        // 정상 창 진입 시 즉시 최초 맥락으로 안정화
+        windowProvider.Current = ideWindow;
+        CurrentContext context = tracker.CaptureNow();
+
+        Assert.AreEqual("Antigravity IDE.exe", context.ActiveProcess);
+        Assert.AreEqual("ALTONG_client - Antigravity", context.WindowTitle);
+    }
+
+    [TestMethod]
+    public void SystemOverlayProcess_ScreenSketch_IsIgnored_RetainsPreviousContext()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var screenSketchWindow = new WindowInfo(200, 5678, "ScreenSketch.exe", "Snip & Sketch");
+
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // ScreenSketch.exe 오버레이 진입 (Windows 10 Snip & Sketch 환경)
+        windowProvider.Current = screenSketchWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        CurrentContext context = tracker.CaptureNow();
+
+        Assert.AreEqual("Antigravity IDE.exe", context.ActiveProcess);
+        Assert.AreEqual("ALTONG_client - Antigravity", context.WindowTitle);
+    }
+
+    [TestMethod]
+    public void NullAndZeroHandleWindow_IsIgnored_RetainsPreviousStableContext()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var zeroHandleWindow = new WindowInfo(0, 5678, "unknown.exe", "Valid Title");
+
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // 1. null 윈도우 반환 시뮬레이션
+        windowProvider.Current = null;
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        CurrentContext contextNull = tracker.CaptureNow();
+
+        Assert.AreEqual("Antigravity IDE.exe", contextNull.ActiveProcess);
+        Assert.AreEqual(2, contextNull.DurationSeconds);
+
+        // 2. Handle == nint.Zero 반환 시뮬레이션
+        windowProvider.Current = zeroHandleWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        CurrentContext contextZero = tracker.CaptureNow();
+
+        Assert.AreEqual("Antigravity IDE.exe", contextZero.ActiveProcess);
+        Assert.AreEqual(4, contextZero.DurationSeconds);
+    }
+
+    [TestMethod]
+    public void PathAndExtensionVariations_ForIgnoredProcesses_AreAllDefended()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // 1. 전체 경로 포함 (C:\Windows\SystemApps\...\ScreenClippingHost.exe)
+        windowProvider.Current = new WindowInfo(201, 1001, @"C:\Windows\SystemApps\ScreenClippingHost.exe", "Screen Clipping");
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        Assert.AreEqual("Antigravity IDE.exe", tracker.CaptureNow().ActiveProcess);
+
+        // 2. 확장자 없는 프로세스명 (SnippingTool)
+        windowProvider.Current = new WindowInfo(202, 1002, "SnippingTool", "Snipping Tool");
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        Assert.AreEqual("Antigravity IDE.exe", tracker.CaptureNow().ActiveProcess);
+
+        // 3. 앞뒤 공백 포함 프로세스명 (" ScreenClippingHost.exe ")
+        windowProvider.Current = new WindowInfo(203, 1003, " ScreenClippingHost.exe ", "Screen Clipping");
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        Assert.AreEqual("Antigravity IDE.exe", tracker.CaptureNow().ActiveProcess);
+
+        // 4. 대소문자 혼합 (sEaRcHhOsT.EXE)
+        windowProvider.Current = new WindowInfo(204, 1004, "sEaRcHhOsT.EXE", "Search");
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        Assert.AreEqual("Antigravity IDE.exe", tracker.CaptureNow().ActiveProcess);
+    }
+
+    [TestMethod]
+    public void CandidateStabilization_InterruptedByTransientOverlay_ResetsCandidateTimer()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var notionWindow = new WindowInfo(200, 5678, "Notion.exe", "Work Notes");
+        var screenClippingWindow = new WindowInfo(300, 9991, "ScreenClippingHost.exe", "Screen Clipping");
+
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // 1. 노션으로 전환 진입 (2초 체류: 임계값 3초 미만이므로 아직 후보)
+        windowProvider.Current = notionWindow;
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        Assert.AreEqual("Antigravity IDE.exe", tracker.CaptureNow().ActiveProcess);
+
+        // 2. 이 상태에서 사용자가 캡처 도구 단축키 실행 (오버레이 출현)
+        windowProvider.Current = screenClippingWindow;
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        Assert.AreEqual("Antigravity IDE.exe", tracker.CaptureNow().ActiveProcess);
+
+        // 3. 캡처 종료 후 노션으로 다시 돌아옴
+        // 오버레이 개입으로 인해 기존 노션 후보 타이머가 리셋되었으므로, 처음부터 다시 3초를 머물러야 함!
+        windowProvider.Current = notionWindow;
+        tracker.CaptureNow();
+
+        // 2초 체류 시점 (총 노션 체류는 앞선 2초 + 현재 2초 = 4초이지만, 리셋되었으므로 아직 IDE 유지)
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        Assert.AreEqual("Antigravity IDE.exe", tracker.CaptureNow().ActiveProcess);
+
+        // 추가 1.5초 경과 (리셋 시점 기준 3.5초 경과) -> 노션으로 정상 승격!
+        timeProvider.Advance(TimeSpan.FromSeconds(1.5));
+        CurrentContext context = tracker.CaptureNow();
+
+        Assert.AreEqual("Notion.exe", context.ActiveProcess);
+        Assert.AreEqual("Work Notes", context.WindowTitle);
+    }
+
     private sealed class FakeWindowInfoProvider : IWindowInfoProvider
     {
         public WindowInfo? Current { get; set; }

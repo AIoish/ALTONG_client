@@ -110,6 +110,6 @@ public sealed class BriefingPromptParityTests
 
         StringAssert.StartsWith(rendered, "<|im_start|>system\n");
         StringAssert.Contains(rendered, "<|im_end|>\n<|im_start|>user\n");
-        StringAssert.EndsWith(rendered, "<|im_end|>\n<|im_start|>assistant\n");
+        StringAssert.EndsWith(rendered, "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n");
     }
 }
