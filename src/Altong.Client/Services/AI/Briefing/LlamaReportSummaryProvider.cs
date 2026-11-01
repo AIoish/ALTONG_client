@@ -19,7 +19,7 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
     private readonly INotificationRepository _notifications;
     private readonly LlamaBriefingEngine _engine;
     private readonly Func<DateTime> _nowProvider;
-    private readonly ConcurrentDictionary<string, Task<ReportSummarySupply>> _sessionTaskCache = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<Task<ReportSummarySupply>>> _sessionTaskCache = new(StringComparer.Ordinal);
 
     public LlamaReportSummaryProvider(
         INotificationRepository notifications,
@@ -31,26 +31,63 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
         _nowProvider = nowProvider ?? (() => DateTime.Now);
     }
 
-    public Task<ReportSummarySupply> ReadAsync(string sessionId, CancellationToken cancellationToken)
+    public async Task<ReportSummarySupply> ReadAsync(string sessionId, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(sessionId)) return Task.FromResult(new ReportSummarySupply([]));
+        if (string.IsNullOrWhiteSpace(sessionId)) return new ReportSummarySupply([]);
         if (!Regex.IsMatch(sessionId, @"\A[a-zA-Z0-9_-]{1,128}\z"))
             throw new InvalidDataException("잘못된 집중 세션 ID입니다.");
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _sessionTaskCache.GetOrAdd(sessionId, id =>
+        while (true)
         {
-            var task = GenerateSummarySupplyAsync(id, cancellationToken);
-            _ = task.ContinueWith(t =>
+            var lazyTask = _sessionTaskCache.GetOrAdd(
+                sessionId,
+                id => new Lazy<Task<ReportSummarySupply>>(
+                    () => GenerateSummarySupplyAsync(id, cancellationToken),
+                    LazyThreadSafetyMode.ExecutionAndPublication));
+
+            Task<ReportSummarySupply> task;
+            try
             {
-                if (t.IsFaulted || t.IsCanceled)
+                task = lazyTask.Value;
+            }
+            catch
+            {
+                _sessionTaskCache.TryRemove(KeyValuePair.Create(sessionId, lazyTask));
+                throw;
+            }
+
+            if (task.IsFaulted || task.IsCanceled)
+            {
+                _sessionTaskCache.TryRemove(KeyValuePair.Create(sessionId, lazyTask));
+                continue;
+            }
+
+            try
+            {
+                return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                if (task.IsFaulted || task.IsCanceled)
                 {
-                    _sessionTaskCache.TryRemove(id, out _);
+                    _sessionTaskCache.TryRemove(KeyValuePair.Create(sessionId, lazyTask));
                 }
-            }, TaskScheduler.Default);
-            return task;
-        });
+                throw;
+            }
+        }
+    }
+
+    public static string NormalizeDisplayAppName(string? appName)
+    {
+        if (string.IsNullOrWhiteSpace(appName)) return "Unknown";
+        var trimmed = appName.Trim();
+        if (trimmed.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[..^4].Trim();
+        }
+        return string.IsNullOrWhiteSpace(trimmed) ? "Unknown" : trimmed;
     }
 
     private async Task<ReportSummarySupply> GenerateSummarySupplyAsync(string sessionId, CancellationToken cancellationToken)
@@ -62,11 +99,11 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
             return new ReportSummarySupply([]);
         }
 
-        // 2. 대화방/발신자/앱 단위로 알림 그룹화
+        // 2. 대화방/발신자/앱 단위로 알림 그룹화 (Sender가 있으면 Sender 우선, 없으면 Title 사용)
         var groups = blocked
             .GroupBy(n => (
-                AppName: n.AppName ?? "Unknown",
-                GroupKey: string.IsNullOrWhiteSpace(n.Title) ? (n.Sender ?? "") : n.Title
+                AppKey: BriefingPromptBuilder.NormalizeAppIdentity(n.AppName),
+                GroupKey: (!string.IsNullOrWhiteSpace(n.Sender) ? n.Sender : (n.Title ?? "")).Trim()
             ))
             .ToList();
 
@@ -78,8 +115,8 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
             cancellationToken.ThrowIfCancellationRequested();
 
             var groupNotifications = group.OrderBy(n => n.ReceivedAt).ToList();
-            var appName = group.Key.AppName;
-            var sender = groupNotifications.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n.Sender))?.Sender ?? "";
+            var appName = NormalizeDisplayAppName(groupNotifications[0].AppName);
+            var sender = groupNotifications.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n.Sender))?.Sender?.Trim() ?? "";
 
             string summaryText;
             string primaryCategory;

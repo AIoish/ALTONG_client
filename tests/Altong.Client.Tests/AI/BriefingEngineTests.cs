@@ -375,4 +375,194 @@ public sealed class BriefingEngineTests
         StringAssert.StartsWith(first.Items[0].SummaryId, "sum-");
         StringAssert.StartsWith(first.Items[0].Schedule!.EventId, "evt-");
     }
+
+    [TestMethod]
+    public void LlamaBriefingEngine_ParseResponse_StripsCompletedThinkBlock()
+    {
+        var rawWithThink = "<think>\nLet me analyze the notification carefully. The user has a meeting tomorrow.\n</think>\n{\"primary_category\":\"일정/회의\",\"summary_lines\":[\"내일 오후 3시에 기획 회의를 진행합니다.\"]}";
+        var fallback = Array.Empty<NotificationRecord>();
+
+        var result = LlamaBriefingEngine.ParseResponse(rawWithThink, fallback);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual("일정/회의", result!.PrimaryCategory);
+        Assert.AreEqual(1, result.SummaryLines.Count);
+        Assert.AreEqual("내일 오후 3시에 기획 회의를 진행합니다.", result.SummaryLines[0]);
+    }
+
+    [TestMethod]
+    public void LlamaBriefingEngine_ParseResponse_TruncatedThinkBlock_DoesNotLeakEnglishMonologue()
+    {
+        var truncatedThink = "<think>\nOkay, the user wants to summarize \"meeting room changed\" and \"tomorrow at 2pm\" into Korean JSON.";
+        var fallback = new[]
+        {
+            new NotificationRecord("id-1", "KakaoTalk", "기획팀", "단톡방", "회의실 B로 장소 변경되었습니다.", DateTime.UtcNow)
+        };
+
+        var result = LlamaBriefingEngine.ParseResponse(truncatedThink, fallback);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual("기타", result!.PrimaryCategory);
+        Assert.AreEqual(1, result.SummaryLines.Count);
+        Assert.AreEqual("기획팀: 회의실 B로 장소 변경되었습니다.", result.SummaryLines[0]);
+    }
+
+    [TestMethod]
+    public void BriefingScheduleExtractor_PrioritizesLatestLocationAndDateChange()
+    {
+        var refTime = new DateTime(2026, 9, 25, 9, 0, 0, DateTimeKind.Utc);
+        var notifications = new[]
+        {
+            "9월 28일 오후 2시 회의실 A에서 기획 회의 진행합니다.",
+            "9월 30일 오후 4시 회의실 B로 일정 및 장소 변경되었습니다."
+        };
+
+        var (isScheduleRelated, schedule) = BriefingScheduleExtractor.Extract(
+            groupSummary: "기획 회의가 9월 30일 오후 4시 회의실 B로 변경되었습니다.",
+            primaryCategory: "일정/회의",
+            notificationTexts: notifications,
+            referenceTime: refTime);
+
+        Assert.IsTrue(isScheduleRelated);
+        Assert.IsNotNull(schedule);
+        Assert.AreEqual("회의실 B", schedule!.Location);
+        Assert.AreEqual(new DateTimeOffset(2026, 9, 30, 16, 0, 0, TimeSpan.FromHours(9)), schedule.Start);
+        Assert.AreEqual(new DateTimeOffset(2026, 9, 30, 17, 0, 0, TimeSpan.FromHours(9)), schedule.End);
+    }
+
+    [TestMethod]
+    public void BriefingScheduleExtractor_ExtractsAmPmTimeRangeAndBuildingRoomLocation_AndCleansTitle()
+    {
+        var refTime = new DateTime(2026, 10, 13, 9, 0, 0, DateTimeKind.Utc);
+        var notifications = new[]
+        {
+            "중간 점검 회의 관련해서요",
+            "내일 오후 2시~4시에",
+            "종합강의동 302호에서 할게요"
+        };
+
+        var (isScheduleRelated, schedule) = BriefingScheduleExtractor.Extract(
+            groupSummary: "내일 오후 2시에 회의실 변경 없이 종합강의동 302호에서 중간 점검 회의를 진행합니다.",
+            primaryCategory: "일정/회의",
+            notificationTexts: notifications,
+            referenceTime: refTime);
+
+        Assert.IsTrue(isScheduleRelated);
+        Assert.IsNotNull(schedule);
+        Assert.AreEqual("중간 점검 회의", schedule!.Title);
+        Assert.AreEqual("종합강의동 302호", schedule.Location);
+        Assert.AreEqual(new DateTimeOffset(2026, 10, 14, 14, 0, 0, TimeSpan.FromHours(9)), schedule.Start);
+        Assert.AreEqual(new DateTimeOffset(2026, 10, 14, 16, 0, 0, TimeSpan.FromHours(9)), schedule.End);
+    }
+
+    [TestMethod]
+    public async Task LlamaReportSummaryProvider_GroupsConsecutiveNotificationsBySenderAndNormalizesAppName()
+    {
+        var now = new DateTime(2026, 10, 13, 10, 0, 0, DateTimeKind.Utc);
+        var fakeNotifications = new[]
+        {
+            new NotificationRecord("1", "KakaoTalk.exe", "연구실 단톡방", "주간 회의", "내일 오전 10시에 주간 회의 진행합니다.", now,
+                IsPassed: false, SessionId: "session-group"),
+            new NotificationRecord("2", "KakaoTalk", "연구실 단톡방", "주간 회의 취소", "교수님 출장으로 내일 주간 회의는 취소되었습니다.", now.AddMinutes(1),
+                IsPassed: false, SessionId: "session-group")
+        };
+        var fakeRepo = new FakeNotificationRepository(fakeNotifications);
+
+        using var provider = new LlamaReportSummaryProvider(
+            fakeRepo,
+            "non_existent_model.gguf",
+            () => now);
+
+        var supply = await provider.ReadAsync("session-group", CancellationToken.None);
+
+        Assert.AreEqual(1, supply.Items.Count, "같은 Sender에서 제목만 바뀐 연속 알림은 단일 그룹으로 묶여야 합니다.");
+        Assert.AreEqual("KakaoTalk", supply.Items[0].AppName, ".exe 접미사가 제거된 정규화 앱 이름이어야 합니다.");
+        StringAssert.Contains(supply.Items[0].Text, "취소되었습니다");
+    }
+
+    [TestMethod]
+    public async Task LlamaReportSummaryProvider_EvictsCanceledTaskFromCache_AllowingRetry()
+    {
+        var now = new DateTime(2026, 10, 13, 10, 0, 0, DateTimeKind.Utc);
+        var fakeNotifications = new[]
+        {
+            new NotificationRecord("1", "Slack.exe", "운영팀장", "[긴급] 서버 오류", "서버 에러 발생", now,
+                IsPassed: false, SessionId: "session-retry")
+        };
+        var fakeRepo = new FakeNotificationRepository(fakeNotifications);
+
+        using var provider = new LlamaReportSummaryProvider(
+            fakeRepo,
+            "non_existent_model.gguf",
+            () => now);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsExceptionAsync<OperationCanceledException>(
+            () => provider.ReadAsync("session-retry", cts.Token));
+
+        var retrySupply = await provider.ReadAsync("session-retry", CancellationToken.None);
+        Assert.AreEqual(1, retrySupply.Items.Count);
+        Assert.AreEqual("Slack", retrySupply.Items[0].AppName);
+    }
+
+    [TestMethod]
+    public void BriefingScheduleExtractor_ExtractsTitleWithKoreanParticles_AndStandaloneRoomLocation()
+    {
+        var refTime = new DateTime(2026, 10, 13, 9, 0, 0, DateTimeKind.Utc);
+        var notifications = new[]
+        {
+            "내일 오후 2시에 캡스톤 발표가 302호에서 진행됩니다."
+        };
+
+        var (isScheduleRelated, schedule) = BriefingScheduleExtractor.Extract(
+            groupSummary: "내일 오후 2시에 캡스톤 발표가 302호에서 진행됩니다.",
+            primaryCategory: "일정/회의",
+            notificationTexts: notifications,
+            referenceTime: refTime);
+
+        Assert.IsTrue(isScheduleRelated);
+        Assert.IsNotNull(schedule);
+        Assert.AreEqual("캡스톤 발표", schedule!.Title);
+        Assert.AreEqual("302호", schedule.Location);
+    }
+
+    [TestMethod]
+    public void BriefingScheduleExtractor_SingleSentenceScheduleChange_ExtractsUpdatedDateTimeAndLocation()
+    {
+        var refTime = new DateTime(2026, 9, 25, 9, 0, 0, DateTimeKind.Utc);
+        var notifications = new[]
+        {
+            "9월 28일 오후 2시 회의실 A에서 진행 예정이던 기획 회의가 9월 30일 오후 4시 회의실 B로 변경되었습니다."
+        };
+
+        var (isScheduleRelated, schedule) = BriefingScheduleExtractor.Extract(
+            groupSummary: "9월 28일 오후 2시 회의실 A 예정이던 기획 회의가 9월 30일 오후 4시 회의실 B로 변경되었습니다.",
+            primaryCategory: "일정/회의",
+            notificationTexts: notifications,
+            referenceTime: refTime);
+
+        Assert.IsTrue(isScheduleRelated);
+        Assert.IsNotNull(schedule);
+        Assert.AreEqual("회의실 B", schedule!.Location);
+        Assert.AreEqual(new DateTimeOffset(2026, 9, 30, 16, 0, 0, TimeSpan.FromHours(9)), schedule.Start);
+        Assert.AreEqual(new DateTimeOffset(2026, 9, 30, 17, 0, 0, TimeSpan.FromHours(9)), schedule.End);
+    }
+
+    [TestMethod]
+    public void LlamaBriefingEngine_ParseResponse_UnclosedSecondThinkBlock_FallsBackGracefully()
+    {
+        var raw = "<think>first thought</think><think>second unclosed thought with \"english quoted phrase\"";
+        var fallback = new[]
+        {
+            new NotificationRecord("id-1", "Slack", "운영팀", "점검 안내", "오늘 밤 11시 서버 점검 예정입니다.", DateTime.UtcNow)
+        };
+
+        var result = LlamaBriefingEngine.ParseResponse(raw, fallback);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual("기타", result!.PrimaryCategory);
+        Assert.AreEqual("운영팀: 오늘 밤 11시 서버 점검 예정입니다.", result.SummaryLines[0]);
+    }
 }

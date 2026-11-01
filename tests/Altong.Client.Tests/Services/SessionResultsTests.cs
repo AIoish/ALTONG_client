@@ -289,4 +289,39 @@ public sealed class SessionResultsTests
 
         CollectionAssert.AreEqual(new[] { "Code" }, apps.ToArray());
     }
+
+    [TestMethod]
+    public async Task ReadNotificationsAsync_IncludesAiEvaluationColumns()
+    {
+        _results.Begin(_start, 25);
+        string sessionId = _results.CurrentSessionId!;
+        await _notifications.InsertAsync(new(
+            Id: "ai-evaluated-1",
+            AppName: "Slack",
+            Sender: "김팀장",
+            Title: "[긴급] 배포 장애",
+            Body: "프로덕션 서버 500 에러",
+            ReceivedAt: _start.AddSeconds(15),
+            SessionId: sessionId));
+
+        await _notifications.UpdateFilterResultAsync(
+            id: "ai-evaluated-1",
+            isPassed: true,
+            urgencyScore: 5,
+            relevanceScore: 4,
+            category: "긴급 업무",
+            reason: "활성 작업과 높은 관련성 및 긴급 장애 키워드 감지");
+
+        var records = await _results.ReadNotificationsAsync(_start, _start.AddMinutes(1), sessionId);
+
+        Assert.AreEqual(1, records.Count);
+        var record = records[0];
+        Assert.AreEqual(true, record.IsPassed);
+        Assert.AreEqual(5, record.UrgencyScore);
+        Assert.AreEqual(4, record.RelevanceScore);
+        Assert.AreEqual("긴급 업무", record.Category);
+        Assert.AreEqual("활성 작업과 높은 관련성 및 긴급 장애 키워드 감지", record.AiSummaryReason);
+        Assert.AreEqual(sessionId, record.SessionId);
+        Assert.IsNotNull(record.CreatedAt);
+    }
 }
