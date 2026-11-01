@@ -105,6 +105,22 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
         return 1.0f;
     }
 
+    private static readonly Lazy<Windows.Media.Ocr.OcrEngine?> _cachedWindowsOcr = new(() =>
+    {
+        try
+        {
+            var koLang = new Windows.Globalization.Language("ko-KR");
+            return Windows.Media.Ocr.OcrEngine.IsLanguageSupported(koLang)
+                ? Windows.Media.Ocr.OcrEngine.TryCreateFromLanguage(koLang)
+                : Windows.Media.Ocr.OcrEngine.TryCreateFromUserProfileLanguages();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Warn($"[KakaoInterceptor] Windows OCR 엔진 초기화 실패: {ex.Message}");
+            return null;
+        }
+    });
+
     public bool IsNotificationWindow(nint hWnd)
     {
         if (hWnd == nint.Zero)
@@ -547,21 +563,49 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
                 }
             }
 
-            // [핵심 해결책] Alpha 채널 강제 불투명화 (Alpha = 255)
+            // [핵심 해결책 1] Alpha 채널 강제 불투명화 (Alpha = 255)
             // Layered Window (Alpha = 1)로 인해 캡처된 32bpp 비트맵의 알파 채널이 거의 0에 가까워
             // Windows OCR 엔진이 투명한 빈 캔버스로 인식하는 문제를 비트맵 메모리를 직접 조작하여 완벽히 해결!
+            // [핵심 해결책 2] 다크 모드(어두운 배경 + 밝은 글씨) 자동 감지 및 반전
+            // 카카오톡 다크 테마 적용 시 밝기 반전을 통해 Windows OCR 및 PP-OCRv5 라인 인식률을 극대화!
             var bmpData = bmp.LockBits(
                 new Rectangle(0, 0, width, height),
                 ImageLockMode.ReadWrite,
                 PixelFormat.Format32bppArgb);
             try
             {
-                int totalBytes = Math.Abs(bmpData.Stride) * height;
+                int stride = Math.Abs(bmpData.Stride);
+                int totalBytes = stride * height;
                 byte[] rgbValues = new byte[totalBytes];
                 Marshal.Copy(bmpData.Scan0, rgbValues, 0, totalBytes);
-                for (int i = 3; i < totalBytes; i += 4)
+
+                // 상단/하단 경계 픽셀 휘도 샘플링을 통한 다크 테마 판별
+                long borderLumSum = 0;
+                int borderSamples = 0;
+                int sampleYTop = Math.Min(2, height - 1);
+                int sampleYBot = Math.Max(0, height - 3);
+
+                for (int x = 2; x < width - 2; x += 4)
                 {
-                    rgbValues[i] = 255; // 100% 완전 불투명화
+                    int topOff = sampleYTop * stride + x * 4;
+                    borderLumSum += (rgbValues[topOff + 2] * 299 + rgbValues[topOff + 1] * 587 + rgbValues[topOff] * 114) / 1000;
+
+                    int botOff = sampleYBot * stride + x * 4;
+                    borderLumSum += (rgbValues[botOff + 2] * 299 + rgbValues[botOff + 1] * 587 + rgbValues[botOff] * 114) / 1000;
+                    borderSamples += 2;
+                }
+
+                bool isDarkMode = borderSamples > 0 && (borderLumSum / borderSamples) < 120;
+
+                for (int i = 0; i < totalBytes; i += 4)
+                {
+                    if (isDarkMode)
+                    {
+                        rgbValues[i] = (byte)(255 - rgbValues[i]);         // B
+                        rgbValues[i + 1] = (byte)(255 - rgbValues[i + 1]); // G
+                        rgbValues[i + 2] = (byte)(255 - rgbValues[i + 2]); // R
+                    }
+                    rgbValues[i + 3] = 255; // 100% 완전 불투명화
                 }
                 Marshal.Copy(rgbValues, 0, bmpData.Scan0, totalBytes);
             }
@@ -625,63 +669,111 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
             ras.Seek(0);
 
             var decoder = Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(ras).AsTask().GetAwaiter().GetResult();
-            var softwareBitmap = decoder.GetSoftwareBitmapAsync().AsTask().GetAwaiter().GetResult();
+            using var softwareBitmap = decoder.GetSoftwareBitmapAsync().AsTask().GetAwaiter().GetResult();
 
-            // 한국어 언어팩 우선 적용 (시스템 기본 표시 언어가 영문이어도 한글 OCR 사전 강제 적용)
-            var koLang = new Windows.Globalization.Language("ko-KR");
-            var ocr = Windows.Media.Ocr.OcrEngine.IsLanguageSupported(koLang)
-                ? Windows.Media.Ocr.OcrEngine.TryCreateFromLanguage(koLang)
-                : Windows.Media.Ocr.OcrEngine.TryCreateFromUserProfileLanguages();
-
-            if (ocr == null)
-            {
-                return null;
-            }
-
-            var result = ocr.RecognizeAsync(softwareBitmap).AsTask().GetAwaiter().GetResult();
-            if (result.Lines.Count == 0)
-            {
-                return null;
-            }
-
+            var ocr = _cachedWindowsOcr.Value;
             var parsedLines = new List<ParsedOcrLine>();
 
-            foreach (var line in result.Lines)
+            if (ocr != null)
             {
-                string text = line.Text.Trim();
-                if (string.IsNullOrWhiteSpace(text)) continue;
-
-                double rawMinX = line.Words.Count > 0 ? line.Words.Min(w => w.BoundingRect.X) : 0;
-                double rawMinY = line.Words.Count > 0 ? line.Words.Min(w => w.BoundingRect.Y) : 0;
-                double rawMaxX = line.Words.Count > 0 ? line.Words.Max(w => w.BoundingRect.X + w.BoundingRect.Width) : 0;
-                double rawMaxY = line.Words.Count > 0 ? line.Words.Max(w => w.BoundingRect.Y + w.BoundingRect.Height) : 0;
-
-                // 업스케일링 좌표를 원본 창 좌표계로 정규화 복원
-                double minX = rawMinX / OcrUpscaleFactor;
-                double minY = rawMinY / OcrUpscaleFactor;
-                double maxX = rawMaxX / OcrUpscaleFactor;
-                double maxY = rawMaxY / OcrUpscaleFactor;
-
-                // 1. 우상단 툴바 영역 (알림 음소거 벨 아이콘 '0'/'O', 닫기 'X' 버튼) 배제
-                // 카카오톡 토스트 우측 상단(X > 전체 너비의 70%, Y < 상단 35%)에 위치한 UI 아이콘 배제
-                if (minX > width * 0.70 && minY < effectiveHeight * 0.35)
+                var result = ocr.RecognizeAsync(softwareBitmap).AsTask().GetAwaiter().GetResult();
+                if (result.Lines != null)
                 {
-                    continue;
-                }
-
-                // 2. 단독 기호 및 불필요한 컨트롤 라벨(전송, 메시지 입력 등) 배제
-                if (!IsValidTextItem(text))
+                foreach (var line in result.Lines)
                 {
-                    continue;
-                }
+                    string text = line.Text.Trim();
+                    if (string.IsNullOrWhiteSpace(text)) continue;
 
-                // 3. 단일 숫자(0, 1 등) 또는 단일 영문 기호(o, x 등) 오인식 배제
-                if (text.Length == 1 && (char.IsDigit(text[0]) || text.Equals("o", StringComparison.OrdinalIgnoreCase) || text.Equals("x", StringComparison.OrdinalIgnoreCase)))
+                    double rawMinX = line.Words.Count > 0 ? line.Words.Min(w => w.BoundingRect.X) : 0;
+                    double rawMinY = line.Words.Count > 0 ? line.Words.Min(w => w.BoundingRect.Y) : 0;
+                    double rawMaxX = line.Words.Count > 0 ? line.Words.Max(w => w.BoundingRect.X + w.BoundingRect.Width) : 0;
+                    double rawMaxY = line.Words.Count > 0 ? line.Words.Max(w => w.BoundingRect.Y + w.BoundingRect.Height) : 0;
+
+                    // 업스케일링 좌표를 원본 창 좌표계로 정규화 복원
+                    double minX = rawMinX / OcrUpscaleFactor;
+                    double minY = rawMinY / OcrUpscaleFactor;
+                    double maxX = rawMaxX / OcrUpscaleFactor;
+                    double maxY = rawMaxY / OcrUpscaleFactor;
+
+                    // 1. 우상단 툴바 영역 (알림 음소거 벨 아이콘 '0'/'O', 닫기 'X' 버튼) 배제
+                    // 카카오톡 토스트 우측 상단(X > 전체 너비의 70%, Y < 상단 35%)에 위치한 UI 아이콘 배제
+                    if (minX > width * 0.70 && minY < effectiveHeight * 0.35)
+                    {
+                        continue;
+                    }
+
+                    // [PP-OCRv5 온디바이스 라인 정밀 인식 결합]
+                    // Windows.Media.Ocr가 검출한 라인 Y-Band 영역을 잘라내어 PP-OCRv5 ONNX 엔진으로 정밀 인식
+                    string lineText = text;
+                    if (PaddleOcrLineRecognizer.Instance.IsAvailable)
+                    {
+                        int cropX = Math.Max(0, (int)Math.Floor(rawMinX));
+                        int cropY = Math.Max(0, (int)Math.Floor(rawMinY));
+                        int cropW = Math.Min(scaledWidth - cropX, (int)Math.Ceiling(rawMaxX - rawMinX));
+                        int cropH = Math.Min(scaledHeight - cropY, (int)Math.Ceiling(rawMaxY - rawMinY));
+
+                        if (cropW > 0 && cropH > 0)
+                        {
+                            var lineRect = new Rectangle(cropX, cropY, cropW, cropH);
+                            string? recognized = PaddleOcrLineRecognizer.Instance.RecognizeLine(scaledBmp, lineRect);
+                            if (!string.IsNullOrWhiteSpace(recognized))
+                            {
+                                lineText = recognized;
+                            }
+                        }
+                    }
+
+                    // PP-OCRv5 미사용 또는 잔여 폰트 글리프 혼동(ㄷㄷㄷ->CCC, ㅠㅠ->TT, ㅡㅡ->--) 보정
+                    lineText = PaddleOcrLineRecognizer.NormalizeJamoConfusion(lineText);
+
+                    // 2. 단독 기호 및 불필요한 컨트롤 라벨(전송, 메시지 입력 등) 배제
+                    // (ONNX 라인 인식 및 자모 혼동 보정 완료 후 검사하므로 '[[['나 '==='로 인한 조기 삭제 방지)
+                    if (!IsValidTextItem(lineText))
+                    {
+                        continue;
+                    }
+
+                    // 3. 단일 숫자(0, 1 등) 또는 단일 영문 기호(o, x 등) 오인식 배제
+                    if (lineText.Length == 1 && (char.IsDigit(lineText[0]) || lineText.Equals("o", StringComparison.OrdinalIgnoreCase) || lineText.Equals("x", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
+                    parsedLines.Add(new ParsedOcrLine(lineText, minX, minY, maxX - minX, maxY - minY));
+                }
+            }
+            }
+
+            // 4. [Body-Band 가로 픽셀 투영 Fallback]
+            // Windows.Media.Ocr가 'ㅡㅡ' 등 순수 가로선 자모를 구분선 기호로 오인하여 본문 줄(logY >= 48)을 누락한 경우,
+            // 본문 영역의 가로 픽셀 투영으로 Y-Band를 검출해 PP-OCRv5로 구조 복원
+            bool hasBodyLine = parsedLines.Any(p => (p.Y / scale) >= 48);
+            if (!hasBodyLine && PaddleOcrLineRecognizer.Instance.IsAvailable)
+            {
+                int bodyStartY = (int)Math.Round(48 * scale * OcrUpscaleFactor);
+                int bodyEndY = scaledHeight - (int)Math.Round(4 * scale * OcrUpscaleFactor);
+                int bodyStartX = parsedLines.Count > 0
+                    ? Math.Max(0, (int)Math.Floor(parsedLines.Min(p => p.X) * OcrUpscaleFactor) - 10)
+                    : (int)Math.Round(width * 0.15 * OcrUpscaleFactor);
+                int bodyEndX = Math.Min(scaledWidth, (int)Math.Ceiling(width * 0.85 * OcrUpscaleFactor));
+
+                var detectedBand = DetectBodyLineBand(scaledBmp, bodyStartX, bodyStartY, bodyEndX, bodyEndY);
+                if (detectedBand.HasValue)
                 {
-                    continue;
+                    string? bodyText = PaddleOcrLineRecognizer.Instance.RecognizeLine(scaledBmp, detectedBand.Value);
+                    if (!string.IsNullOrWhiteSpace(bodyText))
+                    {
+                        bodyText = PaddleOcrLineRecognizer.NormalizeJamoConfusion(bodyText);
+                        if (IsValidTextItem(bodyText))
+                        {
+                            double bMinX = detectedBand.Value.X / OcrUpscaleFactor;
+                            double bMinY = detectedBand.Value.Y / OcrUpscaleFactor;
+                            double bW = detectedBand.Value.Width / OcrUpscaleFactor;
+                            double bH = detectedBand.Value.Height / OcrUpscaleFactor;
+                            parsedLines.Add(new ParsedOcrLine(bodyText, bMinX, bMinY, bW, bH));
+                        }
+                    }
                 }
-
-                parsedLines.Add(new ParsedOcrLine(text, minX, minY, maxX - minX, maxY - minY));
             }
 
             if (parsedLines.Count == 0)
@@ -754,6 +846,84 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
         }
 
         return null;
+    }
+
+    internal static Rectangle? DetectBodyLineBand(Bitmap scaledBmp, int startX, int startY, int endX, int endY)
+    {
+        int w = endX - startX;
+        int h = endY - startY;
+        if (w <= 0 || h <= 0 || startX < 0 || startY < 0 || endX > scaledBmp.Width || endY > scaledBmp.Height)
+        {
+            return null;
+        }
+
+        var rect = new Rectangle(startX, startY, w, h);
+        var bmpData = scaledBmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            int stride = Math.Abs(bmpData.Stride);
+            byte[] buffer = new byte[stride * h];
+            Marshal.Copy(bmpData.Scan0, buffer, 0, buffer.Length);
+
+            int firstActiveY = -1;
+            int lastActiveY = -1;
+            int minContentX = int.MaxValue;
+            int maxContentX = int.MinValue;
+
+            int c0 = (buffer[0] * 114 + buffer[1] * 587 + buffer[2] * 299) / 1000;
+            int c1 = (buffer[(w - 1) * 4] * 114 + buffer[(w - 1) * 4 + 1] * 587 + buffer[(w - 1) * 4 + 2] * 299) / 1000;
+            int c2 = (buffer[(h - 1) * stride] * 114 + buffer[(h - 1) * stride + 1] * 587 + buffer[(h - 1) * stride + 2] * 299) / 1000;
+            int c3 = (buffer[(h - 1) * stride + (w - 1) * 4] * 114 + buffer[(h - 1) * stride + (w - 1) * 4 + 1] * 587 + buffer[(h - 1) * stride + (w - 1) * 4 + 2] * 299) / 1000;
+            bool isDark = (c0 + c1 + c2 + c3) / 4 < 120;
+
+            for (int y = 0; y < h; y++)
+            {
+                int rowOffset = y * stride;
+                int strokePixelCount = 0;
+                for (int x = 0; x < w; x++)
+                {
+                    int pxOffset = rowOffset + (x * 4);
+                    byte b = buffer[pxOffset];
+                    byte g = buffer[pxOffset + 1];
+                    byte r = buffer[pxOffset + 2];
+
+                    bool isStroke = isDark
+                        ? (r > 110 || g > 110 || b > 110)
+                        : (r < 200 || g < 200 || b < 200);
+
+                    if (isStroke)
+                    {
+                        strokePixelCount++;
+                        if (x < minContentX) minContentX = x;
+                        if (x > maxContentX) maxContentX = x;
+                    }
+                }
+
+                if (strokePixelCount >= 4)
+                {
+                    if (firstActiveY == -1) firstActiveY = y;
+                    lastActiveY = y;
+                }
+            }
+
+            int contentW = maxContentX - minContentX + 1;
+            int contentH = lastActiveY - firstActiveY + 1;
+
+            if (firstActiveY != -1 && contentW >= 6 && contentH >= 1)
+            {
+                int bandY = Math.Max(0, startY + firstActiveY - 2);
+                int bandH = Math.Min(scaledBmp.Height - bandY, contentH + 4);
+                int bandX = Math.Max(0, startX + minContentX - 2);
+                int bandW = Math.Min(scaledBmp.Width - bandX, contentW + 4);
+                return new Rectangle(bandX, bandY, bandW, bandH);
+            }
+
+            return null;
+        }
+        finally
+        {
+            scaledBmp.UnlockBits(bmpData);
+        }
     }
 
     private static bool IsValidTextItem(string text)
