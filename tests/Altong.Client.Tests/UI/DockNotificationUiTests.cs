@@ -20,10 +20,8 @@ public sealed class DockNotificationUiTests
     [DllImport("user32.dll")]
     private static extern nint SendMessage(nint hwnd, uint msg, nint wParam, nint lParam);
 
-    [DataTestMethod]
-    [DataRow(DockPresentation.Classic)]
-    [DataRow(DockPresentation.RightNotch)]
-    public void BulkButtons_UpdateCountsCloseDeletedDetailAndShowEmptyState(DockPresentation presentation)
+    [TestMethod]
+    public void BulkButtons_UpdateCountsCloseDeletedDetailAndShowEmptyState()
     {
         RunOnSta(() =>
         {
@@ -33,35 +31,34 @@ public sealed class DockNotificationUiTests
             state.Receive(Record("second", 4));
             state.OpenPanel();
             state.TogglePin();
-            var flyout = new NotificationFlyoutWindow(state) { Left = -10000, Top = -10000 };
-            state.Changed += (_, _) => flyout.Refresh();
+            var (flyout, panel) = Host(state);
+            state.Changed += (_, _) => panel.Refresh();
             try
             {
-                flyout.SetPresentation(presentation);
                 flyout.Show();
-                var markAll = (Button)flyout.FindName("MarkAllReadButton");
-                var deleteRead = (Button)flyout.FindName("DeleteReadButton");
+                var markAll = (Button)panel.FindName("MarkAllReadButton");
+                var deleteRead = (Button)panel.FindName("DeleteReadButton");
                 Assert.IsTrue(markAll.IsEnabled);
                 Assert.IsFalse(deleteRead.IsEnabled);
                 state.OpenDetail("first");
                 Assert.IsTrue(deleteRead.IsEnabled);
                 deleteRead.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert.IsNull(state.SelectedItem);
-                Assert.AreEqual(Visibility.Collapsed, ((Border)flyout.FindName("DetailPanel")).Visibility);
+                Assert.AreEqual(Visibility.Collapsed, ((Border)panel.FindName("DetailPanel")).Visibility);
                 Assert.AreEqual(1, state.UnreadCount);
                 markAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                Assert.AreEqual("미확인 0개 · 전체 1개", ((TextBlock)flyout.FindName("CountText")).Text);
+                Assert.AreEqual("미확인 0개 · 전체 1개", ((TextBlock)panel.FindName("CountText")).Text);
                 Assert.IsFalse(markAll.IsEnabled);
                 Assert.IsTrue(deleteRead.IsEnabled);
-                SavePreview(flyout, $"bulk-actions-{presentation}.png");
+                SavePreview(flyout, "bulk-actions.png");
                 deleteRead.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert.AreEqual(0, state.Items.Count);
-                Assert.AreEqual(Visibility.Visible, ((StackPanel)flyout.FindName("EmptyState")).Visibility);
+                Assert.AreEqual(Visibility.Visible, ((StackPanel)panel.FindName("EmptyState")).Visibility);
                 Assert.IsFalse(markAll.IsEnabled || deleteRead.IsEnabled);
                 Assert.IsTrue(state.IsPanelOpen && state.IsPinned);
                 state.Receive(Record("new", 3));
                 Assert.IsTrue(markAll.IsEnabled);
-                Assert.AreEqual(Visibility.Collapsed, ((StackPanel)flyout.FindName("EmptyState")).Visibility);
+                Assert.AreEqual(Visibility.Collapsed, ((StackPanel)panel.FindName("EmptyState")).Visibility);
             }
             finally { flyout.Close(); }
         });
@@ -85,13 +82,13 @@ public sealed class DockNotificationUiTests
             state.BeginSession("ui");
             state.Receive(record);
             state.OpenPanel();
-            var flyout = new NotificationFlyoutWindow(state) { Left = -10000, Top = -10000 };
-            state.Changed += (_, _) => flyout.Refresh();
+            var (flyout, panel) = Host(state);
+            state.Changed += (_, _) => panel.Refresh();
             try
             {
                 flyout.Show();
                 flyout.UpdateLayout();
-                var items = (ItemsControl)flyout.FindName("NotificationItems");
+                var items = (ItemsControl)panel.FindName("NotificationItems");
                 var presenter = (FrameworkElement)items.ItemContainerGenerator.ContainerFromIndex(0);
                 var cardTitle = Descendants<TextBlock>(presenter).Single(text => text.Name == "CardTitle");
                 var expected = showTitle ? Visibility.Visible : Visibility.Collapsed;
@@ -102,7 +99,7 @@ public sealed class DockNotificationUiTests
 
                 Descendants<Button>(presenter).Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 flyout.UpdateLayout();
-                Assert.AreEqual(expected, ((TextBlock)flyout.FindName("DetailTitle")).Visibility);
+                Assert.AreEqual(expected, ((TextBlock)panel.FindName("DetailTitle")).Visibility);
                 Assert.IsTrue(state.Items[0].IsRead);
                 if (title == "민준")
                 {
@@ -124,41 +121,30 @@ public sealed class DockNotificationUiTests
     }
 
     [TestMethod]
-    public void Dock_DefaultGreen_BadgeAndGlow_ResetWithoutResizing()
+    public void NotchLens_TurnsOrangeWhileUnread_AndResetsWithoutResizing()
     {
         RunOnSta(() =>
         {
             var state = new DockNotificationState();
-            var dock = new NotificationDockWindow(state);
-            dock.SetPresentation(DockPresentation.Classic);
+            var dock = new NotificationDockWindow(state) { Left = -10000, Top = -10000 };
             try
             {
-                dock.Left = dock.Top = -10000;
                 dock.Show();
                 double width = dock.Width, height = dock.Height;
                 dock.BeginNotificationSession("ui");
-                dock.UpdateLayout();
-                SavePreview(dock, "dock-notification-idle.png");
-                Assert.AreEqual(Visibility.Collapsed, ((Border)dock.FindName("UnreadBadge")).Visibility);
-                Assert.AreEqual(0, ((DropShadowEffect)dock.FindName("StatusDotGlow")).Opacity);
+                Assert.IsFalse(dock.IsLensAlert, "미확인 알림이 없으면 은빛 렌즈입니다.");
                 for (int i = 0; i < 12; i++) dock.ReceiveNotification(Record($"n{i}", i));
-                Assert.AreEqual("9+", ((TextBlock)dock.FindName("UnreadBadgeText")).Text);
-                Assert.IsTrue(((DropShadowEffect)dock.FindName("StatusDotGlow")).Opacity > 0);
+                // 미확인 알림이 있으면 렌즈가 주황으로 커진다. 개수가 바뀌어도 창 크기는 그대로다.
+                Assert.IsTrue(dock.IsLensAlert);
+                Assert.AreEqual("미확인 중요 알림 12개",
+                    System.Windows.Automation.AutomationProperties.GetItemStatus((FrameworkElement)dock.FindName("NotchBody")));
                 Assert.AreEqual(width, dock.Width);
                 Assert.AreEqual(height, dock.Height);
-                // 정지 상태에서 은은한 광택과 배지를 확인하도록 진행 중인 펄스를 확정한다.
-                state.OpenPanel();
-                dock.UpdateLayout();
-                SavePreview(dock, "dock-notification-unread.png");
-                foreach (var id in state.Items.Select(n => n.Id).ToArray()) state.OpenDetail(id);
-                Assert.AreEqual(Visibility.Collapsed, ((Border)dock.FindName("UnreadBadge")).Visibility);
-                var brush = (SolidColorBrush)dock.FindName("StatusDotBrush");
-                Assert.AreEqual((Color)ColorConverter.ConvertFromString(DockNotificationAppearance.BaseGreen), brush.Color);
-                Assert.AreEqual(0, ((DropShadowEffect)dock.FindName("StatusDotGlow")).Opacity);
+                state.MarkAllRead();
+                Assert.IsFalse(dock.IsLensAlert, "모두 읽으면 은빛 렌즈로 돌아옵니다.");
                 dock.EndNotificationSession();
-                Assert.AreEqual(0, state.Items.Count);
                 Assert.IsFalse(state.IsPanelOpen);
-                Assert.IsFalse(dock.OwnedWindows.Cast<Window>().Any(window => window.IsVisible));
+                Assert.AreEqual(0, dock.OwnedWindows.Count, "패널은 별도 창이 아닙니다.");
             }
             finally { dock.Close(); }
         });
@@ -254,31 +240,37 @@ public sealed class DockNotificationUiTests
             var state = new DockNotificationState();
             state.BeginSession("ui");
             state.Receive(Record("one", 1));
-            var flyout = new NotificationFlyoutWindow(state) { Left = -10000, Top = -10000 };
-            state.Changed += (_, _) => flyout.Refresh();
+            var (flyout, panel) = Host(state);
+            state.Changed += (_, _) => panel.Refresh();
             try
             {
                 flyout.Show();
                 state.OpenPanel();
-                var items = (ItemsControl)flyout.FindName("NotificationItems");
+                var items = (ItemsControl)panel.FindName("NotificationItems");
                 flyout.UpdateLayout();
                 var presenter = (FrameworkElement)items.ItemContainerGenerator.ContainerFromIndex(0);
                 var card = Descendants<Button>(presenter).Single();
                 card.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert.IsTrue(state.Items[0].IsRead);
                 Assert.AreEqual(0, state.UnreadCount);
-                Assert.AreEqual(NotificationFlyoutWindow.ListWidth + NotificationFlyoutWindow.DetailWidth, flyout.Width);
+                Assert.AreEqual(NotificationPanel.ListWidth + NotificationPanel.DetailWidth, panel.Width);
                 Assert.AreEqual("one", state.SelectedItem!.Id);
-                var listPin = (ToggleButton)flyout.FindName("ListPinButton");
-                var detailPin = (ToggleButton)flyout.FindName("DetailPinButton");
+                var listPin = (ToggleButton)panel.FindName("ListPinButton");
+                var detailPin = (ToggleButton)panel.FindName("DetailPinButton");
                 listPin.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Assert.IsTrue(state.IsPinned);
                 Assert.AreEqual(true, detailPin.IsChecked);
                 detailPin.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Assert.IsFalse(state.IsPinned);
                 Assert.AreEqual(false, listPin.IsChecked);
-                nint response = SendMessage(new WindowInteropHelper(flyout).Handle, 0x0021, 0, 0);
-                Assert.AreEqual((nint)3, response, "클릭도 MA_NOACTIVATE로 처리합니다.");
+                var dock = new NotificationDockWindow(state) { Left = -10000, Top = -10000 };
+                try
+                {
+                    dock.Show();
+                    nint response = SendMessage(new WindowInteropHelper(dock).Handle, 0x0021, 0, 0);
+                    Assert.AreEqual((nint)3, response, "노치·패널 창은 클릭도 MA_NOACTIVATE로 처리합니다.");
+                }
+                finally { dock.Close(); }
             }
             finally { flyout.Close(); }
         });
@@ -293,30 +285,30 @@ public sealed class DockNotificationUiTests
             state.BeginSession("ui");
             for (int i = 0; i < 14; i++) state.Receive(Record($"n{i}", i));
             state.OpenPanel();
-            var flyout = new NotificationFlyoutWindow(state) { Left = -10000, Top = -10000 };
-            state.Changed += (_, _) => flyout.Refresh();
+            var (flyout, panel) = Host(state);
+            state.Changed += (_, _) => panel.Refresh();
             try
             {
                 flyout.Show();
                 flyout.UpdateLayout();
-                var scroll = (ScrollViewer)flyout.FindName("ListScroll");
-                var items = (ItemsControl)flyout.FindName("NotificationItems");
+                var scroll = (ScrollViewer)panel.FindName("ListScroll");
+                var items = (ItemsControl)panel.FindName("NotificationItems");
                 scroll.ScrollToVerticalOffset(450);
                 flyout.UpdateLayout();
                 var anchor = (FrameworkElement)items.ItemContainerGenerator.ContainerFromIndex(3);
                 double before = anchor.TranslatePoint(new Point(), scroll).Y;
-                flyout.PreserveScrollPosition(() => state.Receive(Record("latest", 20)));
+                panel.PreserveScrollPosition(() => state.Receive(Record("latest", 20)));
                 flyout.UpdateLayout();
                 double after = anchor.TranslatePoint(new Point(), scroll).Y;
                 Assert.AreEqual(before, after, 1, "삽입 후 보이던 카드의 화면 위치를 유지합니다.");
 
                 state.OpenDetail("n10");
-                var detail = (ScrollViewer)flyout.FindName("DetailScroll");
+                var detail = (ScrollViewer)panel.FindName("DetailScroll");
                 flyout.UpdateLayout();
                 detail.ScrollToVerticalOffset(80);
                 flyout.UpdateLayout();
                 double detailOffset = detail.VerticalOffset;
-                flyout.PreserveScrollPosition(() => state.Receive(Record("more", 21)));
+                panel.PreserveScrollPosition(() => state.Receive(Record("more", 21)));
                 flyout.UpdateLayout();
                 Assert.AreEqual("n10", state.SelectedItem!.Id);
                 Assert.AreEqual(detailOffset, detail.VerticalOffset, 1);
@@ -335,6 +327,18 @@ public sealed class DockNotificationUiTests
         string.Join("\n\n", Enumerable.Repeat("오늘 배포에 포함되는 알림 기능을 확인하고 있어요.\n미니바에서 내용을 확인한 뒤 의견을 알려주세요. 감사합니다.", 9)),
         new DateTime(2026, 10, 1, 4, 0, 0, DateTimeKind.Utc).AddMinutes(minute),
         true, minute % 3 + 3, 4, "업무", SessionId: "ui");
+
+    /// <summary>알림 패널 내용을 화면 밖 창에 담아 띄운다. 실제 앱에서는 노치 창 안에 들어간다.</summary>
+    private static (Window Host, NotificationPanel Panel) Host(DockNotificationState state)
+    {
+        var panel = new NotificationPanel(state);
+        var host = new Window
+        {
+            Content = panel, Left = -10000, Top = -10000, Width = 720, Height = 480,
+            WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false, Background = Brushes.Black,
+        };
+        return (host, panel);
+    }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
     {

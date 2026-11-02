@@ -2,33 +2,87 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Altong 집중 모드"
-        Width="360" Height="136"
+        Width="740" Height="190"
         AllowsTransparency="True" Background="Transparent" Focusable="False"
         ResizeMode="NoResize" ShowActivated="False" ShowInTaskbar="False"
-        Topmost="True" WindowStartupLocation="Manual" WindowStyle="None">
-    <Window.Resources>
-        <!-- 은신형 그립: 평소 흐리게, 미니바 위에 커서가 있으면 밝혀 잡을 수 있음을 알린다. -->
-        <Style x:Key="StealthGripDot" TargetType="Ellipse">
-            <Setter Property="Width" Value="2" />
-            <Setter Property="Height" Value="2" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Fill" Value="#4DFFFFFF" />
-            <Style.Triggers>
-                <!-- 미니바 어디에든 커서가 있거나 끄는 중(표면이 캡처)이면 밝힌다. -->
-                <DataTrigger Binding="{Binding IsMouseOver, ElementName=StealthSurface}" Value="True">
-                    <Setter Property="Fill" Value="#CCFFFFFF" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-    </Window.Resources>
-    <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="56" />
-        </Grid.ColumnDefinitions>
-
-        <Grid x:Name="ReminderBubble" Grid.Column="0" Visibility="Collapsed" Margin="8,12,2,12">
+        Topmost="True" WindowStartupLocation="Manual" WindowStyle="None"
+        UseLayoutRounding="True">
+    <!--
+        상단 노치 하나만 그리는 창. 노치와 알림 패널을 한 창, 한 윤곽 도형(NotchBody)으로 그려
+        패널이 노치에서 아래로 늘어나는 동안 두 부분이 어긋나지 않는다. 바탕(Canvas)은 투명이라
+        도형 밖의 클릭은 아래 앱으로 전달된다. 위치·크기는 코드에서 노치 가운데를 기준으로 정한다.
+    -->
+    <Canvas x:Name="Root">
+        <!-- 노치(+열려 있으면 패널) 실루엣. 모양은 코드에서 열림 정도에 따라 다시 만든다. -->
+        <Path x:Name="NotchBody" Fill="#000000" Cursor="Hand"
+              MouseLeftButtonDown="Notch_MouseLeftButtonDown"
+              MouseMove="Notch_MouseMove" MouseLeftButtonUp="Notch_MouseLeftButtonUp"
+              LostMouseCapture="Notch_LostMouseCapture"
+              MouseEnter="Pointer_Changed" MouseLeave="Pointer_Changed"
+              AutomationProperties.Name="Altong 상단 노치"
+              AutomationProperties.HelpText="커서를 올려 알림 패널 펼치기, 클릭하여 대시보드 열기, 좌우로 드래그하여 이동">
+            <Path.RenderTransform><ScaleTransform x:Name="TopNotchClickScale" /></Path.RenderTransform>
+        </Path>
+        <!--
+            닫힌 노치 영역의 표시등과 일렁임. 노치 모양으로 잘라 그린다.
+            일렁임은 색 물결이 노치 안을 한 번 흐르는 효과다. 양 끝은 투명, 가운데는 불투명도 약 44%.
+            집중을 켤 때는 청록·라벤더(민트), 통과한 알림이 오면 코랄·핑크·호박색(선셋)으로 코드에서 색을 바꾼다.
+        -->
+        <Grid x:Name="NotchFace" Width="360.2" Height="30" IsHitTestVisible="False">
+            <Grid.Clip>
+                <PathGeometry Figures="M0,0 C3.4,0 25.7,5.3 31.4,14.5 C34.2,19 47.2,30 62.4,30 L297.8,30 C313,30 326,19 328.8,14.5 C334.5,5.3 356.8,0 360.2,0 Z" />
+            </Grid.Clip>
+            <Rectangle x:Name="TopNotchRipple" Opacity="0">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <LinearGradientBrush.RelativeTransform>
+                            <TranslateTransform x:Name="TopNotchRippleMove" X="-1" />
+                        </LinearGradientBrush.RelativeTransform>
+                        <GradientStop x:Name="RippleStopStart" Color="#0072B5A6" Offset="0" />
+                        <GradientStop x:Name="RippleStopLeft" Color="#7072B5A6" Offset=".3" />
+                        <GradientStop x:Name="RippleStopMiddle" Color="#70A99BE0" Offset=".5" />
+                        <GradientStop x:Name="RippleStopRight" Color="#7072B5A6" Offset=".7" />
+                        <GradientStop x:Name="RippleStopEnd" Color="#0072B5A6" Offset="1" />
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+            <!--
+                렌즈 포인트: 노치 가운데의 작은 카메라 렌즈 모양 표시등. 왼쪽 위가 밝은 원형 그라데이션으로 렌즈 광택을 낸다.
+                평소 은빛(지름 5), 미확인 알림이 있으면 선셋 코랄 주황(지름 7)로 0.2초에 한 번 바뀐다.
+                색만으로 구분하지 않도록 크기도 함께 바꾼다. 개수는 패널에서 확인한다.
+            -->
+            <!-- 새 알림마다 렌즈 뒤에서 한 번 번지는 선셋 빛. 평소에는 보이지 않는다. -->
+            <Ellipse x:Name="TopNotchLensGlow" Width="16" Height="16" Opacity="0" IsHitTestVisible="False"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin=".5,.5">
+                <Ellipse.Fill>
+                    <RadialGradientBrush Center=".5,.5" RadiusX=".5" RadiusY=".5">
+                        <GradientStop Color="#8CE8B49C" Offset="0" />
+                        <GradientStop Color="#4DD27C60" Offset=".35" />
+                        <GradientStop Color="#00D27C60" Offset="1" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+                <Ellipse.RenderTransform><ScaleTransform x:Name="TopNotchLensGlowScale" ScaleX=".6" ScaleY=".6" /></Ellipse.RenderTransform>
+            </Ellipse>
+            <Ellipse x:Name="TopNotchLens" Width="5" Height="5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     RenderTransformOrigin=".5,.5">
+                <Ellipse.Fill>
+                    <RadialGradientBrush GradientOrigin=".35,.3" Center=".5,.5" RadiusX=".5" RadiusY=".5">
+                        <GradientStop x:Name="LensHighlight" Color="#FFFFFFFF" Offset="0" />
+                        <GradientStop x:Name="LensBody" Color="#FFC4C8D0" Offset=".45" />
+                        <GradientStop x:Name="LensEdge" Color="#FF6E737C" Offset="1" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+                <Ellipse.RenderTransform><ScaleTransform x:Name="TopNotchLensScale" /></Ellipse.RenderTransform>
+            </Ellipse>
+        </Grid>
+        <!-- 알림 패널 내용(NotificationPanel)은 코드에서 이 자리에 넣는다. -->
+        <ContentControl x:Name="PanelHost" Visibility="Collapsed" Focusable="False" />
+        <!--
+            호버·패널이 열린 동안 보이는 은색 윤곽선. 화면 끝에 닿는 위쪽 변은 긋지 않는다.
+            노치·패널 실루엣으로 잘라 두께 2 중 안쪽 1만 보인다. 빛 번짐은 쓰지 않는다.
+        -->
+        <Path x:Name="TopNotchOutline" Opacity="0" IsHitTestVisible="False" Stroke="#C4C8D0" StrokeThickness="2" />
+        <Grid x:Name="ReminderBubble" Visibility="Collapsed" Width="344" Height="122">
             <Button x:Name="ReminderDismissButton" Click="CloseReminder_Click" Cursor="Hand"
                     Background="Transparent" BorderThickness="0" Padding="0"
                     HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
@@ -39,7 +93,7 @@
                         <ContentPresenter />
                     </ControlTemplate>
                 </Button.Template>
-            <Border x:Name="ReminderCard" Margin="0,0,10,0" Padding="18,10" CornerRadius="18"
+            <Border x:Name="ReminderCard" Margin="0,9,0,0" Padding="18,10" CornerRadius="18"
                     BorderBrush="#CFE4E0" BorderThickness="1">
                 <Border.Style>
                     <Style TargetType="Border">
@@ -76,169 +130,10 @@
                     </StackPanel>
             </Border>
             </Button>
-            <Polygon x:Name="ReminderArrow" Points="0,0 12,9 0,18" Fill="{Binding Background, ElementName=ReminderCard}" Stroke="#CFE4E0" StrokeThickness="1"
+            <Polygon x:Name="ReminderArrow" Points="0,10 18,10 9,0" Fill="{Binding Background, ElementName=ReminderCard}" Stroke="#CFE4E0" StrokeThickness="1"
                      Cursor="Hand" MouseLeftButtonUp="CloseReminder_Click"
-                     HorizontalAlignment="Right" VerticalAlignment="Center" />
+                     HorizontalAlignment="Center" VerticalAlignment="Top" />
         </Grid>
 
-        <Grid x:Name="DockSurface" Grid.Column="1" Margin="8" Background="Transparent" Cursor="Hand"
-              RenderTransformOrigin="0.5,0.5"
-              MouseLeftButtonDown="DockSurface_MouseLeftButtonDown"
-              MouseMove="DockSurface_MouseMove"
-              MouseLeftButtonUp="DockSurface_MouseLeftButtonUp"
-              LostMouseCapture="DockSurface_LostMouseCapture"
-              MouseEnter="DockSurface_MouseEnter" MouseLeave="DockSurface_MouseLeave"
-              AutomationProperties.Name="Altong 미니바"
-              AutomationProperties.HelpText="커서를 올려 알림 확인, 클릭하여 대시보드 열기, 위아래로 드래그하여 이동">
-            <Grid.RenderTransform>
-                <ScaleTransform x:Name="ClickScale" ScaleX="1" ScaleY="1" />
-            </Grid.RenderTransform>
-            <Border BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="20">
-                <Border.Background>
-                    <SolidColorBrush x:Name="DockBackground" Color="#FF000000" />
-                </Border.Background>
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="20" Direction="270" Opacity="0.35" ShadowDepth="4" Color="#000000" />
-                </Border.Effect>
-            </Border>
-
-            <Rectangle x:Name="ActivationHalo" Margin="1" Fill="Transparent" IsHitTestVisible="False"
-                       Opacity="0" RadiusX="19" RadiusY="19" Stroke="#72B5A6" StrokeThickness="1.5">
-                <Rectangle.Effect>
-                    <DropShadowEffect BlurRadius="12" Opacity="0.6" ShadowDepth="0" Color="#72B5A6" />
-                </Rectangle.Effect>
-            </Rectangle>
-
-            <Rectangle x:Name="ActivationGlow" Margin="1" Fill="Transparent" IsHitTestVisible="False"
-                       Opacity="0" RadiusX="19" RadiusY="19" Stroke="#B7D9D0"
-                       StrokeDashArray="24 174" StrokeThickness="2.25">
-                <Rectangle.Effect>
-                    <DropShadowEffect BlurRadius="11" Opacity="0.7" ShadowDepth="0" Color="#72B5A6" />
-                </Rectangle.Effect>
-            </Rectangle>
-
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="44" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-                <Ellipse x:Name="StatusDot" Grid.Row="0" Width="10" Height="10" HorizontalAlignment="Center"
-                         VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False">
-                    <Ellipse.Fill>
-                        <SolidColorBrush x:Name="StatusDotBrush" Color="#72B5A6" />
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <ScaleTransform x:Name="StatusDotScale" />
-                    </Ellipse.RenderTransform>
-                    <Ellipse.Effect>
-                        <DropShadowEffect x:Name="StatusDotGlow" BlurRadius="0" Opacity="0" ShadowDepth="0" Color="#72B5A6" />
-                    </Ellipse.Effect>
-                </Ellipse>
-                <!-- 좁고 둥근 캡슐의 우상단을 벗어나지 않도록 배지는 원 바로 아래에 둔다. -->
-                <Border x:Name="UnreadBadge" Grid.Row="0" Grid.RowSpan="2" Visibility="Collapsed" IsHitTestVisible="False"
-                        HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,31,0,0"
-                        MinWidth="17" Height="16" Padding="3,0" CornerRadius="8"
-                        Background="#28242F" BorderBrush="#62566F" BorderThickness="1">
-                    <TextBlock x:Name="UnreadBadgeText" Foreground="#FFFFFF" FontSize="9" FontWeight="SemiBold"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-                <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <Ellipse Width="6" Height="6" Margin="0,3" Fill="#B8BBC4" />
-                    <Ellipse Width="6" Height="6" Margin="0,3" Fill="#B8BBC4" />
-                    <Ellipse Width="6" Height="6" Margin="0,3" Fill="#B8BBC4" />
-                </StackPanel>
-            </Grid>
-        </Grid>
-        <Grid x:Name="NotchSurface" Grid.ColumnSpan="2" Width="112" Height="24" HorizontalAlignment="Right" VerticalAlignment="Bottom" Visibility="Collapsed"
-              Background="#000000" Cursor="Hand" RenderTransformOrigin="1,.5"
-              MouseLeftButtonDown="DockSurface_MouseLeftButtonDown"
-              MouseMove="DockSurface_MouseMove" MouseLeftButtonUp="DockSurface_MouseLeftButtonUp"
-              LostMouseCapture="DockSurface_LostMouseCapture"
-              MouseEnter="DockSurface_MouseEnter" MouseLeave="DockSurface_MouseLeave"
-              AutomationProperties.Name="Altong 작업표시줄 위 가로 미니바"
-              AutomationProperties.HelpText="커서를 올려 펼치기, 클릭하여 대시보드 열기, 좌우로 드래그하여 이동">
-            <Grid.Clip>
-                <PathGeometry Figures="M14,0 L98,0 A8,8 0 0 1 106,8 L106,18 A6,6 0 0 0 112,24 L0,24 A6,6 0 0 0 6,18 L6,8 A8,8 0 0 1 14,0 Z" />
-            </Grid.Clip>
-            <Grid.RenderTransform><ScaleTransform x:Name="NotchClickScale" /></Grid.RenderTransform>
-            <!-- 평소 작은 표시등만 유지하고 긴급 알림일 때만 개수를 표시한다. -->
-            <Grid x:Name="NotchIndicator" Margin="20,0,0,0" Width="48" Height="20"
-                  HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False">
-                <Ellipse x:Name="NotchQuietDot" Width="6" Height="6" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <Ellipse.Fill><SolidColorBrush x:Name="NotchStatusBrush" Color="#72B5A6" /></Ellipse.Fill>
-                </Ellipse>
-                <StackPanel x:Name="NotchUrgentIndicator" Orientation="Horizontal" Visibility="Collapsed" VerticalAlignment="Center">
-                    <Ellipse Width="7" Height="7" Fill="{Binding ElementName=NotchQuietDot, Path=Fill}"
-                             VerticalAlignment="Center" Margin="0,0,12,0" />
-                    <TextBlock x:Name="NotchUrgentCountText" FontSize="10" FontWeight="SemiBold" Foreground="#EEAA92"
-                               HorizontalAlignment="Center" />
-                </StackPanel>
-            </Grid>
-            <StackPanel x:Name="NotchGrip" Orientation="Horizontal" Margin="0,0,20,0" HorizontalAlignment="Right" VerticalAlignment="Center" IsHitTestVisible="False">
-                <Ellipse Width="2" Height="2" Fill="#656B75" />
-                <Ellipse Width="2" Height="2" Fill="#656B75" Margin="3,0,0,0" />
-            </StackPanel>
-        </Grid>
-        <!--
-            은신형: 평소에는 작은 점으로 남고, 호버·패널·안내·새 중요 알림일 때만 캡슐로 펼친다.
-            점과 캡슐의 상태 점은 같은 기준점을 공유한다. 위치는 코드에서 Canvas 좌표로 정한다.
-            Canvas 자체는 배경이 없어 투명 영역의 클릭은 아래 앱으로 그대로 전달된다.
-        -->
-        <Canvas x:Name="StealthSurface" Grid.ColumnSpan="2" Visibility="Collapsed"
-                MouseLeftButtonDown="DockSurface_MouseLeftButtonDown"
-                MouseMove="DockSurface_MouseMove" MouseLeftButtonUp="DockSurface_MouseLeftButtonUp"
-                LostMouseCapture="DockSurface_LostMouseCapture"
-                MouseEnter="DockSurface_MouseEnter" MouseLeave="DockSurface_MouseLeave"
-                AutomationProperties.Name="Altong 라벤더 미니바"
-                AutomationProperties.HelpText="커서를 올려 펼치기, 클릭하여 대시보드 열기, 아무 곳이나 잡고 끌어 이동">
-            <!--
-                몸체 하나가 동그라미(지름 12, 미확인 14)와 펼친 캡슐(높이 28) 사이를 늘어나고 줄어든다.
-                상태 점도 같은 자리에서 크기만 바뀐다. 그립·개수는 몸체 위에 겹쳐 펼친 뒤에만 나타난다.
-            -->
-            <!-- 새 중요 알림 때 한 번만 퍼지는 빛. 몸체 뒤에서 신호색으로 번졌다가 사라진다. -->
-            <Ellipse x:Name="StealthFlash" Width="14" Height="14" Opacity="0" IsHitTestVisible="False"
-                     RenderTransformOrigin="0.5,0.5">
-                <Ellipse.Fill><SolidColorBrush x:Name="StealthFlashBrush" Color="#FF8B6B" /></Ellipse.Fill>
-                <Ellipse.RenderTransform><ScaleTransform x:Name="StealthFlashScale" /></Ellipse.RenderTransform>
-                <Ellipse.Effect><BlurEffect Radius="6" /></Ellipse.Effect>
-            </Ellipse>
-            <Rectangle x:Name="StealthBody" Width="10" Height="10" RadiusX="5" RadiusY="5" Fill="#000000"
-                       IsHitTestVisible="False" RenderTransformOrigin="0.5,0.5">
-                <Rectangle.RenderTransform><ScaleTransform x:Name="StealthClickScale" /></Rectangle.RenderTransform>
-                <Rectangle.Effect>
-                    <!-- 밝은 배경에서 살짝 떠 보이게 하는 짧은 그림자. 빛 번짐은 쓰지 않는다. -->
-                    <DropShadowEffect BlurRadius="8" Direction="270" ShadowDepth="1.5" Opacity=".28" Color="#000000" />
-                </Rectangle.Effect>
-            </Rectangle>
-            <Ellipse x:Name="StealthStatusDot" Width="5" Height="5" IsHitTestVisible="False">
-                <Ellipse.Fill><SolidColorBrush x:Name="StealthStatusBrush" Color="#72B5A6" /></Ellipse.Fill>
-            </Ellipse>
-            <!-- 접힌 상태의 인식 영역은 펼친 캡슐의 그립 자리까지 덮어, 손잡이 쪽에 올려도 펼쳐진다. -->
-            <Grid x:Name="StealthDot" Width="46" Height="30" Background="#01000000" Cursor="Hand" />
-            <Border x:Name="StealthCapsule" Height="28" Opacity="0" IsHitTestVisible="False"
-                    Background="#01000000" CornerRadius="14" Cursor="Hand">
-                <!-- 상태 점 중심은 캡슐 왼쪽 끝에서 29.5 DIP(StealthDockPositioning.DotCenterX)다. -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="1,0,13,0">
-                    <Grid x:Name="StealthGrip" Width="22" Height="26" Background="#01000000" Cursor="Hand"
-                          AutomationProperties.Name="미니바 이동 손잡이">
-                        <UniformGrid Rows="3" Columns="2" Width="7" Height="12" Margin="10,0,0,0"
-                                     HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False">
-                            <Ellipse Style="{StaticResource StealthGripDot}" />
-                            <Ellipse Style="{StaticResource StealthGripDot}" />
-                            <Ellipse Style="{StaticResource StealthGripDot}" />
-                            <Ellipse Style="{StaticResource StealthGripDot}" />
-                            <Ellipse Style="{StaticResource StealthGripDot}" />
-                            <Ellipse Style="{StaticResource StealthGripDot}" />
-                        </UniformGrid>
-                    </Grid>
-                    <!-- 상태 점 자리. 실제 점은 위의 StealthStatusDot이 같은 위치에 그린다. -->
-                    <Border Width="7" Margin="3,0,0,0" />
-                    <TextBlock x:Name="StealthCountText" Margin="8,0,0,0" Visibility="Collapsed"
-                               FontSize="12" FontWeight="SemiBold" Foreground="#E6FFFFFF"
-                               Typography.NumeralAlignment="Tabular"
-                               VerticalAlignment="Center" IsHitTestVisible="False" />
-                </StackPanel>
-            </Border>
-        </Canvas>
-    </Grid>
+    </Canvas>
 </Window>

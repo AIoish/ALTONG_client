@@ -17,7 +17,7 @@
 
 - **맥락 기반 알림 필터링**: 활성 창(프로세스·제목)과 알림을 KLUE 판별 모델로 함께 평가합니다. 긴급도 4 이상이거나 관련도 4 이상이면 통과합니다.
 - **카카오톡 알림 처리**: Windows 알림 외에 카카오톡 팝업도 숨긴 뒤 OCR로 내용을 읽어 같은 방식으로 판단합니다.
-- **미니바 + 알림 패널**: 작업표시줄 위 작은 캡슐에 상태를 표시하고, 마우스를 올리면 알림 목록이 펼쳐집니다.
+- **상단 노치 + 알림 패널**: 화면 맨 위 띠 가운데 노치에 상태를 표시하고, 마우스를 올리면 노치가 아래로 늘어나 알림 목록이 펼쳐집니다.
 - **세션 리포트·브리핑**: 집중을 마치면 로컬 Qwen 모델이 차단된 알림을 요약하고 일정을 뽑습니다. 일정은 구글 캘린더 등록 링크로 연결됩니다.
 - **대시보드**: 알림 기록(통과/차단), 시간대별 활동 일지, 앱별 집중 시간, 리포트 캘린더, 집중·휴식 루틴 설정을 제공합니다.
 - **로컬 실행**: 알림 내용과 창 제목을 외부로 보내지 않습니다. Python 없이 C# 프로세스 안에서 모델을 실행합니다.
@@ -29,7 +29,7 @@ flowchart LR
     AW["Active Window Tracker<br/>Win32"] --> P[Notification Pipeline]
     NL["WinRT 알림 + 카카오톡 인터셉터"] --> P
     P --> F["KLUE 필터<br/>ONNX Runtime"]
-    F -->|통과| UI["미니바 · 알림 패널"]
+    F -->|통과| UI["상단 노치 · 알림 패널"]
     F -->|차단| DB[(SQLite)]
     DB --> B["브리핑<br/>Qwen GGUF · LLamaSharp"]
     B --> R["세션 리포트 · 대시보드"]
@@ -79,7 +79,7 @@ dotnet run --project tools/Altong.MockGenerator
 dotnet test
 ```
 
-미니바·알림 패널 사용법과 집중 모드 기록 규칙: [docs/CLIENT_BEHAVIOR.md](docs/CLIENT_BEHAVIOR.md)
+상단 노치·알림 패널 사용법과 집중 모드 기록 규칙: [docs/CLIENT_BEHAVIOR.md](docs/CLIENT_BEHAVIOR.md)
 
 ## 프로젝트 구조
 
@@ -103,7 +103,7 @@ ALTONG_client/
 | [OVERVIEW](docs/OVERVIEW.md) | 문제 정의, 설계 철학, 학술 연구 근거 |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | 현재 구현 구조, 초기 설계, 데이터 계약, DB 스키마 |
 | [AI_MODELS](docs/AI_MODELS.md) | 데이터셋·학습, 모델 변환·연동, 브리핑 개선 계획 |
-| [CLIENT_BEHAVIOR](docs/CLIENT_BEHAVIOR.md) | 집중 모드·활동 기록 규칙, 미니바·알림 패널 UI |
+| [CLIENT_BEHAVIOR](docs/CLIENT_BEHAVIOR.md) | 집중 모드·활동 기록 규칙, 상단 노치·알림 패널 UI |
 | [ROADMAP](docs/ROADMAP.md) | 구현 현황, 기능 백로그, 정식 출시 계획 |
 | [CONTRIBUTING](docs/CONTRIBUTING.md) | 브랜치·커밋·PR·CI 규칙, 팀 역할 분담 |
 | [codex-guidelines](docs/codex-guidelines.md) | AI 코딩 도구 작업 지침 |

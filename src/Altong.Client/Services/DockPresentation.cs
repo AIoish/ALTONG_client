@@ -1,6 +1,7 @@
 namespace Altong.Client.Services;
 
-public enum DockPresentation { Classic, RightNotch, Stealth }
+/// <summary>상단 노치 디자인에서 화면 맨 위 띠의 색. 바탕화면은 띠 아래 실제 바탕화면을 그대로 비춘다.</summary>
+public enum TopBandStyle { Black, Wallpaper }
 
 public sealed record DockRoutineStatus(FocusRoutinePhase Phase)
 {

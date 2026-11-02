@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using Altong.Client.Models;
@@ -10,68 +9,58 @@ using Brushes = System.Windows.Media.Brushes;
 
 namespace Altong.Client;
 
-public partial class NotificationFlyoutWindow : Window
+/// <summary>
+/// 상단 노치에서 아래로 늘어나는 알림 패널의 내용(목록·상세·하단 버튼).
+/// 바탕과 테두리는 <see cref="NotificationDockWindow"/>가 노치와 한 도형으로 그린다.
+/// 모든 상태는 <see cref="DockNotificationState"/>에 있으며, 이 컨트롤은 그 상태를 보여 주고 조작만 전달한다.
+/// </summary>
+public partial class NotificationPanel : System.Windows.Controls.UserControl
 {
-    public const double ListWidth = 332;
-    public const double DetailWidth = 372;
-    public const double NotchListWidth = 332;
+    /// <summary>목록 영역 폭. 노치가 열리면 노치 바닥이 이 폭까지 넓어진다.</summary>
+    public const double ListWidth = TopNotchLayout.PanelWidth;
+    /// <summary>상세 영역 폭. 목록 왼쪽에 붙는다.</summary>
+    public const double DetailWidth = TopNotchLayout.DetailWidth;
     private readonly DockNotificationState _state;
     private DockNotificationItem? _displayedDetail;
-    private HwndSource? _source;
-    private DockPresentation _presentation;
+    private TopBandStyle _bandStyle;
 
-    public event EventHandler<DockPresentation>? SwitchPresentationRequested;
     public event EventHandler? ShowDashboardRequested;
+    public event EventHandler<TopBandStyle>? BandStyleRequested;
 
-    public NotificationFlyoutWindow(DockNotificationState state)
+    public NotificationPanel(DockNotificationState state)
     {
         InitializeComponent();
         _state = state;
         NotificationItems.ItemsSource = state.Items;
-        SourceInitialized += OnSourceInitialized;
-        IsVisibleChanged += OnVisibilityChanged;
-        Closed += OnClosed;
         Refresh();
     }
 
-    public void SetPresentation(DockPresentation presentation)
+    public TopBandStyle BandStyle => _bandStyle;
+    public bool HasDetail => _state.SelectedItem is not null;
+    public double PanelWidth => ListWidth + (HasDetail ? DetailWidth : 0);
+
+    /// <summary>상단 띠 색 선택을 표시한다.</summary>
+    public void SetBandStyle(TopBandStyle style)
     {
-        _presentation = presentation;
-        bool notch = presentation != DockPresentation.Classic;
-        ListColumn.Width = new GridLength((notch ? NotchListWidth : ListWidth) - 16);
-        foreach (var button in new[] { NotchDesignButton, ClassicDesignButton, StealthDesignButton })
-        {
-            bool selected = button.Tag is DockPresentation option && option == presentation;
-            button.Background = selected ? (System.Windows.Media.Brush)FindResource("Accent") : Brushes.Transparent;
-            button.Foreground = selected ? Brushes.Black : (System.Windows.Media.Brush)FindResource("MutedText");
-            System.Windows.Automation.AutomationProperties.SetItemStatus(button, selected ? "선택됨" : "선택 안 됨");
-        }
-        Refresh();
+        _bandStyle = style;
+        foreach (var button in new[] { BandBlackButton, BandWallpaperButton })
+            MarkSelected(button, button.Tag is TopBandStyle option && option == style);
     }
 
-    private void SwitchPresentation_Click(object sender, RoutedEventArgs e)
+    private void MarkSelected(Button button, bool selected)
     {
-        if (sender is Button { Tag: DockPresentation presentation })
-            SwitchPresentationRequested?.Invoke(this, presentation);
+        button.Background = selected ? (System.Windows.Media.Brush)FindResource("Accent") : Brushes.Transparent;
+        button.Foreground = selected ? Brushes.Black : (System.Windows.Media.Brush)FindResource("MutedText");
+        System.Windows.Automation.AutomationProperties.SetItemStatus(button, selected ? "선택됨" : "선택 안 됨");
     }
+
+    private void BandStyle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: TopBandStyle style })
+            BandStyleRequested?.Invoke(this, style);
+    }
+
     private void Dashboard_Click(object sender, RoutedEventArgs e) => ShowDashboardRequested?.Invoke(this, EventArgs.Empty);
-
-    private void OnSourceInitialized(object? sender, EventArgs e)
-    {
-        _source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
-        _source?.AddHook(WindowProc);
-    }
-
-    private static nint WindowProc(nint hwnd, int msg, nint wParam, nint lParam, ref bool handled)
-    {
-        // 클릭해 읽어도 작업 중인 앱의 활성 창 맥락을 바꾸지 않는다.
-        if (msg == 0x0021) // WM_MOUSEACTIVATE
-        {
-            handled = true;
-            return 3; // MA_NOACTIVATE
-        }
-        return 0;
-    }
 
     public void Refresh()
     {
@@ -84,55 +73,40 @@ public partial class NotificationFlyoutWindow : Window
         EmptyState.Visibility = _state.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ListScroll.Visibility = _state.Items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
 
-        bool hasDetail = _state.SelectedItem is not null;
+        bool hasDetail = HasDetail;
         bool openingDetail = hasDetail && DetailPanel.Visibility != Visibility.Visible;
         DetailColumn.Width = new GridLength(hasDetail ? DetailWidth : 0);
         DetailPanel.Visibility = hasDetail ? Visibility.Visible : Visibility.Collapsed;
-        Width = (_presentation != DockPresentation.Classic ? NotchListWidth : ListWidth) + (hasDetail ? DetailWidth : 0);
+        Width = PanelWidth;
         if (_displayedDetail != _state.SelectedItem)
         {
             _displayedDetail = _state.SelectedItem;
             DetailContent.DataContext = _displayedDetail;
             DetailScroll.ScrollToTop();
         }
-        // 새 알림 수신·읽음 갱신 시에는 재생하지 않고 패널을 펼칠 때만 강조한다.
+        // 새 알림 수신·읽음 갱신 시에는 재생하지 않고 상세를 펼칠 때만 강조한다.
         if (openingDetail && IsVisible) AnimateEntrance(DetailPanel);
         else if (!hasDetail) ResetEntrance(DetailPanel);
     }
 
-    private void OnVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (IsVisible)
-        {
-            AnimateEntrance(ListPanel);
-            if (DetailPanel.Visibility == Visibility.Visible) AnimateEntrance(DetailPanel);
-        }
-        else
-        {
-            ResetEntrance(ListPanel);
-            ResetEntrance(DetailPanel);
-        }
-    }
-
+    /// <summary>상세가 나타날 때 한 번만 옆에서 들어온다.</summary>
     private static void AnimateEntrance(FrameworkElement panel)
     {
         ResetEntrance(panel);
         if (!SystemParameters.ClientAreaAnimation) return;
-
         var duration = TimeSpan.FromMilliseconds(160);
         var easing = new QuadraticEase { EasingMode = EasingMode.EaseOut };
         panel.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration)
         {
             EasingFunction = easing,
             FillBehavior = FillBehavior.Stop,
-        }, HandoffBehavior.SnapshotAndReplace);
-        // 창 크기나 배치는 애니메이션하지 않아 커서 이동과 스크롤 기준을 유지한다.
+        }.AtDisplayRate(), HandoffBehavior.SnapshotAndReplace);
         ((TranslateTransform)panel.RenderTransform).BeginAnimation(TranslateTransform.XProperty,
             new DoubleAnimation(6, 0, duration)
             {
                 EasingFunction = easing,
                 FillBehavior = FillBehavior.Stop,
-            }, HandoffBehavior.SnapshotAndReplace);
+            }.AtDisplayRate(), HandoffBehavior.SnapshotAndReplace);
     }
 
     private static void ResetEntrance(FrameworkElement panel)
@@ -183,14 +157,4 @@ public partial class NotificationFlyoutWindow : Window
     private void DeleteRead_Click(object sender, RoutedEventArgs e) => _state.DeleteRead();
     private void CloseDetail_Click(object sender, RoutedEventArgs e) => _state.CloseDetail();
     private void CloseList_Click(object sender, RoutedEventArgs e) => _state.ClosePanel();
-
-    private void OnClosed(object? sender, EventArgs e)
-    {
-        _source?.RemoveHook(WindowProc);
-        ResetEntrance(ListPanel);
-        ResetEntrance(DetailPanel);
-        SourceInitialized -= OnSourceInitialized;
-        IsVisibleChanged -= OnVisibilityChanged;
-        Closed -= OnClosed;
-    }
 }

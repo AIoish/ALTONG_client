@@ -1,15 +1,15 @@
-<Window x:Class="Altong.Client.NotificationFlyoutWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:services="clr-namespace:Altong.Client.Services"
-        Title="Altong 중요 알림" Width="332" Height="480"
-        AllowsTransparency="True" Background="Transparent"
-        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
-        ShowActivated="False" Topmost="True" WindowStartupLocation="Manual"
-        FontFamily="pack://application:,,,/Altong.Client;component/Fonts/#Pretendard, Segoe UI Variable, Segoe UI, Malgun Gothic"
-        Foreground="#F3F4F6" FontSize="13" UseLayoutRounding="True" SnapsToDevicePixels="True">
-    <Window.Resources>
-        <!-- DashboardWindow와 같은 차콜 표면·하늘색 포인트. 알림 창에만 적용한다. -->
+<UserControl x:Class="Altong.Client.NotificationPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="clr-namespace:Altong.Client.Services"
+             FontFamily="pack://application:,,,/Altong.Client;component/Fonts/#Pretendard, Segoe UI Variable, Segoe UI, Malgun Gothic"
+             Foreground="#F3F4F6" FontSize="13" UseLayoutRounding="True" SnapsToDevicePixels="True">
+    <!--
+        상단 노치에서 아래로 늘어나는 알림 패널의 내용. 검은 바탕과 테두리는 NotificationDockWindow가
+        노치와 한 도형으로 그리므로 이 컨트롤은 배경 없이 내용만 그린다.
+    -->
+    <UserControl.Resources>
+        <!-- DashboardWindow와 같은 하늘색 포인트. 패널 바탕은 노치와 같은 검정이다. -->
         <SolidColorBrush x:Key="PrimaryText" Color="#F3F4F6" />
         <SolidColorBrush x:Key="MutedText" Color="#ADB2BD" />
         <SolidColorBrush x:Key="Accent" Color="#A6D5FF" />
@@ -24,10 +24,8 @@
             <GradientStop Color="#2B2D30" Offset="1" />
         </LinearGradientBrush>
         <Style x:Key="PanelSurface" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource WindowSurface}" />
-            <Setter Property="BorderBrush" Value="#45474A" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
         </Style>
         <Style x:Key="DistinctTitle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource PrimaryText}" />
@@ -170,15 +168,15 @@
                 </Setter.Value>
             </Setter>
         </Style>
-    </Window.Resources>
-    <!-- 투명 여백도 같은 창에 포함해 목록과 상세 사이 이동 중 이탈로 판단하지 않는다. -->
-    <Grid Background="Transparent" Margin="8">
+    </UserControl.Resources>
+    <!-- 투명 바탕도 마우스가 머무는 영역으로 쳐서, 목록과 상세 사이를 오가도 패널을 벗어난 것으로 보지 않는다. -->
+    <Grid x:Name="PanelRoot" Background="Transparent">
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="DetailColumn" Width="0" />
             <ColumnDefinition x:Name="ListColumn" Width="316" />
         </Grid.ColumnDefinitions>
-        <Border x:Name="DetailPanel" Grid.Column="0" Visibility="Collapsed" Margin="0,0,12,0"
-                Style="{StaticResource PanelSurface}" Padding="20">
+        <Border x:Name="DetailPanel" Grid.Column="0" Visibility="Collapsed"
+                Style="{StaticResource PanelSurface}" BorderBrush="#26FFFFFF" BorderThickness="0,0,1,0" Padding="20">
             <Border.RenderTransform><TranslateTransform /></Border.RenderTransform>
             <Grid>
                 <Grid.RowDefinitions>
@@ -336,18 +334,20 @@
                         <Button x:Name="DashboardButton" Style="{StaticResource HeaderButton}" Content="&#xE80F;" FontFamily="Segoe MDL2 Assets"
                                 HorizontalAlignment="Left" Click="Dashboard_Click" ToolTip="대시보드 활성화/최소화"
                                 AutomationProperties.Name="대시보드 활성화/최소화" />
+                    </Grid>
+                    <!-- 화면 맨 위 띠. 바탕화면(기본)은 띠 아래 실제 바탕화면을 그대로 비춘다. -->
+                    <Grid x:Name="BandStyleBar" Margin="0,8,0,0">
+                        <TextBlock Text="상단 띠" FontSize="11" Foreground="{StaticResource MutedText}"
+                                   VerticalAlignment="Center" HorizontalAlignment="Left" />
                         <Border Background="#202225" CornerRadius="8" Padding="2" HorizontalAlignment="Right">
                             <StackPanel Orientation="Horizontal">
-                                <Button x:Name="NotchDesignButton" Content="가로" Tag="{x:Static services:DockPresentation.RightNotch}"
-                                        Click="SwitchPresentation_Click" Style="{StaticResource HeaderButton}" Width="64" Height="26" Margin="1" FontSize="11"
-                                        ToolTip="작업표시줄 위 가로 캡슐 미니바" AutomationProperties.Name="가로 캡슐 미니바 디자인" />
-                                <Button x:Name="ClassicDesignButton" Content="기존" Tag="{x:Static services:DockPresentation.Classic}"
-                                        Click="SwitchPresentation_Click" Style="{StaticResource HeaderButton}" Width="64" Height="26" Margin="1" FontSize="11"
-                                        ToolTip="기존 미니바" AutomationProperties.Name="기존 미니바 디자인" />
-                                <Button x:Name="StealthDesignButton" Content="라벤더" Tag="{x:Static services:DockPresentation.Stealth}"
-                                        Click="SwitchPresentation_Click" Style="{StaticResource HeaderButton}" Width="64" Height="26" Margin="1" FontSize="11"
-                                        ToolTip="평소에는 작은 동그라미로 숨고, 새 중요 알림은 빛으로 알리는 미니바"
-                                        AutomationProperties.Name="라벤더 미니바 디자인" />
+                                <Button x:Name="BandBlackButton" Content="검정" Tag="{x:Static services:TopBandStyle.Black}"
+                                        Click="BandStyle_Click" Style="{StaticResource HeaderButton}" Width="60" Height="26" Margin="1" FontSize="11"
+                                        ToolTip="검은 띠. 접힌 노치가 띠와 이어져 보입니다." AutomationProperties.Name="상단 띠 검정" />
+                                <Button x:Name="BandWallpaperButton" Content="바탕화면" Tag="{x:Static services:TopBandStyle.Wallpaper}"
+                                        Click="BandStyle_Click" Style="{StaticResource HeaderButton}" Width="60" Height="26" Margin="1" FontSize="11"
+                                        ToolTip="띠 자리에 바탕화면을 그대로 보여 줍니다. 바탕화면을 바꾸면 함께 바뀝니다."
+                                        AutomationProperties.Name="상단 띠 바탕화면" />
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -355,4 +355,4 @@
             </Grid>
         </Border>
     </Grid>
-</Window>
+</UserControl>

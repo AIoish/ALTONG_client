@@ -21,7 +21,7 @@
 | Windows 방해 금지 | 집중 시작 시 앱이 켬 | 앱이 직접 켜지 않음. 설정 화면을 열어 안내하고, 관찰한 DND 상태를 앱 상태에 반영 | `FocusModeCoordinator.cs`, `WindowsNotificationModeObserver.cs` |
 | 집중 OFF일 때 | (언급 없음) | 필터는 실행하지만 `IsPassed = null`, DB에 저장하지 않음 | `NotificationPipelineCoordinator.cs` |
 | 활성 창 추적 | 500ms 폴링 + 3초 안정화 룰 | `PeriodicTimer` 500ms 폴링, 안정화 기준 3초, 관측 공백 10초 초과 시 제외, 최근 프로세스 3개 | `ActiveWindowTracker.cs` |
-| 통과 알림 표시 | 커스텀 토스트 팝업 | 작업표시줄 위 미니바 + 알림 패널/플라이아웃 | `NotificationDockWindow`, `NotificationFlyoutWindow` |
+| 통과 알림 표시 | 커스텀 토스트 팝업 | 화면 맨 위 띠의 상단 노치 + 노치에서 늘어나는 알림 패널(한 창) | `NotificationDockWindow`, `NotificationPanel`, `TopBandWindow` |
 | 대상 프레임워크 | `net9.0-windows` | `net9.0-windows10.0.26100.0`, WPF + WinForms(트레이) | `Altong.Client.csproj` |
 
 ### 0.2 현재 처리 흐름
