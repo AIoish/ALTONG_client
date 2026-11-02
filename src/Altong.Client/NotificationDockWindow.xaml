@@ -51,6 +51,18 @@
                 평소 은빛(지름 5), 미확인 알림이 있으면 선셋 코랄 주황(지름 7)로 0.2초에 한 번 바뀐다.
                 색만으로 구분하지 않도록 크기도 함께 바꾼다. 개수는 패널에서 확인한다.
             -->
+            <!-- 새 알림마다 렌즈 뒤에서 한 번 번지는 선셋 빛. 평소에는 보이지 않는다. -->
+            <Ellipse x:Name="TopNotchLensGlow" Width="16" Height="16" Opacity="0" IsHitTestVisible="False"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin=".5,.5">
+                <Ellipse.Fill>
+                    <RadialGradientBrush Center=".5,.5" RadiusX=".5" RadiusY=".5">
+                        <GradientStop Color="#E6FFC3A8" Offset="0" />
+                        <GradientStop Color="#99FF8B6B" Offset=".35" />
+                        <GradientStop Color="#00FF6FA8" Offset="1" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+                <Ellipse.RenderTransform><ScaleTransform x:Name="TopNotchLensGlowScale" ScaleX=".6" ScaleY=".6" /></Ellipse.RenderTransform>
+            </Ellipse>
             <Ellipse x:Name="TopNotchLens" Width="5" Height="5" HorizontalAlignment="Center" VerticalAlignment="Center"
                      RenderTransformOrigin=".5,.5">
                 <Ellipse.Fill>

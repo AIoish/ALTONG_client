@@ -98,15 +98,20 @@ public static class TopNotchLayout
     /// <summary>켜짐 일렁임(천천히)과 알림 일렁임(빠르게)의 길이.</summary>
     public const int ActivationRippleMilliseconds = 3500;
     public const int AlertRippleMilliseconds = 1800;
-    /// <summary>알림이 연달아 와도 이 간격 안에는 알림 일렁임을 다시 재생하지 않는다(반복 깜빡임 방지).</summary>
-    public static readonly TimeSpan AlertRippleCooldown = TimeSpan.FromSeconds(5);
-
     /// <summary>
-    /// 통과한 알림이 왔을 때 알림 일렁임을 재생할지. 노치가 보이고, 패널을 열어 읽고 있지 않으며, 전체화면이 아니고,
-    /// 직전 알림 일렁임에서 <see cref="AlertRippleCooldown"/>이 지났을 때만 재생한다.
+    /// 새 알림이 왔을 때 선셋 일렁임을 어떻게 할지 정한다. 패널을 열어 읽는 중이거나 전체화면이거나 노치가 숨었으면 생략한다.
+    /// 앞선 일렁임이 아직 흐르는 중이면 끊지 않고 한 번 더 이어 흘리도록 미룬다(연달아 온 알림이 묻히지 않게).
     /// </summary>
-    public static bool ShouldPlayAlertRipple(DateTime now, DateTime lastAlert, bool notchVisible, bool panelOpen, bool fullscreen) =>
-        notchVisible && !panelOpen && !fullscreen && now - lastAlert >= AlertRippleCooldown;
+    public static AlertRippleDecision DecideAlertRipple(DateTime now, DateTime lastStart, bool notchVisible, bool panelOpen, bool fullscreen)
+    {
+        if (!notchVisible || panelOpen || fullscreen) return AlertRippleDecision.Skip;
+        return now - lastStart >= TimeSpan.FromMilliseconds(AlertRippleMilliseconds) ? AlertRippleDecision.Play : AlertRippleDecision.Queue;
+    }
+
+    /// <summary>알림이 들어올 때마다 렌즈 포인트 뒤에서 한 번 번지는 빛. 0.7초 동안 커지며 사라진다.</summary>
+    public const int LensFlashMilliseconds = 700;
+    public const double LensFlashDiameter = 16;
+    public const double LensFlashMaxScale = 1.6;
 
     /// <summary>렌즈 포인트 지름. 미확인 알림이 있으면 커진다.</summary>
     public const double LensDiameter = 5;
@@ -273,3 +278,6 @@ public readonly record struct PixelRect(int Left, int Top, int Right, int Bottom
     public int Width => Right - Left;
     public int Height => Bottom - Top;
 }
+
+/// <summary>새 알림 일렁임 결정: 생략, 지금 재생, 지금 것이 끝난 뒤 한 번 더.</summary>
+public enum AlertRippleDecision { Skip, Play, Queue }

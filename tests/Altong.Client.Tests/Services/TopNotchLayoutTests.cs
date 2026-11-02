@@ -111,17 +111,18 @@ public sealed class TopNotchLayoutTests
     }
 
     [TestMethod]
-    public void AlertRipple_PlaysOncePerBurst_AndNotWhileReadingOrFullscreen()
+    public void AlertRipple_QueuesInsteadOfDropping_AndSkipsWhileReadingOrFullscreen()
     {
-        var start = new DateTime(2026, 11, 2, 9, 0, 0, DateTimeKind.Utc);
-        Assert.IsTrue(TopNotchLayout.ShouldPlayAlertRipple(start, DateTime.MinValue, true, false, false));
-        // 연달아 온 알림은 5초 안에 다시 흐르지 않는다.
-        Assert.IsFalse(TopNotchLayout.ShouldPlayAlertRipple(start.AddSeconds(2), start, true, false, false));
-        Assert.IsTrue(TopNotchLayout.ShouldPlayAlertRipple(start.AddSeconds(5), start, true, false, false));
-        // 패널을 열어 읽는 중, 전체화면, 노치가 숨겨진 동안에는 생략한다.
-        Assert.IsFalse(TopNotchLayout.ShouldPlayAlertRipple(start, DateTime.MinValue, true, true, false));
-        Assert.IsFalse(TopNotchLayout.ShouldPlayAlertRipple(start, DateTime.MinValue, true, false, true));
-        Assert.IsFalse(TopNotchLayout.ShouldPlayAlertRipple(start, DateTime.MinValue, false, false, false));
+        var start = new DateTime(2026, 11, 2, 9, 0, 0);
+        Assert.AreEqual(AlertRippleDecision.Play, TopNotchLayout.DecideAlertRipple(start, DateTime.MinValue, true, false, false));
+        // 흐르는 중에 온 알림은 버리지 않고, 끝난 뒤 한 번 더 흘린다.
+        Assert.AreEqual(AlertRippleDecision.Queue, TopNotchLayout.DecideAlertRipple(start.AddMilliseconds(500), start, true, false, false));
+        Assert.AreEqual(AlertRippleDecision.Play,
+            TopNotchLayout.DecideAlertRipple(start.AddMilliseconds(TopNotchLayout.AlertRippleMilliseconds), start, true, false, false));
+        // 읽는 중·전체화면·숨김이면 생략한다.
+        Assert.AreEqual(AlertRippleDecision.Skip, TopNotchLayout.DecideAlertRipple(start, DateTime.MinValue, true, true, false));
+        Assert.AreEqual(AlertRippleDecision.Skip, TopNotchLayout.DecideAlertRipple(start, DateTime.MinValue, true, false, true));
+        Assert.AreEqual(AlertRippleDecision.Skip, TopNotchLayout.DecideAlertRipple(start, DateTime.MinValue, false, false, false));
         // 알림(선셋)과 켜짐(민트)은 색으로 구분되고, 알림이 더 빨리 지나간다.
         Assert.AreNotEqual(TopNotchLayout.ActivationRipple, TopNotchLayout.AlertRipple);
         Assert.IsTrue(TopNotchLayout.AlertRippleMilliseconds < TopNotchLayout.ActivationRippleMilliseconds);

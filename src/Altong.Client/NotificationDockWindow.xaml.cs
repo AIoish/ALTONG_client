@@ -44,6 +44,8 @@ public partial class NotificationDockWindow : Window
     private bool _fullscreenSuppressed;
     private DateTime _topNotchActivatedAt = DateTime.MinValue;
     private DateTime _lastAlertRippleAt = DateTime.MinValue;
+    /// <summary>일렁임이 흐르는 중에 또 알림이 오면, 끝난 뒤 한 번 더 흘리기 위한 타이머(여러 개가 와도 한 번으로 묶인다).</summary>
+    private readonly DispatcherTimer _alertReplayTimer = new();
     private bool? _lensAlert;
     private double? _openTarget;
     private bool _panelShown;
@@ -102,6 +104,7 @@ public partial class NotificationDockWindow : Window
         _reminderDismissTimer.Tick += ReminderDismissTimer_Tick;
         _hoverTimer.Tick += HoverTimer_Tick;
         _leaveTimer.Tick += LeaveTimer_Tick;
+        _alertReplayTimer.Tick += AlertReplayTimer_Tick;
         _notifications.Changed += Notifications_Changed;
         SystemParameters.StaticPropertyChanged += SystemParameters_StaticPropertyChanged;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
@@ -129,8 +132,10 @@ public partial class NotificationDockWindow : Window
         bool added = false;
         if (_panelShown && IsVisible) _panel.PreserveScrollPosition(() => added = _notifications.Receive(notification));
         else added = _notifications.Receive(notification);
-        // 목록에는 필터를 통과한 알림만 들어온다. 새로 들어왔으면 노치에 선셋 일렁임을 한 번 흘려 알린다.
-        if (added) PlayAlertRipple();
+        // 목록에는 필터를 통과한 알림만 들어온다. 새로 들어올 때마다 렌즈 빛을 한 번 내고, 선셋 일렁임을 흘려 알린다.
+        if (!added) return;
+        PlayLensFlash();
+        PlayAlertRipple();
     }
 
     // ───────────────────────────── 위치·모양 ─────────────────────────────
@@ -484,16 +489,54 @@ public partial class NotificationDockWindow : Window
     }
 
     /// <summary>
-    /// 통과한 알림이 왔을 때의 일렁임(선셋). 약 1.8초에 빠르게 한 번 흐른다. 패널을 열어 읽는 중이거나 전체화면이면 생략하고,
-    /// 알림이 연달아 오면 5초 안에는 다시 재생하지 않는다.
+    /// 통과한 알림이 왔을 때의 일렁임(선셋). 약 1.8초에 빠르게 한 번 흐른다. 패널을 열어 읽는 중이거나 전체화면이면 생략한다.
+    /// 앞선 일렁임이 흐르는 중에 알림이 또 오면 끊지 않고, 끝나자마자 한 번 더 흘린다.
     /// </summary>
     private void PlayAlertRipple()
     {
         var now = Clock();
-        if (!TopNotchLayout.ShouldPlayAlertRipple(now, _lastAlertRippleAt, IsVisible, _notifications.IsPanelOpen, _fullscreenSuppressed))
-            return;
-        _lastAlertRippleAt = now;
-        PlayRipple(TopNotchLayout.AlertRipple, TopNotchLayout.AlertRippleMilliseconds);
+        switch (TopNotchLayout.DecideAlertRipple(now, _lastAlertRippleAt, IsVisible, _notifications.IsPanelOpen, _fullscreenSuppressed))
+        {
+            case AlertRippleDecision.Play:
+                _alertReplayTimer.Stop();
+                _lastAlertRippleAt = now;
+                PlayRipple(TopNotchLayout.AlertRipple, TopNotchLayout.AlertRippleMilliseconds);
+                break;
+            case AlertRippleDecision.Queue when !_alertReplayTimer.IsEnabled:
+                var remaining = _lastAlertRippleAt + TimeSpan.FromMilliseconds(TopNotchLayout.AlertRippleMilliseconds) - now;
+                _alertReplayTimer.Interval = remaining > TimeSpan.Zero ? remaining : TimeSpan.FromMilliseconds(1);
+                _alertReplayTimer.Start();
+                break;
+        }
+    }
+
+    private void AlertReplayTimer_Tick(object? sender, EventArgs e)
+    {
+        _alertReplayTimer.Stop();
+        PlayAlertRipple();
+    }
+
+    /// <summary>새 알림마다 렌즈 포인트 뒤에서 선셋 빛이 한 번 번졌다 사라진다. 일렁임과 달리 알림 하나하나에 반응한다.</summary>
+    private void PlayLensFlash()
+    {
+        TopNotchLensGlow.BeginAnimation(OpacityProperty, null);
+        TopNotchLensGlowScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        TopNotchLensGlowScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        TopNotchLensGlow.Opacity = 0;
+        if (!SystemParameters.ClientAreaAnimation || _fullscreenSuppressed || !IsVisible) return;
+
+        var duration = TimeSpan.FromMilliseconds(TopNotchLayout.LensFlashMilliseconds);
+        var fade = new DoubleAnimationUsingKeyFrames { Duration = duration };
+        fade.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromPercent(0)));
+        fade.KeyFrames.Add(new EasingDoubleKeyFrame(1, KeyTime.FromPercent(.2), new QuadraticEase { EasingMode = EasingMode.EaseOut }));
+        fade.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromPercent(1), new QuadraticEase { EasingMode = EasingMode.EaseIn }));
+        var grow = new DoubleAnimation(.6, TopNotchLayout.LensFlashMaxScale, duration)
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        }.AtDisplayRate();
+        TopNotchLensGlowScale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+        TopNotchLensGlowScale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+        TopNotchLensGlow.BeginAnimation(OpacityProperty, fade.AtDisplayRate());
     }
 
     /// <summary>주어진 색으로 일렁임을 한 번 재생한다. 진행 중인 일렁임은 새 것으로 바꾼다.</summary>
@@ -873,6 +916,8 @@ public partial class NotificationDockWindow : Window
         StopHoverTimers();
         _hoverTimer.Tick -= HoverTimer_Tick;
         _leaveTimer.Tick -= LeaveTimer_Tick;
+        _alertReplayTimer.Stop();
+        _alertReplayTimer.Tick -= AlertReplayTimer_Tick;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
         SystemParameters.StaticPropertyChanged -= SystemParameters_StaticPropertyChanged;
         _notifications.Changed -= Notifications_Changed;
