@@ -70,7 +70,8 @@ public sealed class TopNotchLayoutTests
         Assert.AreEqual(960d, TopNotchLayout.NotchCenter(0, 1920, 0));
         Assert.AreEqual(1200d, TopNotchLayout.NotchCenter(0, 1920, 240));
         double half = TopNotchLayout.NotchSurfaceWidth / 2;
-        Assert.AreEqual(half, TopNotchLayout.NotchCenter(0, 1920, -5000), .001);
+        // 왼쪽 끝으로 옮겨도 목록 왼쪽에 붙는 상세 패널까지 화면 안에 남는다.
+        Assert.AreEqual(TopNotchLayout.WindowLeftExtent, TopNotchLayout.NotchCenter(0, 1920, -5000), .001);
         Assert.AreEqual(1920 - half, TopNotchLayout.NotchCenter(0, 1920, 5000), .001);
         Assert.AreEqual(240d, TopNotchLayout.CenterOffset(TopNotchLayout.NotchCenter(0, 1920, 240), 0, 1920), .001);
     }
@@ -114,11 +115,11 @@ public sealed class TopNotchLayoutTests
     public void AlertRipple_QueuesInsteadOfDropping_AndSkipsWhileReadingOrFullscreen()
     {
         var start = new DateTime(2026, 11, 2, 9, 0, 0);
+        var ends = start.AddMilliseconds(TopNotchLayout.AlertRippleMilliseconds);
         Assert.AreEqual(AlertRippleDecision.Play, TopNotchLayout.DecideAlertRipple(start, DateTime.MinValue, true, false, false));
-        // 흐르는 중에 온 알림은 버리지 않고, 끝난 뒤 한 번 더 흘린다.
-        Assert.AreEqual(AlertRippleDecision.Queue, TopNotchLayout.DecideAlertRipple(start.AddMilliseconds(500), start, true, false, false));
-        Assert.AreEqual(AlertRippleDecision.Play,
-            TopNotchLayout.DecideAlertRipple(start.AddMilliseconds(TopNotchLayout.AlertRippleMilliseconds), start, true, false, false));
+        // 흐르는 중(켜짐 일렁임 포함)에 온 알림은 버리지 않고, 끝난 뒤 한 번 더 흘린다.
+        Assert.AreEqual(AlertRippleDecision.Queue, TopNotchLayout.DecideAlertRipple(start.AddMilliseconds(500), ends, true, false, false));
+        Assert.AreEqual(AlertRippleDecision.Play, TopNotchLayout.DecideAlertRipple(ends, ends, true, false, false));
         // 읽는 중·전체화면·숨김이면 생략한다.
         Assert.AreEqual(AlertRippleDecision.Skip, TopNotchLayout.DecideAlertRipple(start, DateTime.MinValue, true, true, false));
         Assert.AreEqual(AlertRippleDecision.Skip, TopNotchLayout.DecideAlertRipple(start, DateTime.MinValue, true, false, true));

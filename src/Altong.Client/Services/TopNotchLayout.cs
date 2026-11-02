@@ -68,12 +68,15 @@ public static class TopNotchLayout
 
     /// <summary>
     /// 노치 가운데의 화면 x 좌표. 화면 가운데에서 좌우로 옮긴 거리를 더하고, 노치가 화면 밖으로 나가지 않게 제한한다.
+    /// 왼쪽으로는 목록 왼쪽에 붙는 상세 패널(<see cref="WindowLeftExtent"/>)까지 화면 안에 들어오는 곳까지만 옮긴다.
     /// </summary>
     public static double NotchCenter(double screenLeft, double screenWidth, double centerOffset)
     {
         double half = NotchSurfaceWidth / 2;
         double center = screenLeft + screenWidth / 2 + centerOffset;
-        return Math.Clamp(center, screenLeft + half, Math.Max(screenLeft + half, screenLeft + screenWidth - half));
+        double max = Math.Max(screenLeft + half, screenLeft + screenWidth - half);
+        double min = Math.Max(screenLeft + half, Math.Min(screenLeft + WindowLeftExtent, max));
+        return Math.Clamp(center, min, max);
     }
 
     /// <summary>노치 가운데 위치를 화면 가운데에서 옮긴 거리로 바꾼다. 작업 영역이 바뀌어도 같은 거리를 유지한다.</summary>
@@ -100,12 +103,13 @@ public static class TopNotchLayout
     public const int AlertRippleMilliseconds = 1800;
     /// <summary>
     /// 새 알림이 왔을 때 선셋 일렁임을 어떻게 할지 정한다. 패널을 열어 읽는 중이거나 전체화면이거나 노치가 숨었으면 생략한다.
-    /// 앞선 일렁임이 아직 흐르는 중이면 끊지 않고 한 번 더 이어 흘리도록 미룬다(연달아 온 알림이 묻히지 않게).
+    /// 앞선 일렁임(켜짐 민트 포함)이 아직 흐르는 중이면 끊지 않고, 끝난 뒤 한 번 더 흘리도록 미룬다(연달아 온 알림이 묻히지 않게).
+    /// <paramref name="rippleEndsAt"/>은 지금 흐르는 일렁임이 끝나는 시각이다.
     /// </summary>
-    public static AlertRippleDecision DecideAlertRipple(DateTime now, DateTime lastStart, bool notchVisible, bool panelOpen, bool fullscreen)
+    public static AlertRippleDecision DecideAlertRipple(DateTime now, DateTime rippleEndsAt, bool notchVisible, bool panelOpen, bool fullscreen)
     {
         if (!notchVisible || panelOpen || fullscreen) return AlertRippleDecision.Skip;
-        return now - lastStart >= TimeSpan.FromMilliseconds(AlertRippleMilliseconds) ? AlertRippleDecision.Play : AlertRippleDecision.Queue;
+        return now >= rippleEndsAt ? AlertRippleDecision.Play : AlertRippleDecision.Queue;
     }
 
     /// <summary>알림이 들어올 때마다 렌즈 포인트 뒤에서 한 번 번지는 빛. 0.7초 동안 커지며 사라진다.</summary>

@@ -43,7 +43,8 @@ public partial class NotificationDockWindow : Window
     private double _notchCenterOffset;
     private bool _fullscreenSuppressed;
     private DateTime _topNotchActivatedAt = DateTime.MinValue;
-    private DateTime _lastAlertRippleAt = DateTime.MinValue;
+    /// <summary>지금 흐르는 일렁임(켜짐·알림)이 끝나는 시각. 알림 일렁임이 앞 일렁임을 끊지 않게 하는 데 쓴다.</summary>
+    private DateTime _rippleEndsAt = DateTime.MinValue;
     /// <summary>일렁임이 흐르는 중에 또 알림이 오면, 끝난 뒤 한 번 더 흘리기 위한 타이머(여러 개가 와도 한 번으로 묶인다).</summary>
     private readonly DispatcherTimer _alertReplayTimer = new();
     private bool? _lensAlert;
@@ -149,6 +150,10 @@ public partial class NotificationDockWindow : Window
     private void ApplyLayout()
     {
         bool detail = _panelShown && _panel.HasDetail;
+        // 패널이 보이는 동안 작업 영역이 바뀌면(띠 등록, 작업표시줄 이동, 해상도 변경) 패널 높이도 다시 맞춘다.
+        if (_panelShown)
+            _panelHeight = Math.Clamp(SystemParameters.WorkArea.Bottom - TopNotchLayout.NotchHeight - TopNotchLayout.PanelBottomMargin,
+                120, TopNotchLayout.PanelMaxHeight);
         double center = TopNotchLayout.NotchCenter(0, SystemParameters.PrimaryScreenWidth, _notchCenterOffset);
         _centerX = TopNotchLayout.WindowLeftExtent;
         Left = center - TopNotchLayout.WindowLeftExtent;
@@ -268,8 +273,6 @@ public partial class NotificationDockWindow : Window
     {
         _panelShown = true;
         _detailShown = _panel.HasDetail;
-        _panelHeight = Math.Clamp(SystemParameters.WorkArea.Bottom - TopNotchLayout.NotchHeight - TopNotchLayout.PanelBottomMargin,
-            120, TopNotchLayout.PanelMaxHeight);
         _panel.Refresh();
         PanelHost.Visibility = Visibility.Visible;
         // 펼치는 동안에는 패널 내용을 한 번 그린 비트맵으로 고정해 매 프레임 글자·카드를 다시 그리지 않는다.
@@ -495,15 +498,14 @@ public partial class NotificationDockWindow : Window
     private void PlayAlertRipple()
     {
         var now = Clock();
-        switch (TopNotchLayout.DecideAlertRipple(now, _lastAlertRippleAt, IsVisible, _notifications.IsPanelOpen, _fullscreenSuppressed))
+        switch (TopNotchLayout.DecideAlertRipple(now, _rippleEndsAt, IsVisible, _notifications.IsPanelOpen, _fullscreenSuppressed))
         {
             case AlertRippleDecision.Play:
                 _alertReplayTimer.Stop();
-                _lastAlertRippleAt = now;
                 PlayRipple(TopNotchLayout.AlertRipple, TopNotchLayout.AlertRippleMilliseconds);
                 break;
             case AlertRippleDecision.Queue when !_alertReplayTimer.IsEnabled:
-                var remaining = _lastAlertRippleAt + TimeSpan.FromMilliseconds(TopNotchLayout.AlertRippleMilliseconds) - now;
+                var remaining = _rippleEndsAt - now;
                 _alertReplayTimer.Interval = remaining > TimeSpan.Zero ? remaining : TimeSpan.FromMilliseconds(1);
                 _alertReplayTimer.Start();
                 break;
@@ -545,8 +547,10 @@ public partial class NotificationDockWindow : Window
         TopNotchRipple.BeginAnimation(OpacityProperty, null);
         TopNotchRippleMove.BeginAnimation(TranslateTransform.XProperty, null);
         TopNotchRipple.Opacity = 0;
+        _rippleEndsAt = DateTime.MinValue;
         if (!SystemParameters.ClientAreaAnimation || _fullscreenSuppressed) return;
         SetRippleColors(colors);
+        _rippleEndsAt = Clock() + TimeSpan.FromMilliseconds(milliseconds);
 
         var duration = TimeSpan.FromMilliseconds(milliseconds);
         TopNotchRippleMove.BeginAnimation(TranslateTransform.XProperty,
