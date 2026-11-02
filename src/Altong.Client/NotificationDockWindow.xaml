@@ -56,9 +56,9 @@
                      HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin=".5,.5">
                 <Ellipse.Fill>
                     <RadialGradientBrush Center=".5,.5" RadiusX=".5" RadiusY=".5">
-                        <GradientStop Color="#E6FFC3A8" Offset="0" />
-                        <GradientStop Color="#99FF8B6B" Offset=".35" />
-                        <GradientStop Color="#00FF6FA8" Offset="1" />
+                        <GradientStop Color="#8CE8B49C" Offset="0" />
+                        <GradientStop Color="#4DD27C60" Offset=".35" />
+                        <GradientStop Color="#00D27C60" Offset="1" />
                     </RadialGradientBrush>
                 </Ellipse.Fill>
                 <Ellipse.RenderTransform><ScaleTransform x:Name="TopNotchLensGlowScale" ScaleX=".6" ScaleY=".6" /></Ellipse.RenderTransform>

@@ -115,10 +115,11 @@ public static class TopNotchLayout
 
     /// <summary>렌즈 포인트 지름. 미확인 알림이 있으면 커진다.</summary>
     public const double LensDiameter = 5;
-    public const double LensAlertDiameter = 7;
-    /// <summary>렌즈 포인트 색(광택·몸체·가장자리). 평소 은빛, 미확인 알림이 있으면 선셋 코랄 주황.</summary>
+    public const double LensAlertDiameter = 6;
+    /// <summary>렌즈 포인트 색(광택·몸체·가장자리). 평소 은빛, 미확인 알림이 있으면 유리 뒤 LED처럼 채도를 낮춘 호박빛 주황.
+    /// 가장자리를 어둡게 두어 검은 노치에 스며들게 한다.</summary>
     public static readonly (string Highlight, string Body, string Edge) LensQuiet = ("#FFFFFF", "#C4C8D0", "#6E737C");
-    public static readonly (string Highlight, string Body, string Edge) LensAlert = ("#FFD9CC", "#FF8B6B", "#B5523A");
+    public static readonly (string Highlight, string Body, string Edge) LensAlert = ("#F2D3C4", "#D27C60", "#5A3226");
 
     /// <summary>미확인 알림 여부에 따른 렌즈 색과 크기 배율. 색과 크기를 함께 바꿔 색만으로 구분하지 않는다.</summary>
     public static ((string Highlight, string Body, string Edge) Colors, double Scale) Lens(bool hasUnread) =>
