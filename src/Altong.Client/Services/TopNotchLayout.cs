@@ -47,13 +47,15 @@ public static class TopNotchLayout
     /// <summary>
     /// 노치 가운데의 화면 x 좌표. 화면 가운데에서 좌우로 옮긴 거리를 더하고, 노치가 화면 밖으로 나가지 않게 제한한다.
     /// 왼쪽으로는 목록 왼쪽에 붙는 상세 패널(<see cref="WindowLeftExtent"/>)까지 화면 안에 들어오는 곳까지만 옮긴다.
+    /// 다만 화면 가운데(기본 위치)보다 더 오른쪽으로 밀지는 않는다. 좁은 화면에서도 노치는 처음에 가운데에 놓인다.
     /// </summary>
     public static double NotchCenter(double screenLeft, double screenWidth, double centerOffset)
     {
         double half = NotchSurfaceWidth / 2;
         double center = screenLeft + screenWidth / 2 + centerOffset;
         double max = Math.Max(screenLeft + half, screenLeft + screenWidth - half);
-        double min = Math.Max(screenLeft + half, Math.Min(screenLeft + WindowLeftExtent, max));
+        double min = Math.Max(screenLeft + half,
+            Math.Min(Math.Min(screenLeft + WindowLeftExtent, screenLeft + screenWidth / 2), max));
         return Math.Clamp(center, min, max);
     }
 

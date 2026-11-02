@@ -46,6 +46,9 @@ public sealed class TopNotchLayoutTests
         double half = TopNotchLayout.NotchSurfaceWidth / 2;
         // 왼쪽 끝으로 옮겨도 목록 왼쪽에 붙는 상세 패널까지 화면 안에 남는다.
         Assert.AreEqual(TopNotchLayout.WindowLeftExtent, TopNotchLayout.NotchCenter(0, 1920, -5000), .001);
+        // 상세까지 담기에 좁은 화면(예: CI의 1024px)에서도 기본 위치는 가운데이고, 왼쪽으로는 더 옮기지 않는다.
+        Assert.AreEqual(512d, TopNotchLayout.NotchCenter(0, 1024, 0), .001);
+        Assert.AreEqual(512d, TopNotchLayout.NotchCenter(0, 1024, -5000), .001);
         Assert.AreEqual(1920 - half, TopNotchLayout.NotchCenter(0, 1920, 5000), .001);
         Assert.AreEqual(240d, TopNotchLayout.CenterOffset(TopNotchLayout.NotchCenter(0, 1920, 240), 0, 1920), .001);
     }
