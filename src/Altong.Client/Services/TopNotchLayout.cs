@@ -39,9 +39,7 @@ public static class TopNotchLayout
     public const string WallpaperBand = "#01000000";
 
     /// <summary>띠 채움색. 검정은 불투명 검정, 바탕화면은 바탕화면이 비치는 거의 투명한 색.</summary>
-    public static string BandFill(TopBandStyle style) => style == TopBandStyle.Wallpaper ? WallpaperBand : BlackBand;{green / count:X2}{blue / count:X2}";
-    }
-
+    public static string BandFill(TopBandStyle style) => style == TopBandStyle.Wallpaper ? WallpaperBand : BlackBand;
 
     /// <summary>띠 높이를 모니터 배율에 맞춘 물리 픽셀로 바꾼다.</summary>
     public static int BandHeightPixels(double dpiScaleY) => (int)Math.Round(BandHeight * Math.Max(1, dpiScaleY));
