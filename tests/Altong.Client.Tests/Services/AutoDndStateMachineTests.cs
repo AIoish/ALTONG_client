@@ -418,6 +418,29 @@ public sealed class AutoDndStateMachineTests
         Assert.AreEqual((AutoDndState.Suggesting, AutoDndState.Disabled), _changes[^1]);
     }
 
+    // ───────────────────────────── 빠른 테스트 모드 ─────────────────────────────
+
+    [TestMethod]
+    public void FastOptions_SuggestAfter20Seconds_AndExitAfterOneMinuteAway()
+    {
+        var machine = new AutoDndStateMachine(_clock, AutoDndOptions.Fast);
+        int exits = 0;
+        machine.AwayExitRequested += (_, _) => exits++;
+        void Step(WorkCategory category, TimeSpan idle, bool focus)
+        {
+            _clock.Advance(TimeSpan.FromSeconds(1));
+            machine.Update(new AutoDndObservation(category, idle, false, focus));
+        }
+
+        for (int i = 0; i < 21; i++) Step(WorkCategory.Work, TimeSpan.Zero, focus: false);
+        Assert.AreEqual(AutoDndState.Suggesting, machine.State);
+
+        Step(WorkCategory.Work, TimeSpan.FromSeconds(59), focus: true);
+        Assert.AreEqual(0, exits);
+        Step(WorkCategory.Work, TimeSpan.FromSeconds(60), focus: true);
+        Assert.AreEqual(1, exits);
+    }
+
     // ───────────────────────────── 도우미 ─────────────────────────────
 
     private void IgnoreOneSuggestion()

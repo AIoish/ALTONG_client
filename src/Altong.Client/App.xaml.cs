@@ -20,6 +20,9 @@ public partial class App : System.Windows.Application
     private static extern bool AttachConsole(int dwProcessId);
     private const int AttachParentProcess = -1;
 
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
+
     public FocusModeService FocusModeService { get; } = new();
     public FocusSettingsStore FocusSettings { get; } = new();
     public AutoDndSettingsStore AutoDndSettings { get; } = new();
@@ -430,11 +433,29 @@ public partial class App : System.Windows.Application
             await Dispatcher.InvokeAsync(() => { });
             if (IsShuttingDown) return;
             var report = new SessionReportWindow(result, SessionResults.Reports, isSaved: false, summaryProvider: _reportSummaryProvider);
-            if (_dashboardWindow?.IsVisible == true)
-                report.Owner = _dashboardWindow;
+            // 대시보드가 지금 활성 창일 때만 딸린 창으로 연다. 뒤에 깔려 있거나 최소화된 대시보드에 딸리면
+            // 리포트도 함께 뒤에 뜨거나 숨는다(자리비움 자동 종료·타이머 카드로 끝난 경우).
+            if (_dashboardWindow is { IsVisible: true, IsActive: true } dashboard
+                && dashboard.WindowState != WindowState.Minimized)
+                report.Owner = dashboard;
             else
                 report.WindowStartupLocation = WindowStartupLocation.CenterScreen;
             report.Show();
+            // 자리비움 자동 종료나 포커스를 가져가지 않는 타이머 카드로 끝나면 알통이 활성 앱이 아니어서
+            // Windows가 새 창을 작업 중인 창 뒤에 둔다. 이때 WPF는 창을 "활성"(IsActive)으로 보고하기도 하므로
+            // Windows의 실제 전경 창으로 판단한다. 포커스는 빼앗지 않고 맨 위 고정으로 보이게 한 뒤,
+            // 사용자가 리포트를 누르면 일반 창으로 돌린다. 전체화면 영상·발표 위로는 덮지 않는다.
+            if (GetForegroundWindow() != new System.Windows.Interop.WindowInteropHelper(report).Handle
+                && !new Win32FullscreenDetector().IsFullscreenActive())
+            {
+                report.Topmost = true;
+                void ReleaseTopmost(object? sender, System.Windows.Input.MouseButtonEventArgs e)
+                {
+                    report.PreviewMouseDown -= ReleaseTopmost;
+                    report.Topmost = false;
+                }
+                report.PreviewMouseDown += ReleaseTopmost;
+            }
         }
         catch (Exception ex)
         {
@@ -456,12 +477,22 @@ public partial class App : System.Windows.Application
     /// </summary>
     private void StartAutoDnd()
     {
+        AutoDndOptions? options = null;
+#if DEBUG
+        // 직접 테스트·시연용: 15분 자리비움 같은 기준을 기다리지 않도록 시간을 줄인다. 릴리스 빌드에는 없다.
+        if (Environment.GetEnvironmentVariable("ALTONG_AUTODND_FAST") == "1")
+        {
+            options = AutoDndOptions.Fast;
+            AppLogger.Warn("[AutoDND] 빠른 테스트 모드: 작업 20초면 제안, 자리비움 1분이면 종료, [나중에] 1분");
+        }
+#endif
         _autoDnd = new AutoDndController(
             ActiveWindowTracker,
             new Win32UserIdleDetector(),
             new Win32FullscreenDetector(),
             () => FocusModeService.IsEnabled,
             () => IsAutoDndAvailable,
+            new AutoDndStateMachine(options: options),
             isOnBreak: () => FocusRoutine.Phase == FocusRoutinePhase.Break);
         _autoDnd.SuggestionRequested += AutoDnd_SuggestionRequested;
         _autoDnd.SuggestionClosed += AutoDnd_SuggestionClosed;

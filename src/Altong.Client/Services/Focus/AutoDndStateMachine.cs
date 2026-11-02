@@ -61,6 +61,21 @@ public sealed record AutoDndOptions
         [TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(60)];
     /// <summary>판단 간격이 이보다 벌어지면(절전·타이머 지연) 그 사이를 작업 시간으로 인정하지 않는다.</summary>
     public TimeSpan MaxSampleGap { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// 직접 테스트·시연용으로 기준 시간을 줄인 값. 작업 20초면 제안하고, 1분 자리비움이면 집중을 끝낸다.
+    /// 앱은 디버그 빌드에서 환경 변수 <c>ALTONG_AUTODND_FAST=1</c>일 때만 쓴다.
+    /// </summary>
+    public static AutoDndOptions Fast { get; } = new()
+    {
+        Window = TimeSpan.FromSeconds(30),
+        RequiredWork = TimeSpan.FromSeconds(20),
+        MaxLeisure = TimeSpan.FromSeconds(5),
+        AwayIdle = TimeSpan.FromSeconds(45),
+        StreakReset = TimeSpan.FromSeconds(30),
+        AwayExit = TimeSpan.FromMinutes(1),
+        RejectionCooldowns = [TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(3)],
+    };
 }
 
 /// <summary>
