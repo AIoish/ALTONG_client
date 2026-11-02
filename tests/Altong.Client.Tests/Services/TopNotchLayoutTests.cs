@@ -7,38 +7,12 @@ namespace Altong.Client.Tests;
 public sealed class TopNotchLayoutTests
 {
     [TestMethod]
-    [DataRow(TopBandStyle.Black, "#1A2B3C", TopNotchLayout.BlackBand)]
-    [DataRow(TopBandStyle.Black, null, TopNotchLayout.BlackBand)]
-    [DataRow(TopBandStyle.Wallpaper, "#1A2B3C", "#1A2B3C")]
-    [DataRow(TopBandStyle.Wallpaper, null, TopNotchLayout.BlackBand)]
-    [DataRow(TopBandStyle.Wallpaper, "", TopNotchLayout.BlackBand)]
-    public void BandColor_UsesWallpaperOnlyWhenSyncedAndAvailable(TopBandStyle style, string? wallpaper, string expected)
+    public void BandFill_IsOpaqueBlackOrSeeThroughWallpaper()
     {
-        Assert.AreEqual(expected, TopNotchLayout.BandColor(style, wallpaper));
-    }
-
-    [TestMethod]
-    public void AverageTopColor_AveragesOnlyTheTopRows()
-    {
-        // 4×10 그림: 위 1줄(10%의 6% → 최소 1줄)은 빨강·파랑 반반, 나머지는 초록.
-        const int width = 4, height = 10, stride = width * 4;
-        var pixels = new byte[stride * height];
-        for (int y = 0; y < height; y++)
-            for (int x = 0; x < width; x++)
-            {
-                int i = y * stride + x * 4;
-                if (y == 0 && x < 2) { pixels[i + 2] = 200; }      // 빨강
-                else if (y == 0) { pixels[i] = 100; }               // 파랑
-                else { pixels[i + 1] = 255; }                       // 초록
-                pixels[i + 3] = 255;
-            }
-        Assert.AreEqual("#640032", TopNotchLayout.AverageTopColor(pixels, width, height, stride));
-    }
-
-    [TestMethod]
-    public void AverageTopColor_FallsBackToBlackForEmptyImages()
-    {
-        Assert.AreEqual(TopNotchLayout.BlackBand, TopNotchLayout.AverageTopColor(Array.Empty<byte>(), 0, 0, 0));
+        Assert.AreEqual(TopNotchLayout.BlackBand, TopNotchLayout.BandFill(TopBandStyle.Black));
+        // 바탕화면 띠는 거의 투명해 바탕화면이 그대로 보이지만, 알파가 0이 아니어서 클릭은 띠가 받는다.
+        var fill = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(TopNotchLayout.BandFill(TopBandStyle.Wallpaper));
+        Assert.IsTrue(fill.A is > 0 and < 8);
     }
 
     [TestMethod]

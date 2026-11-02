@@ -335,19 +335,19 @@
                                 HorizontalAlignment="Left" Click="Dashboard_Click" ToolTip="대시보드 활성화/최소화"
                                 AutomationProperties.Name="대시보드 활성화/최소화" />
                     </Grid>
-                    <!-- 화면 맨 위 띠의 색. 배경색(기본)은 바탕화면 그림 위쪽의 평균색을 따른다. -->
+                    <!-- 화면 맨 위 띠. 바탕화면(기본)은 띠 아래 실제 바탕화면을 그대로 비춘다. -->
                     <Grid x:Name="BandStyleBar" Margin="0,8,0,0">
                         <TextBlock Text="상단 띠" FontSize="11" Foreground="{StaticResource MutedText}"
                                    VerticalAlignment="Center" HorizontalAlignment="Left" />
                         <Border Background="#202225" CornerRadius="8" Padding="2" HorizontalAlignment="Right">
                             <StackPanel Orientation="Horizontal">
                                 <Button x:Name="BandBlackButton" Content="검정" Tag="{x:Static services:TopBandStyle.Black}"
-                                        Click="BandStyle_Click" Style="{StaticResource HeaderButton}" Width="52" Height="26" Margin="1" FontSize="11"
+                                        Click="BandStyle_Click" Style="{StaticResource HeaderButton}" Width="60" Height="26" Margin="1" FontSize="11"
                                         ToolTip="검은 띠. 접힌 노치가 띠와 이어져 보입니다." AutomationProperties.Name="상단 띠 검정" />
-                                <Button x:Name="BandWallpaperButton" Content="배경색" Tag="{x:Static services:TopBandStyle.Wallpaper}"
-                                        Click="BandStyle_Click" Style="{StaticResource HeaderButton}" Width="52" Height="26" Margin="1" FontSize="11"
-                                        ToolTip="바탕화면 그림 위쪽의 평균색으로 띠를 칠합니다. 바탕화면을 바꾸면 따라 바뀝니다."
-                                        AutomationProperties.Name="상단 띠 배경색 동기화" />
+                                <Button x:Name="BandWallpaperButton" Content="바탕화면" Tag="{x:Static services:TopBandStyle.Wallpaper}"
+                                        Click="BandStyle_Click" Style="{StaticResource HeaderButton}" Width="60" Height="26" Margin="1" FontSize="11"
+                                        ToolTip="띠 자리에 바탕화면을 그대로 보여 줍니다. 바탕화면을 바꾸면 함께 바뀝니다."
+                                        AutomationProperties.Name="상단 띠 바탕화면" />
                             </StackPanel>
                         </Border>
                     </Grid>

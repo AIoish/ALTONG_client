@@ -38,7 +38,7 @@ public partial class NotificationDockWindow : Window
     private bool _isPressed;
     private bool _isDragging;
     private TopBandWindow? _topBand;
-    // 상단 띠는 바탕화면 배경색으로 시작한다. 패널 하단에서 검정으로 바꿀 수 있다.
+    // 상단 띠는 바탕화면이 그대로 비치는 상태로 시작한다. 패널 하단에서 검정으로 바꿀 수 있다.
     private TopBandStyle _topBandStyle = TopBandStyle.Wallpaper;
     private double _notchCenterOffset;
     private bool _fullscreenSuppressed;

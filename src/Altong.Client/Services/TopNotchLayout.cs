@@ -32,34 +32,14 @@ public static class TopNotchLayout
     public const double ReminderTop = NotchHeight + 4;
 
     public const string BlackBand = "#000000";
-    /// <summary>바탕화면 그림 위쪽 중 평균색을 낼 높이의 비율.</summary>
-    public const double WallpaperSampleFraction = .06;
-
-    /// <summary>띠 색. 배경색 동기화는 바탕화면 평균색을 쓰고, 그 색을 얻지 못하면 검정으로 둔다.</summary>
-    public static string BandColor(TopBandStyle style, string? wallpaperColor) =>
-        style == TopBandStyle.Wallpaper && !string.IsNullOrEmpty(wallpaperColor) ? wallpaperColor : BlackBand;
-
     /// <summary>
-    /// BGRA 픽셀 배열에서 위쪽 <paramref name="fraction"/> 높이의 평균색(#RRGGBB). 띠가 덮는 바탕화면 윗부분의 색과 맞춘다.
+    /// 바탕화면 띠. 거의 투명하게 칠해 실제 바탕화면이 그대로 비쳐 보인다(맞춤 방식·슬라이드 쇼·움직이는 배경도 그대로).
+    /// 완전히 투명하면 클릭이 아래 바탕화면으로 빠지므로 알파 1을 남겨 띠가 클릭을 받게 한다.
     /// </summary>
-    public static string AverageTopColor(byte[] bgra, int width, int height, int stride, double fraction = WallpaperSampleFraction)
-    {
-        if (width <= 0 || height <= 0) return BlackBand;
-        int rows = Math.Clamp((int)Math.Round(height * fraction), 1, height);
-        long blue = 0, green = 0, red = 0;
-        for (int y = 0; y < rows; y++)
-        {
-            int row = y * stride;
-            for (int x = 0; x < width; x++)
-            {
-                int i = row + x * 4;
-                blue += bgra[i];
-                green += bgra[i + 1];
-                red += bgra[i + 2];
-            }
-        }
-        long count = (long)rows * width;
-        return $"#{red / count:X2}{green / count:X2}{blue / count:X2}";
+    public const string WallpaperBand = "#01000000";
+
+    /// <summary>띠 채움색. 검정은 불투명 검정, 바탕화면은 바탕화면이 비치는 거의 투명한 색.</summary>
+    public static string BandFill(TopBandStyle style) => style == TopBandStyle.Wallpaper ? WallpaperBand : BlackBand;{green / count:X2}{blue / count:X2}";
     }
 
 

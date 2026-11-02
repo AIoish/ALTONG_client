@@ -5,7 +5,6 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using Altong.Client.Services;
-using System.Windows.Threading;
 using Color = System.Windows.Media.Color;
 using ColorConverter = System.Windows.Media.ColorConverter;
 
@@ -31,8 +30,6 @@ public sealed class TopBandWindow : Window
     private const int WmWindowPosChanged = 0x0047;
     private const int WmMouseActivate = 0x0021;
     private const int WmDisplayChange = 0x007E;
-    private const int WmSettingChange = 0x001A;
-    private const int SpiSetDeskWallpaper = 0x0014;
     private const int GwlExStyle = -20;
     private const int WsExToolWindow = 0x00000080;
     private const int WsExNoActivate = 0x08000000;
@@ -45,9 +42,6 @@ public sealed class TopBandWindow : Window
     private readonly int _callbackMessage = (int)RegisterWindowMessage("Altong.TopBand.AppBarMessage");
     private readonly SolidColorBrush _brush = new(Colors.Black);
     private readonly TopBandWindowGuard _guard = new();
-    /// <summary>배경색 동기화 중 바탕화면이 바뀌었는지 주기적으로 확인한다. 설정 앱·슬라이드 쇼·단색 변경을 모두 잡는다.</summary>
-    private readonly DispatcherTimer _wallpaperWatch = new() { Interval = TimeSpan.FromSeconds(2) };
-    private string? _wallpaperSignature;
     private HwndSource? _source;
     private nint _hwnd;
     private bool _registered;
@@ -67,6 +61,8 @@ public sealed class TopBandWindow : Window
         _bandStyle = style;
         Title = "Altong 상단 띠";
         WindowStyle = WindowStyle.None;
+        // 바탕화면 띠가 실제 바탕화면을 비쳐 보이도록 투명 창으로 만든다.
+        AllowsTransparency = true;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
         ShowActivated = false;
@@ -84,7 +80,6 @@ public sealed class TopBandWindow : Window
         DpiChanged += OnDpiChanged;
         Closing += OnClosing;
         Closed += OnClosed;
-        _wallpaperWatch.Tick += WallpaperWatch_Tick;
     }
 
     public TopBandStyle BandStyle
@@ -97,36 +92,12 @@ public sealed class TopBandWindow : Window
         }
     }
 
-    private void ApplyColor()
-    {
-        if (_bandStyle != TopBandStyle.Wallpaper)
-        {
-            // 검정은 바탕화면과 상관없으므로 감시하지 않는다.
-            _wallpaperWatch.Stop();
-            _wallpaperSignature = null;
-            _brush.Color = (Color)ColorConverter.ConvertFromString(TopNotchLayout.BlackBand);
-            return;
-        }
-        if (!_wallpaperWatch.IsEnabled) _wallpaperWatch.Start();
-        RefreshWallpaperColor(force: true);
-    }
-
     /// <summary>
-    /// 바탕화면 그림 파일(경로·수정 시각·크기)이나 단색 배경이 바뀌었을 때만 다시 읽어 띠 색을 맞춘다.
-    /// Windows가 그림 파일을 쓰는 중이라 읽지 못하면 이전 색을 유지하고 다음 확인 때 다시 읽는다.
+    /// 띠를 칠한다. 바탕화면이면 거의 투명하게 칠해 그 아래 실제 바탕화면이 그대로 보인다.
+    /// 띠 영역에는 다른 창이 들어오지 못하므로 비쳐 보이는 것은 바탕화면뿐이고, 바탕화면을 바꿔도 따로 맞출 필요가 없다.
     /// </summary>
-    private void RefreshWallpaperColor(bool force)
-    {
-        if (_bandStyle != TopBandStyle.Wallpaper) return;
-        string signature = WallpaperColor.Signature();
-        if (!force && signature == _wallpaperSignature) return;
-        string? color = WallpaperColor.ReadTopColor();
-        if (color is null) return;
-        _wallpaperSignature = signature;
-        _brush.Color = (Color)ColorConverter.ConvertFromString(TopNotchLayout.BandColor(_bandStyle, color));
-    }
-
-    private void WallpaperWatch_Tick(object? sender, EventArgs e) => RefreshWallpaperColor(force: false);
+    private void ApplyColor() =>
+        _brush.Color = (Color)ColorConverter.ConvertFromString(TopNotchLayout.BandFill(_bandStyle));
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
@@ -224,11 +195,6 @@ public sealed class TopBandWindow : Window
             Register();
             return 0;
         }
-        if (message == WmSettingChange && (int)wParam == SpiSetDeskWallpaper)
-        {
-            // 설정 앱에서 바탕화면을 바꾸면 바로 반영한다. 파일 쓰기가 늦으면 주기 확인이 이어서 맞춘다.
-            _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, () => RefreshWallpaperColor(force: false));
-        }
         if (!_registered) return 0;
         if (message == WmActivate)
         {
@@ -317,8 +283,6 @@ public sealed class TopBandWindow : Window
     {
         Unregister();
         _guard.Dispose();
-        _wallpaperWatch.Stop();
-        _wallpaperWatch.Tick -= WallpaperWatch_Tick;
         _source?.RemoveHook(WndProc);
         _source = null;
         SourceInitialized -= OnSourceInitialized;
