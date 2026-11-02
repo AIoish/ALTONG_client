@@ -26,6 +26,7 @@ public partial class DashboardWindow : Window
     private readonly Action? _showRoutineReminder;
     private readonly Action? _shutdownApplication;
     private readonly AutoDndSettingsStore? _autoDndSettings;
+    private readonly StartupRegistration? _startupRegistration;
     private bool _settingsReady;
     public SessionResultsService Results { get; }
     private bool _dashboardDataLoading;
@@ -58,10 +59,12 @@ public partial class DashboardWindow : Window
         IReportSummaryProvider? summaryProvider = null,
         string? summaryStatePath = null,
         Action<string>? openCalendar = null,
-        AutoDndSettingsStore? autoDndSettings = null)
+        AutoDndSettingsStore? autoDndSettings = null,
+        StartupRegistration? startupRegistration = null)
     {
         Results = results;
         _autoDndSettings = autoDndSettings;
+        _startupRegistration = startupRegistration;
         _focusSettings = focusSettings;
         _focusRoutine = focusRoutine;
         _activeWindowTracker = activeWindowTracker;
@@ -99,6 +102,7 @@ public partial class DashboardWindow : Window
         _clockTimer.Tick += (_, _) => UpdateClock();
         UpdateClock();
         AppVersionText.Text = $"ALTONG · {typeof(DashboardWindow).Assembly.GetName().Version}";
+        UpdateLaunchAtStartupView();
         UpdateFocusModeView();
         SourceInitialized += (_, _) => FitToWorkArea();
         StateChanged += (_, _) =>
@@ -841,6 +845,40 @@ public partial class DashboardWindow : Window
             return;
         }
         UpdateAutoDndView();
+    }
+
+    private void UpdateLaunchAtStartupView()
+    {
+        if (_startupRegistration is null)
+        {
+            LaunchAtStartupCheckBox.Visibility = Visibility.Collapsed;
+            LaunchAtStartupStatusText.Visibility = Visibility.Collapsed;
+            return;
+        }
+        try { LaunchAtStartupCheckBox.IsChecked = _startupRegistration.IsEnabled; }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            LaunchAtStartupCheckBox.IsEnabled = false;
+            LaunchAtStartupStatusText.Text = "시작 프로그램 설정을 확인할 수 없어요.";
+        }
+    }
+
+    private void LaunchAtStartupCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        if (_startupRegistration is null) return;
+        bool enabled = LaunchAtStartupCheckBox.IsChecked == true;
+        try
+        {
+            _startupRegistration.SetEnabled(enabled);
+            LaunchAtStartupStatusText.Text = enabled
+                ? "다음에 Windows에 로그인하면 알통이 트레이에서 조용히 시작해요."
+                : "Windows 시작 시 실행하지 않아요.";
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            LaunchAtStartupCheckBox.IsChecked = !enabled;
+            LaunchAtStartupStatusText.Text = "시작 프로그램 설정을 바꾸지 못했어요. 잠시 후 다시 시도해 주세요.";
+        }
     }
 
     private void UseAltongControl_Click(object sender, RoutedEventArgs e) => _focusModeCoordinator?.SwitchBackend(FocusControlBackend.Altong);

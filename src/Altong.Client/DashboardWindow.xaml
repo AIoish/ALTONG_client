@@ -521,6 +521,9 @@
                                     <Button x:Name="ShowRoutineReminderButton" Content="현재 루틴 알림 보기" Click="ShowRoutineReminderButton_Click" Margin="0,0,8,8" />
                                     <Button Content="알림 확인" Tag="1" Click="Navigate_Click" Margin="0,0,0,8" />
                                 </WrapPanel>
+                                <CheckBox x:Name="LaunchAtStartupCheckBox" Content="Windows 시작 시 알통 실행" Click="LaunchAtStartupCheckBox_Click" Margin="0,4,0,0"
+                                          AutomationProperties.HelpText="켜면 Windows에 로그인할 때 알통이 트레이에서 조용히 시작됩니다." />
+                                <TextBlock x:Name="LaunchAtStartupStatusText" Text="켜면 로그인할 때 대시보드 없이 트레이에서 조용히 시작해요." Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,8" AutomationProperties.LiveSetting="Polite" />
                                 <TextBlock x:Name="AppVersionText" Style="{StaticResource Muted}" Margin="0,4" />
                                 <Button Content="ALTONG 종료" Click="ExitApplicationButton_Click" HorizontalAlignment="Left" Margin="0,12,0,0" />
                             </StackPanel></Border>

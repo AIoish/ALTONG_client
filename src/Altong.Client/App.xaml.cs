@@ -26,6 +26,7 @@ public partial class App : System.Windows.Application
     public FocusModeService FocusModeService { get; } = new();
     public FocusSettingsStore FocusSettings { get; } = new();
     public AutoDndSettingsStore AutoDndSettings { get; } = new();
+    public StartupRegistration StartupRegistration { get; } = new();
     public FocusRoutineService FocusRoutine { get; private set; } = null!;
     public SessionResultsService SessionResults { get; private set; } = null!;
     private readonly System.Windows.Threading.DispatcherTimer _routineTimer = new()
@@ -75,10 +76,18 @@ public partial class App : System.Windows.Application
             return;
         }
         base.OnStartup(e);
+        // Windows 시작 프로그램으로 실행되면 대시보드 없이 트레이에만 뜬다.
+        bool launchedAtStartup = e.Args.Contains(StartupRegistration.StartupArgument);
 
         _singleInstance = new SingleInstanceService();
         if (!_singleInstance.IsPrimary)
         {
+            // 시작 프로그램으로 한 번 더 실행된 경우 이미 떠 있는 알통을 앞으로 꺼내지 않고 조용히 끝낸다.
+            if (launchedAtStartup)
+            {
+                Shutdown();
+                return;
+            }
             bool activated = _singleInstance.ActivateExistingAsync(TimeSpan.FromSeconds(3))
                 .GetAwaiter().GetResult();
             if (!activated)
@@ -208,7 +217,21 @@ public partial class App : System.Windows.Application
         UpdateFocusModeShell();
         UpdateWindowsDndGuidance();
 
-        ShowDashboard();
+        // 폴더를 옮겼거나 다른 빌드로 실행했으면 시작 프로그램 등록 경로를 지금 실행 중인 알통으로 고친다.
+        try
+        {
+            if (StartupRegistration.RepairPathIfRegistered())
+                AppLogger.Info("[Startup] 시작 프로그램 등록 경로를 현재 실행 파일로 고쳤습니다.");
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            AppLogger.Warn($"[Startup] 시작 프로그램 등록 확인 실패: {ex.Message}");
+        }
+
+        if (launchedAtStartup)
+            AppLogger.Info("[Startup] Windows 시작으로 실행되어 트레이에서 대기합니다.");
+        else
+            ShowDashboard();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -319,7 +342,8 @@ public partial class App : System.Windows.Application
                     ShowCurrentRoutineReminder,
                     RequestShutdown,
                     summaryProvider: null,
-                    autoDndSettings: AutoDndSettings);
+                    autoDndSettings: AutoDndSettings,
+                    startupRegistration: StartupRegistration);
                 _dashboardWindow.Closed += DashboardWindow_Closed;
                 MainWindow = _dashboardWindow;
             }
