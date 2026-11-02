@@ -128,6 +128,19 @@ public sealed class TopNotchLayoutTests
     }
 
     [TestMethod]
+    public void Lens_ChangesColorAndSize_SoItIsNotColorOnly()
+    {
+        var quiet = TopNotchLayout.Lens(false);
+        var alert = TopNotchLayout.Lens(true);
+        Assert.AreEqual(1d, quiet.Scale);
+        Assert.AreEqual(TopNotchLayout.LensAlertDiameter / TopNotchLayout.LensDiameter, alert.Scale, .001);
+        Assert.IsTrue(alert.Scale > 1);
+        Assert.AreNotEqual(quiet.Colors, alert.Colors);
+        // 주황 렌즈는 선셋 일렁임의 코랄과 같은 색이다.
+        Assert.AreEqual(TopNotchLayout.AlertRipple.Left, alert.Colors.Body);
+    }
+
+    [TestMethod]
     public void PanelWidth_MatchesThePanelControl()
     {
         Assert.AreEqual(TopNotchLayout.PanelWidth, NotificationPanel.ListWidth);

@@ -108,6 +108,17 @@ public static class TopNotchLayout
     public static bool ShouldPlayAlertRipple(DateTime now, DateTime lastAlert, bool notchVisible, bool panelOpen, bool fullscreen) =>
         notchVisible && !panelOpen && !fullscreen && now - lastAlert >= AlertRippleCooldown;
 
+    /// <summary>렌즈 포인트 지름. 미확인 알림이 있으면 커진다.</summary>
+    public const double LensDiameter = 5;
+    public const double LensAlertDiameter = 7;
+    /// <summary>렌즈 포인트 색(광택·몸체·가장자리). 평소 은빛, 미확인 알림이 있으면 선셋 코랄 주황.</summary>
+    public static readonly (string Highlight, string Body, string Edge) LensQuiet = ("#FFFFFF", "#C4C8D0", "#6E737C");
+    public static readonly (string Highlight, string Body, string Edge) LensAlert = ("#FFD9CC", "#FF8B6B", "#B5523A");
+
+    /// <summary>미확인 알림 여부에 따른 렌즈 색과 크기 배율. 색과 크기를 함께 바꿔 색만으로 구분하지 않는다.</summary>
+    public static ((string Highlight, string Body, string Edge) Colors, double Scale) Lens(bool hasUnread) =>
+        hasUnread ? (LensAlert, LensAlertDiameter / LensDiameter) : (LensQuiet, 1);
+
     /// <summary>패널 최대 높이와 아래쪽 모서리 반지름.</summary>
     public const double PanelMaxHeight = 480;
     public const double PanelCornerRadius = 16;

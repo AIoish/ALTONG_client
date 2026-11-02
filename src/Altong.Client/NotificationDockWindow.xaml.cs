@@ -44,6 +44,7 @@ public partial class NotificationDockWindow : Window
     private bool _fullscreenSuppressed;
     private DateTime _topNotchActivatedAt = DateTime.MinValue;
     private DateTime _lastAlertRippleAt = DateTime.MinValue;
+    private bool? _lensAlert;
     private double? _openTarget;
     private bool _panelShown;
     private bool _detailShown;
@@ -568,19 +569,52 @@ public partial class NotificationDockWindow : Window
             }.AtDisplayRate(), HandoffBehavior.SnapshotAndReplace);
     }
 
+    /// <summary>미확인 알림이 있는 동안 렌즈를 주황으로 키우고, 모두 읽으면 은빛으로 돌린다. 상태가 바뀔 때만 움직인다.</summary>
     private void UpdateNotificationVisuals()
     {
-        var appearance = DockNotificationAppearance.For(_notifications.HighestUrgency);
-        var color = (Color)ColorConverter.ConvertFromString(appearance.Color);
         bool unread = _notifications.UnreadCount > 0;
-        bool urgent = _notifications.HighestUrgency >= 5;
-        TopNotchStatusBrush.Color = unread ? color : (Color)ColorConverter.ConvertFromString("#455D55");
-        TopNotchQuietDot.Visibility = urgent ? Visibility.Collapsed : Visibility.Visible;
-        TopNotchUrgentIndicator.Visibility = urgent ? Visibility.Visible : Visibility.Collapsed;
-        TopNotchUrgentCountText.Text = _notifications.BadgeText;
         System.Windows.Automation.AutomationProperties.SetItemStatus(NotchBody,
             unread ? $"미확인 중요 알림 {_notifications.UnreadCount}개" : "미확인 알림 없음");
+        if (_lensAlert == unread) return;
+        bool first = _lensAlert is null;
+        _lensAlert = unread;
+        var (colors, scale) = TopNotchLayout.Lens(unread);
+        bool animate = !first && SystemParameters.ClientAreaAnimation;
+        var duration = TimeSpan.FromMilliseconds(200);
+        void Paint(GradientStop stop, string hex)
+        {
+            var target = (Color)ColorConverter.ConvertFromString(hex);
+            if (!animate)
+            {
+                stop.BeginAnimation(GradientStop.ColorProperty, null);
+                stop.Color = target;
+                return;
+            }
+            stop.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(target, duration).AtDisplayRate(),
+                HandoffBehavior.SnapshotAndReplace);
+        }
+        void Grow(DependencyProperty property)
+        {
+            if (!animate)
+            {
+                TopNotchLensScale.BeginAnimation(property, null);
+                TopNotchLensScale.SetValue(property, scale);
+                return;
+            }
+            TopNotchLensScale.BeginAnimation(property, new DoubleAnimation(scale, duration)
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            }.AtDisplayRate(), HandoffBehavior.SnapshotAndReplace);
+        }
+        Paint(LensHighlight, colors.Highlight);
+        Paint(LensBody, colors.Body);
+        Paint(LensEdge, colors.Edge);
+        Grow(ScaleTransform.ScaleXProperty);
+        Grow(ScaleTransform.ScaleYProperty);
     }
+
+    /// <summary>렌즈가 미확인 알림 상태(주황)인지. 테스트에서 쓴다.</summary>
+    public bool IsLensAlert => _lensAlert == true;
 
     // ───────────────────────────── 포인터 ─────────────────────────────
 

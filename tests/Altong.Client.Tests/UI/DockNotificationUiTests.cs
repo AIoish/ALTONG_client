@@ -121,7 +121,7 @@ public sealed class DockNotificationUiTests
     }
 
     [TestMethod]
-    public void Notch_ShowsUrgentCount_AndResetsWithoutResizing()
+    public void NotchLens_TurnsOrangeWhileUnread_AndResetsWithoutResizing()
     {
         RunOnSta(() =>
         {
@@ -132,19 +132,16 @@ public sealed class DockNotificationUiTests
                 dock.Show();
                 double width = dock.Width, height = dock.Height;
                 dock.BeginNotificationSession("ui");
-                var quietDot = (FrameworkElement)dock.FindName("TopNotchQuietDot");
-                var urgent = (FrameworkElement)dock.FindName("TopNotchUrgentIndicator");
-                Assert.AreEqual(Visibility.Visible, quietDot.Visibility);
-                Assert.AreEqual(Visibility.Collapsed, urgent.Visibility);
+                Assert.IsFalse(dock.IsLensAlert, "미확인 알림이 없으면 은빛 렌즈입니다.");
                 for (int i = 0; i < 12; i++) dock.ReceiveNotification(Record($"n{i}", i));
-                // 긴급도 5(분 % 3 + 3 == 5)가 섞여 있으면 개수를 표시한다. 개수가 바뀌어도 창 크기는 그대로다.
-                Assert.AreEqual(Visibility.Visible, urgent.Visibility);
-                Assert.AreEqual("9+", ((TextBlock)dock.FindName("TopNotchUrgentCountText")).Text);
+                // 미확인 알림이 있으면 렌즈가 주황으로 커진다. 개수가 바뀌어도 창 크기는 그대로다.
+                Assert.IsTrue(dock.IsLensAlert);
+                Assert.AreEqual("미확인 중요 알림 12개",
+                    System.Windows.Automation.AutomationProperties.GetItemStatus((FrameworkElement)dock.FindName("NotchBody")));
                 Assert.AreEqual(width, dock.Width);
                 Assert.AreEqual(height, dock.Height);
                 state.MarkAllRead();
-                Assert.AreEqual(Visibility.Visible, quietDot.Visibility);
-                Assert.AreEqual(Visibility.Collapsed, urgent.Visibility);
+                Assert.IsFalse(dock.IsLensAlert, "모두 읽으면 은빛 렌즈로 돌아옵니다.");
                 dock.EndNotificationSession();
                 Assert.IsFalse(state.IsPanelOpen);
                 Assert.AreEqual(0, dock.OwnedWindows.Count, "패널은 별도 창이 아닙니다.");
