@@ -63,6 +63,24 @@ public partial class NotificationDockWindow : Window
     private Point _stealthLocalAnchor;
     private StealthPlacement? _stealthPlaced;
     private static readonly TimeSpan StealthMorphDuration = TimeSpan.FromMilliseconds(180);
+    private TopBandWindow? _topBand;
+    // 상단 띠는 바탕화면 배경색으로 시작한다. 패널 하단에서 검정으로 바꿀 수 있다.
+    private TopBandStyle _topBandStyle = TopBandStyle.Wallpaper;
+    private double _topNotchCenterOffset;
+    private bool _fullscreenSuppressed;
+    private DateTime _topNotchActivatedAt = DateTime.MinValue;
+    private double? _topNotchOpenTarget;
+
+    /// <summary>상단 노치가 알림 패널 폭까지 넓어진 정도(0 닫힘 ~ 1 열림). 애니메이션 중 노치 모양을 다시 그린다.</summary>
+    public static readonly DependencyProperty TopNotchOpenProgressProperty = DependencyProperty.Register(
+        nameof(TopNotchOpenProgress), typeof(double), typeof(NotificationDockWindow),
+        new PropertyMetadata(0d, (d, _) => ((NotificationDockWindow)d).UpdateTopNotchGeometry()));
+
+    public double TopNotchOpenProgress
+    {
+        get => (double)GetValue(TopNotchOpenProgressProperty);
+        set => SetValue(TopNotchOpenProgressProperty, value);
+    }
 
     /// <summary>은신형 몸체·상태 점·내용의 목표 배치(창 안 DIP).</summary>
     private readonly record struct StealthPlacement(
@@ -76,10 +94,15 @@ public partial class NotificationDockWindow : Window
     public StealthDockMode StealthMode => _stealth.Mode;
     /// <summary>은신형 미니바의 기준점(상태 점 중심, 화면 DIP).</summary>
     public Point StealthAnchor => _stealthAnchor;
+    /// <summary>상단 노치 디자인의 띠 색. 디자인을 바꿔도 실행 중에는 유지한다.</summary>
+    public TopBandStyle BandStyle => _topBandStyle;
+    /// <summary>전체화면 동안 상단 노치·패널·안내를 숨긴 상태인지.</summary>
+    public bool IsFullscreenSuppressed => _fullscreenSuppressed;
     private FrameworkElement ActiveSurface => Presentation switch
     {
         DockPresentation.Classic => DockSurface,
         DockPresentation.Stealth => StealthSurface,
+        DockPresentation.TopNotch => TopNotchSurface,
         _ => NotchSurface,
     };
 
@@ -120,15 +143,20 @@ public partial class NotificationDockWindow : Window
         Presentation = presentation;
         bool classic = presentation == DockPresentation.Classic;
         bool stealth = presentation == DockPresentation.Stealth;
+        bool top = presentation == DockPresentation.TopNotch;
         DockSurface.Visibility = classic ? Visibility.Visible : Visibility.Collapsed;
         NotchSurface.Visibility = presentation == DockPresentation.RightNotch ? Visibility.Visible : Visibility.Collapsed;
         StealthSurface.Visibility = stealth ? Visibility.Visible : Visibility.Collapsed;
+        TopNotchSurface.Visibility = top ? Visibility.Visible : Visibility.Collapsed;
         // 은신형은 동그라미를 넓은 투명 창의 한가운데에 두고 창을 통째로 평행 이동한다.
         // 창 안 배치를 다시 그리지 않고 위치를 바꿀 수 있어 잔상이 남지 않고, 빛·말풍선도 창 경계에 잘리지 않는다.
         // 투명한 부분은 클릭이 아래 앱으로 그대로 전달된다.
-        Width = stealth ? StealthWindowWidth : 360;
-        Height = classic ? 136 : stealth ? StealthWindowHeight : 168;
-        ConfigureReminderLayout(!classic);
+        Width = stealth ? StealthWindowWidth : top ? TopNotchLayout.WindowWidth : 360;
+        Height = classic ? 136 : stealth ? StealthWindowHeight : top ? TopNotchLayout.WindowHeight : 168;
+        if (top) ConfigureTopNotchReminderLayout();
+        else ConfigureReminderLayout(!classic);
+        // 상단 노치일 때만 화면 맨 위 띠를 예약한다. 다른 디자인으로 바꾸면 바로 해제한다.
+        UpdateTopBand();
         // 전환 직후에는 어디에 있는지 알 수 있도록 잠시 펼친 뒤 은신한다.
         if (stealth) _stealth.Reveal(Clock());
         _stealthPlaced = null;
@@ -139,6 +167,9 @@ public partial class NotificationDockWindow : Window
         RefreshReminderStatus();
         UpdateNotificationVisuals();
         UpdateBackground();
+        UpdateTopNotchOpen();
+        UpdateTopNotchGeometry();
+        UpdateTopNotchOutline();
         UpdatePointerState();
         UpdateStealthTimer();
     }
@@ -155,6 +186,18 @@ public partial class NotificationDockWindow : Window
         ReminderArrow.HorizontalAlignment = System.Windows.HorizontalAlignment.Right;
         // 오른쪽에 놓인 가로 미니바의 중심(창 오른쪽에서 56)에 화살표 끝을 맞춘다.
         ReminderArrow.Margin = horizontal ? new Thickness(0, 0, 38, 0) : new Thickness(0);
+    }
+
+    /// <summary>상단 노치의 안내 말풍선은 노치 바로 아래에 두고 위쪽 화살표가 노치 가운데를 가리킨다.</summary>
+    private void ConfigureTopNotchReminderLayout()
+    {
+        Grid.SetColumnSpan(ReminderBubble, 2);
+        ReminderBubble.Margin = new Thickness(8, TopNotchLayout.NotchHeight + 4, 8, 8);
+        ReminderCard.Margin = new Thickness(0, 9, 0, 0);
+        ReminderArrow.Points = new PointCollection { new(0, 10), new(18, 10), new(9, 0) };
+        ReminderArrow.VerticalAlignment = VerticalAlignment.Top;
+        ReminderArrow.HorizontalAlignment = System.Windows.HorizontalAlignment.Center;
+        ReminderArrow.Margin = new Thickness(0);
     }
 
     /// <summary>은신형 안내 말풍선은 공간이 넓은 쪽(위·아래)에 두고 화살표 끝을 기준점에 맞춘다.</summary>
@@ -192,6 +235,9 @@ public partial class NotificationDockWindow : Window
 
     private void Flyout_ShowDashboardRequested(object? sender, EventArgs e) => ShowDashboardRequested?.Invoke(this, e);
 
+    private void Flyout_BandStyleRequested(object? sender, TopBandStyle style) => SetTopBandStyle(style);
+
+
     public bool IsReminderVisible => ReminderBubble.Visibility == Visibility.Visible;
 
     public void BeginNotificationSession(string sessionId) => _notifications.BeginSession(sessionId);
@@ -218,6 +264,11 @@ public partial class NotificationDockWindow : Window
         if (Presentation == DockPresentation.Stealth)
         {
             PositionStealth();
+            return;
+        }
+        if (Presentation == DockPresentation.TopNotch)
+        {
+            PositionTopNotch();
             return;
         }
         var workArea = SystemParameters.WorkArea;
@@ -265,6 +316,108 @@ public partial class NotificationDockWindow : Window
             }
         }
         ApplyStealthLayout();
+    }
+
+    /// <summary>주 모니터 맨 위 가운데(띠 안)에 노치를 둔다. 좌우로 옮긴 거리는 실행 중에만 유지한다.</summary>
+    private void PositionTopNotch()
+    {
+        Left = TopNotchLayout.WindowLeft(0, SystemParameters.PrimaryScreenWidth, Width, _topNotchCenterOffset);
+        Top = 0;
+    }
+
+    private void MoveTopNotch(double deltaX)
+    {
+        double screenWidth = SystemParameters.PrimaryScreenWidth;
+        Left = TopNotchLayout.WindowLeft(0, screenWidth, Width,
+            TopNotchLayout.CenterOffset(_pressLeft + deltaX, 0, screenWidth, Width));
+        Top = 0;
+        _topNotchCenterOffset = TopNotchLayout.CenterOffset(Left, 0, screenWidth, Width);
+    }
+
+    /// <summary>
+    /// 상단 노치 디자인이고 미니바가 보이는 동안만 띠를 AppBar로 예약한다.
+    /// 집중 모드를 끄거나 다른 디자인으로 바꾸면 띠를 해제해 화면 위쪽 공간을 돌려준다.
+    /// </summary>
+    private void UpdateTopBand()
+    {
+        bool wanted = !_isClosed && IsVisible && Presentation == DockPresentation.TopNotch;
+        if (wanted)
+        {
+            if (_topBand is not null) return;
+            _topBand = new TopBandWindow(_topBandStyle);
+            _topBand.FullscreenChanged += TopBand_FullscreenChanged;
+            // 띠가 처음 자리 잡을 때부터 노치 아래에 두도록 기준 창을 먼저 알려 준다.
+            _topBand.PlaceBelow(new WindowInteropHelper(this).Handle);
+            _topBand.Show();
+            RaiseAboveBand();
+            return;
+        }
+        if (_topBand is not null)
+        {
+            _topBand.FullscreenChanged -= TopBand_FullscreenChanged;
+            _topBand.Close();
+            _topBand = null;
+        }
+        SetFullscreenSuppressed(false);
+    }
+
+    /// <summary>띠와 노치는 모두 맨 위 창이다. 노치를 다시 올려 띠 위에 그려지게 한다.</summary>
+    private void RaiseAboveBand()
+    {
+        if (!IsVisible || _fullscreenSuppressed) return;
+        Topmost = false;
+        Topmost = true;
+        _topBand?.PlaceBelow(new WindowInteropHelper(this).Handle);
+    }
+
+    /// <summary>띠 색을 바꾼다. 디자인을 바꿔도 실행 중에는 같은 색을 유지한다.</summary>
+    public void SetTopBandStyle(TopBandStyle style)
+    {
+        if (_isClosed) return;
+        _topBandStyle = style;
+        if (_topBand is not null) _topBand.BandStyle = style;
+        _notificationFlyout?.SetBandStyle(style);
+    }
+
+    private void TopBand_FullscreenChanged(object? sender, bool fullscreen) => SetFullscreenSuppressed(fullscreen);
+
+    /// <summary>
+    /// 전체화면 동안 노치·패널·안내를 모두 숨긴다. 알림 수집과 읽음·고정·상세 상태는 그대로 두고,
+    /// 전체화면이 끝나면 열려 있던 패널과 보류한 안내를 다시 보여 준다.
+    /// 창을 숨기면 패널 상태가 닫히므로 창은 투명하게만 만든다. 완전히 투명한 부분의 클릭은 아래 앱으로 전달된다.
+    /// </summary>
+    private void SetFullscreenSuppressed(bool suppressed)
+    {
+        if (_fullscreenSuppressed == suppressed) return;
+        _fullscreenSuppressed = suppressed;
+        Opacity = suppressed ? 0 : 1;
+        IsHitTestVisible = !suppressed;
+        StopHoverTimers();
+        if (suppressed)
+        {
+            _notificationFlyout?.Hide();
+            if (IsReminderVisible)
+            {
+                _reminderDismissTimer.Stop();
+                _reminderPending = true;
+                ReminderBubble.Visibility = Visibility.Collapsed;
+            }
+            return;
+        }
+        RaiseAboveBand();
+        UpdateTopNotchOpen();
+        if (_notifications.IsPanelOpen && IsVisible && _notificationFlyout is not null)
+        {
+            PositionNotificationFlyout();
+            _notificationFlyout.Show();
+        }
+        else if (_reminderPending && !_notifications.IsDragging && IsVisible)
+        {
+            _reminderPending = false;
+            ReminderBubble.Visibility = Visibility.Visible;
+            _reminderDismissTimer.Start();
+        }
+        UpdatePointerState();
     }
 
     private static System.Windows.Forms.Screen? FindScreen(string? deviceName) =>
@@ -328,6 +481,34 @@ public partial class NotificationDockWindow : Window
 
     public void ShowRoutineReminder(string title, Func<string> statusProvider, string message)
     {
+        // 상단 노치에서는 집중 종료 안내 말풍선을 띄우지 않는다. 이어서 앱이 미니바를 숨기면 노치와 띠가 바로 사라진다.
+        if (Presentation == DockPresentation.TopNotch
+            && (RoutineStatusProvider?.Invoke() ?? DockRoutineStatus.Idle).Phase == FocusRoutinePhase.Idle)
+        {
+            _reminderDismissTimer.Stop();
+            _reminderPending = false;
+            _hideAfterReminder = false;
+            ReminderBubble.Visibility = Visibility.Collapsed;
+            return;
+        }
+        // 상단 노치에서는 집중을 켜는 순간(노치가 나타나는 순간) 말풍선을 띄우지 않고
+        // 노치 안에 색 물결(일렁임)을 한 번 흘려 켜졌음을 알린다. 휴식·종료 등 이후 안내는 기존처럼 말풍선으로 보인다.
+        if (Presentation == DockPresentation.TopNotch
+            && (!IsVisible || Clock() - _topNotchActivatedAt < TimeSpan.FromSeconds(2)))
+        {
+            _reminderDismissTimer.Stop();
+            _hideAfterReminder = false;
+            _reminderPending = false;
+            _statusProvider = statusProvider;
+            ReminderBubble.Visibility = Visibility.Collapsed;
+            RefreshReminderStatus();
+            PositionOnPrimaryWorkArea();
+            bool appearing = !IsVisible;
+            if (appearing) Show();
+            if (appearing) PlayActivationAnimation();
+            _statusTimer.Start();
+            return;
+        }
         // 루틴 전환이 사용자가 읽거나 고정한 알림 패널을 닫지 않도록 안내를 보류한다.
         _reminderDismissTimer.Stop();
         _hideAfterReminder = false;
@@ -335,12 +516,16 @@ public partial class NotificationDockWindow : Window
         ReminderTitleText.Text = title;
         ReminderMessageText.Text = message;
         RefreshReminderStatus();
-        _reminderPending = _notifications.IsPanelOpen || _notifications.IsDragging;
+        // 전체화면 동안에는 안내를 보류했다가 전체화면이 끝나면 보여 준다.
+        _reminderPending = _notifications.IsPanelOpen || _notifications.IsDragging || _fullscreenSuppressed;
         ReminderBubble.Visibility = _reminderPending ? Visibility.Collapsed : Visibility.Visible;
         PositionOnPrimaryWorkArea();
         if (!IsVisible) Show();
-        Topmost = false;
-        Topmost = true;
+        if (!_fullscreenSuppressed)
+        {
+            Topmost = false;
+            Topmost = true;
+        }
         PlayActivationAnimation();
         _statusTimer.Start();
         if (!_reminderPending) _reminderDismissTimer.Start();
@@ -371,6 +556,7 @@ public partial class NotificationDockWindow : Window
             ReminderStatusText.Text = _statusProvider();
         var routine = RoutineStatusProvider?.Invoke() ?? DockRoutineStatus.Idle;
         NotchSurface.ToolTip = routine.Label;
+        // 상단 노치는 호버하면 바로 윤곽선과 패널로 반응하므로 집중 상태 툴팁을 띄우지 않는다.
     }
 
     private void ReminderDismissTimer_Tick(object? sender, EventArgs e) => HideReminderBubble();
@@ -391,6 +577,11 @@ public partial class NotificationDockWindow : Window
 
     public void PlayActivationAnimation()
     {
+        if (Presentation == DockPresentation.TopNotch)
+        {
+            PlayTopNotchActivation();
+            return;
+        }
         ActivationHalo.BeginAnimation(UIElement.OpacityProperty, null);
         ActivationGlow.BeginAnimation(UIElement.OpacityProperty, null);
         ActivationGlow.BeginAnimation(Shape.StrokeDashOffsetProperty, null);
@@ -480,6 +671,13 @@ public partial class NotificationDockWindow : Window
             return;
         }
 
+        if (Presentation == DockPresentation.TopNotch)
+        {
+            MoveTopNotch(delta.X);
+            e.Handled = true;
+            return;
+        }
+
         var workArea = SystemParameters.WorkArea;
         if (Presentation != DockPresentation.Classic)
         {
@@ -513,6 +711,8 @@ public partial class NotificationDockWindow : Window
                 MoveStealth(delta);
                 FinishStealthDrag();
             }
+            else if (Presentation == DockPresentation.TopNotch)
+                MoveTopNotch(delta.X);
             else if (Presentation != DockPresentation.Classic)
                 MoveCapsule(delta.X, workArea);
             else
@@ -680,6 +880,119 @@ public partial class NotificationDockWindow : Window
         NotchClickScale.BeginAnimation(ScaleTransform.ScaleYProperty, press);
         StealthClickScale.BeginAnimation(ScaleTransform.ScaleXProperty, press);
         StealthClickScale.BeginAnimation(ScaleTransform.ScaleYProperty, press);
+        TopNotchClickScale.BeginAnimation(ScaleTransform.ScaleXProperty, press);
+        TopNotchClickScale.BeginAnimation(ScaleTransform.ScaleYProperty, press);
+    }
+
+    /// <summary>상단 노치에 커서가 들어오면 폭을 살짝 넓혀 곧 펼쳐진다는 것을 알린다. 한 번만 움직인다.</summary>
+    private void AnimateTopNotchHover(bool over)
+    {
+        if (Presentation != DockPresentation.TopNotch) return;
+        // 호버 반응은 윤곽선만 쓴다. 폭을 넓혔다가 패널이 열릴 때 다시 줄이면 펼침이 끊겨 보인다.
+        UpdateTopNotchOutline();
+    }
+
+    /// <summary>
+    /// 집중이 켜졌음을 알리는 상단 노치 효과(일렁임). 청록·라벤더 색 물결이 노치 안을 왼쪽에서 오른쪽으로 약 3.5초에 한 번 천천히 흐르고,
+    /// 끝나면 원래 검은 노치로 돌아온다. 반복하지 않으며 Windows 애니메이션 효과가 꺼져 있으면 생략한다.
+    /// </summary>
+    private void PlayTopNotchActivation()
+    {
+        _topNotchActivatedAt = Clock();
+        TopNotchRipple.BeginAnimation(OpacityProperty, null);
+        TopNotchRippleMove.BeginAnimation(TranslateTransform.XProperty, null);
+        TopNotchRipple.Opacity = 0;
+        if (!SystemParameters.ClientAreaAnimation || _fullscreenSuppressed) return;
+
+        var duration = TimeSpan.FromMilliseconds(3500);
+        TopNotchRippleMove.BeginAnimation(TranslateTransform.XProperty,
+            new DoubleAnimation(-1, 1, duration)
+            {
+                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+            }.AtDisplayRate());
+        var fade = new DoubleAnimationUsingKeyFrames { Duration = duration };
+        fade.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromPercent(0)));
+        fade.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromPercent(.15)));
+        fade.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromPercent(.8)));
+        fade.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromPercent(1)));
+        TopNotchRipple.BeginAnimation(OpacityProperty, fade.AtDisplayRate());
+    }
+
+    /// <summary>
+    /// 알림 패널이 열리면 노치 바닥을 패널 폭까지 넓혀 패널이 노치에서 늘어난 것처럼 보이게 하고, 닫히면 원래 노치로 돌린다.
+    /// 열 때 0.16초, 닫을 때 0.18초에 한 번만 바뀐다. 패널은 노치가 거의 다 넓어진 뒤 펼쳐진다(<see cref="TopNotchLayout.PanelRevealDelayMilliseconds"/>).
+    /// </summary>
+    private void UpdateTopNotchOpen()
+    {
+        bool open = Presentation == DockPresentation.TopNotch && IsVisible && !_fullscreenSuppressed
+            && _notifications.IsPanelOpen;
+        double target = open ? 1 : 0;
+        if (_topNotchOpenTarget == target) return;
+        _topNotchOpenTarget = target;
+        if (open) AnimateTopNotchHover(false);
+        if (!SystemParameters.ClientAreaAnimation || Presentation != DockPresentation.TopNotch)
+        {
+            BeginAnimation(TopNotchOpenProgressProperty, null);
+            TopNotchOpenProgress = target;
+            return;
+        }
+        BeginAnimation(TopNotchOpenProgressProperty,
+            new DoubleAnimation(target, TimeSpan.FromMilliseconds(open ? TopNotchLayout.OpenMorphMilliseconds : 180))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
+            }.AtDisplayRate(), HandoffBehavior.SnapshotAndReplace);
+    }
+
+    /// <summary>현재 열림 정도에 맞춰 노치 모양(잘라 낼 영역)과 윤곽선을 다시 만든다.</summary>
+    private void UpdateTopNotchGeometry()
+    {
+        double progress = TopNotchOpenProgress;
+        TopNotchSurface.Clip = BuildTopNotchGeometry(progress, filled: true);
+        // 패널과 이어진 동안에는 노치 바닥선을 긋지 않아 윤곽선이 패널 테두리로 이어진다.
+        TopNotchOutline.Data = BuildTopNotchGeometry(progress, filled: false, includeBottom: progress <= .001);
+    }
+
+    private static Geometry BuildTopNotchGeometry(double progress, bool filled, bool includeBottom = true)
+    {
+        var left = TopNotchLayout.NotchLeftSide(progress);
+        double width = TopNotchLayout.NotchSurfaceWidth;
+        Point L(int i) => new(left[i].X, left[i].Y);
+        Point R(int i) => new(width - left[i].X, left[i].Y);
+        var geometry = new StreamGeometry();
+        using (var context = geometry.Open())
+        {
+            context.BeginFigure(L(0), filled, filled);
+            context.BezierTo(L(1), L(2), L(3), true, true);
+            context.BezierTo(L(4), L(5), L(6), true, true);
+            if (includeBottom) context.LineTo(R(6), true, true);
+            else context.BeginFigure(R(6), false, false);
+            context.BezierTo(R(5), R(4), R(3), true, true);
+            context.BezierTo(R(2), R(1), R(0), true, true);
+        }
+        geometry.Freeze();
+        return geometry;
+    }
+
+    /// <summary>
+    /// 커서가 노치 위에 있거나 알림 패널이 열린 동안 노치 윤곽선을 보인다.
+    /// 나타날 때 0.12초, 사라질 때 0.16초에 걸쳐 한 번만 바뀐다.
+    /// </summary>
+    private void UpdateTopNotchOutline()
+    {
+        bool show = Presentation == DockPresentation.TopNotch && !_fullscreenSuppressed
+            && (TopNotchSurface.IsMouseOver || _notifications.IsPanelOpen);
+        double target = show ? TopNotchLayout.OutlineOpacity : 0;
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            TopNotchOutline.BeginAnimation(OpacityProperty, null);
+            TopNotchOutline.Opacity = target;
+            return;
+        }
+        TopNotchOutline.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(target, TimeSpan.FromMilliseconds(show ? 120 : 160))
+            {
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+            }.AtDisplayRate(), HandoffBehavior.SnapshotAndReplace);
     }
 
     private Vector GetPointerDelta(MouseEventArgs e)
@@ -730,6 +1043,7 @@ public partial class NotificationDockWindow : Window
     /// <summary>모니터 연결·해제, 해상도 변경. 주 모니터 작업 영역이 그대로여도 은신형 위치를 다시 맞춘다.</summary>
     private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e)
     {
+        DisplayRefresh.Invalidate();
         if (_isClosed) return;
         _ = Dispatcher.BeginInvoke(() =>
         {
@@ -766,6 +1080,7 @@ public partial class NotificationDockWindow : Window
     {
         ReleaseCursorClip();
         _isClosed = true;
+        UpdateTopBand();
         _windowSource?.RemoveHook(Dock_WindowProc);
         _windowSource = null;
         SourceInitialized -= Dock_SourceInitialized;
@@ -788,6 +1103,7 @@ public partial class NotificationDockWindow : Window
             _notificationFlyout.MouseLeave -= Flyout_MouseLeave;
             _notificationFlyout.SwitchPresentationRequested -= SwitchPresentationRequested;
             _notificationFlyout.ShowDashboardRequested -= Flyout_ShowDashboardRequested;
+            _notificationFlyout.BandStyleRequested -= Flyout_BandStyleRequested;
             _notificationFlyout.Close();
             _notificationFlyout = null;
         }
@@ -825,6 +1141,13 @@ public partial class NotificationDockWindow : Window
             return cursor.X >= Math.Max(dockTop.X, panelTop.X) && cursor.X <= Math.Min(dockBottom.X, panelBottom.X)
                 && cursor.Y >= gapTop && cursor.Y <= gapBottom;
         }
+        if (Presentation == DockPresentation.TopNotch)
+        {
+            // 패널은 노치 아래에 있으므로 노치 아랫변과 패널 윗변 사이가 빈틈이다.
+            var cursor = System.Windows.Forms.Cursor.Position;
+            return cursor.X >= Math.Max(dockTop.X, panelTop.X) && cursor.X <= Math.Min(dockBottom.X, panelBottom.X)
+                && cursor.Y >= dockBottom.Y && cursor.Y <= panelTop.Y;
+        }
         if (Presentation != DockPresentation.Classic)
         {
             var cursor = System.Windows.Forms.Cursor.Position;
@@ -840,9 +1163,14 @@ public partial class NotificationDockWindow : Window
 
     private void DockSurface_MouseEnter(object sender, MouseEventArgs e)
     {
+        AnimateTopNotchHover(true);
         UpdatePointerState();
     }
-    private void DockSurface_MouseLeave(object sender, MouseEventArgs e) => UpdatePointerState();
+    private void DockSurface_MouseLeave(object sender, MouseEventArgs e)
+    {
+        AnimateTopNotchHover(false);
+        UpdatePointerState();
+    }
     private void Flyout_MouseEnter(object sender, MouseEventArgs e) => UpdatePointerState();
     private void Flyout_MouseLeave(object sender, MouseEventArgs e) => UpdatePointerState();
 
@@ -851,7 +1179,7 @@ public partial class NotificationDockWindow : Window
         if (_isClosed) return;
         UpdateBackground();
         UpdateStealthPointer();
-        if (!_notifications.IsActive || _isPressed || _notifications.IsDragging || !IsVisible)
+        if (!_notifications.IsActive || _isPressed || _notifications.IsDragging || !IsVisible || _fullscreenSuppressed)
         {
             StopHoverTimers();
             return;
@@ -876,7 +1204,8 @@ public partial class NotificationDockWindow : Window
     private void HoverTimer_Tick(object? sender, EventArgs e)
     {
         _hoverTimer.Stop();
-        if (_isClosed || !IsVisible || !ActiveSurface.IsMouseOver || _isPressed || !_notifications.IsActive) return;
+        if (_isClosed || !IsVisible || !ActiveSurface.IsMouseOver || _isPressed || !_notifications.IsActive
+            || _fullscreenSuppressed) return;
         HideReminderBubble();
         _notifications.OpenPanel();
     }
@@ -903,7 +1232,8 @@ public partial class NotificationDockWindow : Window
     {
         if (_isClosed) return;
         UpdateNotificationVisuals();
-        if (_notifications.IsPanelOpen && IsVisible)
+        // 전체화면 동안에는 패널 상태만 유지하고 창은 띄우지 않는다.
+        if (_notifications.IsPanelOpen && IsVisible && !_fullscreenSuppressed)
         {
             if (_notificationFlyout is null)
             {
@@ -912,6 +1242,8 @@ public partial class NotificationDockWindow : Window
                 _notificationFlyout.MouseLeave += Flyout_MouseLeave;
                 _notificationFlyout.SwitchPresentationRequested += SwitchPresentationRequested;
                 _notificationFlyout.ShowDashboardRequested += Flyout_ShowDashboardRequested;
+                _notificationFlyout.BandStyleRequested += Flyout_BandStyleRequested;
+                _notificationFlyout.SetBandStyle(_topBandStyle);
                 _notificationFlyout.SetPresentation(Presentation);
             }
             _notificationFlyout.Refresh();
@@ -923,7 +1255,7 @@ public partial class NotificationDockWindow : Window
         {
             _notificationFlyout?.Refresh();
             _notificationFlyout?.Hide();
-            if (_reminderPending && !_notifications.IsDragging)
+            if (_reminderPending && !_notifications.IsDragging && !_fullscreenSuppressed)
             {
                 _reminderPending = false;
                 ReminderBubble.Visibility = Visibility.Visible;
@@ -931,6 +1263,8 @@ public partial class NotificationDockWindow : Window
             }
         }
         UpdateBackground();
+        UpdateTopNotchOpen();
+        UpdateTopNotchOutline();
         // 핀 해제 시 커서가 이미 바깥이라면 지연 닫기를 시작한다.
         if (_notifications.IsPanelOpen) UpdatePointerState();
     }
@@ -945,6 +1279,17 @@ public partial class NotificationDockWindow : Window
         }
         var workArea = SystemParameters.WorkArea;
         _notificationFlyout.Height = Math.Min(480, Math.Max(1, workArea.Height - 16));
+        if (Presentation == DockPresentation.TopNotch)
+        {
+            // 패널을 노치 바닥에 틈 없이 붙인다. 넓어진 노치 바닥과 목록 패널의 폭이 같아 한 덩어리로 이어진다.
+            double panelTop = Top + TopNotchLayout.NotchHeight - TopNotchLayout.PanelOverlap;
+            _notificationFlyout.Height = Math.Min(480 + TopNotchLayout.FlyoutInset,
+                Math.Max(1, workArea.Bottom - panelTop + TopNotchLayout.FlyoutInset));
+            _notificationFlyout.Left = TopNotchLayout.PanelFlyoutLeft(Left + Width / 2, _notificationFlyout.Width,
+                workArea.Left, workArea.Right);
+            _notificationFlyout.Top = panelTop - TopNotchLayout.FlyoutInset;
+            return;
+        }
         var dockOrigin = ActiveSurface.TranslatePoint(new Point(), this);
         if (Presentation != DockPresentation.Classic)
         {
@@ -1003,6 +1348,7 @@ public partial class NotificationDockWindow : Window
             _statusTimer.Start();
             if (Presentation == DockPresentation.Stealth) _stealth.Reveal(Clock());
         }
+        UpdateTopBand();
         UpdateBackground();
         UpdateStealthTimer();
         RefreshStealthState();
@@ -1027,6 +1373,12 @@ public partial class NotificationDockWindow : Window
         NotchQuietDot.Visibility = urgent ? Visibility.Collapsed : Visibility.Visible;
         NotchUrgentIndicator.Visibility = urgent ? Visibility.Visible : Visibility.Collapsed;
         NotchUrgentCountText.Text = _notifications.BadgeText;
+        TopNotchStatusBrush.Color = NotchStatusBrush.Color;
+        TopNotchQuietDot.Visibility = NotchQuietDot.Visibility;
+        TopNotchUrgentIndicator.Visibility = NotchUrgentIndicator.Visibility;
+        TopNotchUrgentCountText.Text = _notifications.BadgeText;
+        System.Windows.Automation.AutomationProperties.SetItemStatus(TopNotchSurface,
+            _notifications.UnreadCount > 0 ? $"미확인 중요 알림 {_notifications.UnreadCount}개" : "미확인 알림 없음");
         System.Windows.Automation.AutomationProperties.SetItemStatus(DockSurface,
             _notifications.UnreadCount > 0 ? $"미확인 중요 알림 {_notifications.UnreadCount}개" : "미확인 알림 없음");
         System.Windows.Automation.AutomationProperties.SetItemStatus(NotchSurface,

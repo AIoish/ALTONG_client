@@ -180,6 +180,67 @@
             </StackPanel>
         </Grid>
         <!--
+            상단 노치: 화면 맨 위 띠(TopBandWindow) 가운데에 붙는다. 위쪽 폭 360.2, 아래쪽 평평한 폭 235.4, 높이 30이며
+            양옆은 짧은 오목 어깨에서 비스듬히 내려와 둥글게 바닥으로 이어진다(시안 윤곽을 측정해 맞춘 3차 베지어 2개씩, TopNotchLayout).
+            선 없이 띠보다 어두운 색으로만 구분한다. 평소 작은 표시등만 두고 긴급 알림일 때만 개수를 표시한다.
+        -->
+        <Grid x:Name="TopNotchSurface" Grid.ColumnSpan="2" Width="360.2" Height="30"
+                HorizontalAlignment="Center" VerticalAlignment="Top" Visibility="Collapsed"
+                Cursor="Hand" RenderTransformOrigin=".5,0"
+                MouseLeftButtonDown="DockSurface_MouseLeftButtonDown"
+                MouseMove="DockSurface_MouseMove" MouseLeftButtonUp="DockSurface_MouseLeftButtonUp"
+                LostMouseCapture="DockSurface_LostMouseCapture"
+                MouseEnter="DockSurface_MouseEnter" MouseLeave="DockSurface_MouseLeave"
+                AutomationProperties.Name="Altong 상단 노치"
+                AutomationProperties.HelpText="커서를 올려 알림 패널 펼치기, 클릭하여 대시보드 열기, 좌우로 드래그하여 이동">
+            <Grid.Background>
+                <SolidColorBrush Color="#000000" />
+            </Grid.Background>
+            <Grid.Clip>
+                <PathGeometry Figures="M0,0 C3.4,0 25.7,5.3 31.4,14.5 C34.2,19 47.2,30 62.4,30 L297.8,30 C313,30 326,19 328.8,14.5 C334.5,5.3 356.8,0 360.2,0 Z" />
+            </Grid.Clip>
+            <Grid.RenderTransform>
+                <TransformGroup>
+                    <ScaleTransform x:Name="TopNotchHoverScale" />
+                    <ScaleTransform x:Name="TopNotchClickScale" />
+                </TransformGroup>
+            </Grid.RenderTransform>
+            <!--
+                호버·패널이 열린 동안에만 노치 윤곽을 은색 선으로 드러낸다. 검은 띠에서도 노치 범위를 알 수 있다.
+                화면 끝에 닿는 위쪽 변은 긋지 않는다. 노치 모양으로 잘리므로 두께 2 중 안쪽 1만 보인다. 빛 번짐은 쓰지 않는다.
+            -->
+            <Path x:Name="TopNotchOutline" Opacity="0" IsHitTestVisible="False"
+                  Stroke="#C4C8D0" StrokeThickness="2" Fill="{x:Null}"
+                  Data="M0,0 C3.4,0 25.7,5.3 31.4,14.5 C34.2,19 47.2,30 62.4,30 L297.8,30 C313,30 326,19 328.8,14.5 C334.5,5.3 356.8,0 360.2,0" />
+            <!-- 켜짐 효과(일렁임): 청록·라벤더 색 물결이 노치 안을 천천히 한 번 흐른다. 양 끝은 투명, 가운데는 불투명도 약 44%. -->
+            <Rectangle x:Name="TopNotchRipple" Opacity="0" IsHitTestVisible="False">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <LinearGradientBrush.RelativeTransform>
+                            <TranslateTransform x:Name="TopNotchRippleMove" X="-1" />
+                        </LinearGradientBrush.RelativeTransform>
+                        <GradientStop Color="#0072B5A6" Offset="0" />
+                        <GradientStop Color="#7072B5A6" Offset=".3" />
+                        <GradientStop Color="#70A99BE0" Offset=".5" />
+                        <GradientStop Color="#7072B5A6" Offset=".7" />
+                        <GradientStop Color="#0072B5A6" Offset="1" />
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+            <Grid IsHitTestVisible="False">
+                <Ellipse x:Name="TopNotchQuietDot" Width="6" Height="6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Ellipse.Fill><SolidColorBrush x:Name="TopNotchStatusBrush" Color="#72B5A6" /></Ellipse.Fill>
+                </Ellipse>
+                <StackPanel x:Name="TopNotchUrgentIndicator" Orientation="Horizontal" Visibility="Collapsed"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Ellipse Width="7" Height="7" Fill="{Binding ElementName=TopNotchQuietDot, Path=Fill}"
+                             VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBlock x:Name="TopNotchUrgentCountText" FontSize="11" FontWeight="SemiBold" Foreground="#EEAA92"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+        <!--
             은신형: 평소에는 작은 점으로 남고, 호버·패널·안내·새 중요 알림일 때만 캡슐로 펼친다.
             점과 캡슐의 상태 점은 같은 기준점을 공유한다. 위치는 코드에서 Canvas 좌표로 정한다.
             Canvas 자체는 배경이 없어 투명 영역의 클릭은 아래 앱으로 그대로 전달된다.

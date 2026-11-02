@@ -169,7 +169,8 @@ public partial class App : System.Windows.Application
         _routineTimer.Start();
 
         _notificationDockWindow = new NotificationDockWindow();
-        _notificationDockWindow.SetPresentation(DockPresentation.Stealth);
+        // 앱은 상단 노치 디자인으로 시작한다. 패널 하단에서 가로·기존·라벤더로 바꿀 수 있다.
+        _notificationDockWindow.SetPresentation(DockPresentation.TopNotch);
         _notificationDockWindow.RoutineStatusProvider = () => new DockRoutineStatus(FocusRoutine.Phase);
         _notificationDockWindow.ShowDashboardRequested +=
             NotificationDockWindow_ShowDashboardRequested;
