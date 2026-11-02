@@ -55,6 +55,51 @@ public sealed class NativeFocusCoordinatorTests
     }
 
     [TestMethod]
+    public void RequestStart_OnlyTurnsFocusOn_NeverTogglesOff()
+    {
+        var focus = new FocusModeService(); var native = new Native(); var launcher = new Launcher();
+        native.SetBackend(FocusControlBackend.Altong);
+        using var coordinator = new FocusModeCoordinator(focus, new Observer(), launcher, new Dispatcher(), native);
+        coordinator.Start();
+        Assert.IsTrue(coordinator.CanStartDirectly);
+
+        Assert.IsTrue(coordinator.RequestStart());
+        Assert.IsTrue(focus.IsEnabled); Assert.IsTrue(native.IsActive);
+
+        // 이미 켜져 있으면 토글과 달리 끄지 않는다.
+        Assert.IsFalse(coordinator.RequestStart());
+        Assert.IsTrue(focus.IsEnabled); Assert.IsTrue(native.IsActive);
+        Assert.AreEqual(0, launcher.OpenCount);
+    }
+
+    [TestMethod]
+    public void RequestStart_DoesNothingOnWindowsBackend()
+    {
+        var focus = new FocusModeService(); var native = new Native(); var launcher = new Launcher();
+        native.SetBackend(FocusControlBackend.Windows);
+        using var coordinator = new FocusModeCoordinator(focus, new Observer(), launcher, new Dispatcher(), native);
+        coordinator.Start();
+
+        Assert.IsFalse(coordinator.CanStartDirectly);
+        Assert.IsFalse(coordinator.RequestStart());
+        Assert.IsFalse(focus.IsEnabled);
+        Assert.AreEqual(0, launcher.OpenCount, "AutoDND 수락으로 Windows 설정 창을 열지 않는다.");
+    }
+
+    [TestMethod]
+    public void RequestStart_ReportsFailureWhenNativeApplyFails()
+    {
+        var focus = new FocusModeService(); var native = new Native { Fail = true };
+        native.SetBackend(FocusControlBackend.Altong);
+        using var coordinator = new FocusModeCoordinator(focus, new Observer(), new Launcher(), new Dispatcher(), native);
+        coordinator.Start();
+
+        Assert.IsFalse(coordinator.RequestStart());
+        Assert.IsFalse(focus.IsEnabled);
+        Assert.IsNotNull(coordinator.Guidance);
+    }
+
+    [TestMethod]
     public void GuardianLossRestoresAndEndsSession()
     {
         var focus = new FocusModeService(); var native = new Native();

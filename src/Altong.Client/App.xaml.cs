@@ -7,6 +7,8 @@ using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
 using Altong.Client.Services;
 using Altong.Client.Services.AI.Briefing;
+using Altong.Client.Services.Focus;
+using Altong.Client.Services.Win32;
 using Altong.Client.Services.Notifications;
 using Altong.Client.Services.NotificationControl;
 
@@ -20,6 +22,7 @@ public partial class App : System.Windows.Application
 
     public FocusModeService FocusModeService { get; } = new();
     public FocusSettingsStore FocusSettings { get; } = new();
+    public AutoDndSettingsStore AutoDndSettings { get; } = new();
     public FocusRoutineService FocusRoutine { get; private set; } = null!;
     public SessionResultsService SessionResults { get; private set; } = null!;
     private readonly System.Windows.Threading.DispatcherTimer _routineTimer = new()
@@ -43,6 +46,12 @@ public partial class App : System.Windows.Application
     private WindowsDndGuidanceWindow? _windowsDndGuidanceWindow;
     private TrayIconService? _trayIconService;
     private FocusModeCoordinator? _focusModeCoordinator;
+    private AutoDndController? _autoDnd;
+    private AutoDndSuggestionWindow? _autoDndSuggestionWindow;
+    private readonly System.Windows.Threading.DispatcherTimer _autoDndTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(1)
+    };
     private readonly List<Task> _windowWrites = new();
     private DateTime _lastWindowCheckpointAt = DateTime.MinValue;
     private bool _windowCheckpointInProgress;
@@ -189,6 +198,7 @@ public partial class App : System.Windows.Application
         _focusModeCoordinator.StateChanged += FocusModeCoordinator_StateChanged;
         _focusModeCoordinator.Start();
         ActiveWindowTracker.Start();
+        StartAutoDnd();
         UpdateFocusModeShell();
         UpdateWindowsDndGuidance();
 
@@ -205,6 +215,7 @@ public partial class App : System.Windows.Application
         }
         IsShuttingDown = true;
         FocusModeService.StateChanged -= FocusModeService_StateChanged;
+        StopAutoDnd();
         _routineTimer.Stop();
         _routineTimer.Tick -= RoutineTimer_Tick;
         if (FocusRoutine is not null)
@@ -301,7 +312,8 @@ public partial class App : System.Windows.Application
                     _focusModeCoordinator,
                     ShowCurrentRoutineReminder,
                     RequestShutdown,
-                    summaryProvider: null);
+                    summaryProvider: null,
+                    autoDndSettings: AutoDndSettings);
                 _dashboardWindow.Closed += DashboardWindow_Closed;
                 MainWindow = _dashboardWindow;
             }
@@ -358,6 +370,7 @@ public partial class App : System.Windows.Application
             _trayIconService = null;
 
             _windowsDndGuidanceWindow?.CloseForShutdown();
+            StopAutoDnd();
             _notificationDockWindow?.Close();
             _dashboardWindow?.Close();
             Shutdown();
@@ -420,6 +433,76 @@ public partial class App : System.Windows.Application
             AppLogger.Error($"[SessionResults] 집중 결과 표시 실패: {ex.GetBaseException().Message}", ex);
         }
     }
+
+    // ───────────────────────────── AutoDND (작업 감지 후 집중 제안) ─────────────────────────────
+
+    /// <summary>
+    /// 작업 앱을 일정 시간 쓰면 상단에 집중 제안 카드를 띄운다. 설정에서 켜져 있고 알통 자체 제어 방식일 때만 동작한다.
+    /// 제안만 하고 스스로 집중을 켜지는 않는다.
+    /// </summary>
+    private void StartAutoDnd()
+    {
+        _autoDnd = new AutoDndController(
+            ActiveWindowTracker,
+            new Win32UserIdleDetector(),
+            new Win32FullscreenDetector(),
+            () => FocusModeService.IsEnabled,
+            () => AutoDndSettings.Current.Enabled && _focusModeCoordinator?.CanStartDirectly == true);
+        _autoDnd.SuggestionRequested += AutoDnd_SuggestionRequested;
+        _autoDnd.SuggestionClosed += AutoDnd_SuggestionClosed;
+
+        _autoDndSuggestionWindow = new AutoDndSuggestionWindow();
+        _autoDndSuggestionWindow.Accepted += AutoDndSuggestion_Accepted;
+        _autoDndSuggestionWindow.Declined += AutoDndSuggestion_Declined;
+
+        _autoDndTimer.Tick += AutoDndTimer_Tick;
+        _autoDndTimer.Start();
+    }
+
+    private void StopAutoDnd()
+    {
+        _autoDndTimer.Stop();
+        _autoDndTimer.Tick -= AutoDndTimer_Tick;
+        if (_autoDnd is not null)
+        {
+            _autoDnd.SuggestionRequested -= AutoDnd_SuggestionRequested;
+            _autoDnd.SuggestionClosed -= AutoDnd_SuggestionClosed;
+            _autoDnd = null;
+        }
+        if (_autoDndSuggestionWindow is not null)
+        {
+            _autoDndSuggestionWindow.Accepted -= AutoDndSuggestion_Accepted;
+            _autoDndSuggestionWindow.Declined -= AutoDndSuggestion_Declined;
+            _autoDndSuggestionWindow.CloseForShutdown();
+            _autoDndSuggestionWindow = null;
+        }
+    }
+
+    private void AutoDndTimer_Tick(object? sender, EventArgs e)
+    {
+        if (IsShuttingDown) return;
+        try { _autoDnd?.Tick(); }
+        catch (Exception ex) { AppLogger.Error($"[AutoDND] 상태 갱신 실패: {ex.GetBaseException().Message}", ex); }
+    }
+
+    private void AutoDnd_SuggestionRequested(object? sender, EventArgs e)
+    {
+        if (IsShuttingDown || _autoDnd is null) return;
+        _autoDndSuggestionWindow?.Present(_autoDnd.Machine.Options.SuggestionTimeout);
+    }
+
+    private void AutoDnd_SuggestionClosed(object? sender, EventArgs e) => _autoDndSuggestionWindow?.Dismiss();
+
+    private void AutoDndSuggestion_Accepted(object? sender, EventArgs e)
+    {
+        // 알통 자체 제어를 켜는 동안 UI 스레드가 몇 초 막히므로, 카드를 먼저 즉시 숨겨 멈춘 채 남지 않게 한다.
+        _autoDndSuggestionWindow?.HideImmediately();
+        if (_autoDnd?.Accept() != true) return;
+        if (_focusModeCoordinator?.RequestStart() != true)
+            AppLogger.Info("[AutoDND] 제안을 수락했지만 집중 모드를 켜지 못했습니다.");
+    }
+
+    private void AutoDndSuggestion_Declined(object? sender, EventArgs e) => _autoDnd?.Reject();
 
     private void HideDashboard() => RunOnUiThread(() => _dashboardWindow?.Hide());
 
