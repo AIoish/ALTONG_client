@@ -77,6 +77,23 @@ public sealed class FocusModeCoordinator : IDisposable
         return started;
     }
 
+    /// <summary>
+    /// 집중 모드를 끄기만 한다. 이미 꺼져 있으면 아무것도 하지 않는다. 알통 자체 제어 방식에서만 동작하며
+    /// (Windows 방식은 사용자가 직접 방해 금지를 꺼야 함), 껐으면 true를 돌려준다.
+    /// </summary>
+    public bool RequestStop()
+    {
+        ThrowIfDisposed();
+        bool stopped = false;
+        _dispatcher.Invoke(() =>
+        {
+            if (!CanStartDirectly || !_focusModeService.IsEnabled) return;
+            StopAltongFocus();
+            stopped = !_focusModeService.IsEnabled;
+        });
+        return stopped;
+    }
+
     public void CancelGuidance()
     {
         ThrowIfDisposed();
@@ -172,14 +189,7 @@ public sealed class FocusModeCoordinator : IDisposable
         {
             if (_focusModeService.IsEnabled)
             {
-                try
-                {
-                    NativeControl!.Stop();
-                    _focusModeService.Stop();
-                    SetGuidance(null);
-                }
-                catch (Exception ex) { ShowNativeError(ex); }
-                StateChanged?.Invoke(this, EventArgs.Empty);
+                StopAltongFocus();
             }
             else
             {
@@ -218,6 +228,18 @@ public sealed class FocusModeCoordinator : IDisposable
         {
             NativeControl!.Start();
             _focusModeService.Start();
+            SetGuidance(null);
+        }
+        catch (Exception ex) { ShowNativeError(ex); }
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void StopAltongFocus()
+    {
+        try
+        {
+            NativeControl!.Stop();
+            _focusModeService.Stop();
             SetGuidance(null);
         }
         catch (Exception ex) { ShowNativeError(ex); }

@@ -8,7 +8,7 @@
         Topmost="True" WindowStartupLocation="Manual" WindowStyle="None"
         UseLayoutRounding="True">
     <!--
-        집중 모드가 꺼져 있을 때 화면 상단 가운데에 내려오는 집중 제안 카드.
+        화면 상단 가운데에 내려오는 AutoDND 제안 카드. 집중 진입 제안과 타이머 종료 제안이 같은 카드를 쓴다.
         노치 안내 말풍선(ReminderCard)과 같은 색을 쓴다. 클릭해도 작업 중인 창의 포커스를 가져오지 않는다.
         자동 닫힘 시간은 상태 머신이 정하고, 아래 막대는 남은 시간을 보여 주기만 한다.
     -->
@@ -86,16 +86,14 @@
                     <!-- 노치 렌즈를 닮은 청록 표시등 -->
                     <Ellipse Width="8" Height="8" Margin="0,6,12,0" VerticalAlignment="Top" Fill="#168C82" />
                     <StackPanel Grid.Column="1">
-                        <TextBlock Text="집중 모드를 시작할까요?" FontSize="15" FontWeight="SemiBold" Foreground="#172033" />
-                        <TextBlock x:Name="MessageText" Margin="0,4,0,0" FontSize="12" Foreground="#68758A" TextWrapping="Wrap">
-                            작업에 몰입하고 있는 것 같아요.<LineBreak />켜면 중요한 알림만 보여 드려요.
-                        </TextBlock>
+                        <!-- 문구는 코드에서 제안 종류(진입·타이머 종료)에 맞춰 채운다. -->
+                        <TextBlock x:Name="TitleText" FontSize="15" FontWeight="SemiBold" Foreground="#172033" />
+                        <TextBlock x:Name="MessageText" Margin="0,4,0,0" FontSize="12" Foreground="#68758A" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                            <Button x:Name="AcceptButton" Content="집중 시작" Style="{StaticResource PrimarySuggestionButton}"
-                                    Click="AcceptButton_Click" AutomationProperties.Name="집중 시작" />
-                            <Button x:Name="DeclineButton" Content="나중에" Margin="8,0,0,0" Style="{StaticResource SuggestionButton}"
-                                    Click="DeclineButton_Click" AutomationProperties.Name="나중에"
-                                    AutomationProperties.HelpText="한동안 다시 제안하지 않습니다." />
+                            <Button x:Name="AcceptButton" Style="{StaticResource PrimarySuggestionButton}"
+                                    Click="AcceptButton_Click" />
+                            <Button x:Name="DeclineButton" Margin="8,0,0,0" Style="{StaticResource SuggestionButton}"
+                                    Click="DeclineButton_Click" />
                         </StackPanel>
                     </StackPanel>
                 </Grid>

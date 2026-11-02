@@ -6,9 +6,27 @@ using System.Windows.Media.Animation;
 
 namespace Altong.Client;
 
+/// <summary>제안 카드에 보일 문구.</summary>
+/// <param name="HelpText">거절 버튼을 고르면 어떻게 되는지 화면 읽기 프로그램에 알려 줄 설명.</param>
+public sealed record AutoDndPrompt(string Title, string Message, string AcceptText, string DeclineText, string HelpText)
+{
+    /// <summary>작업을 감지해 집중 모드 진입을 제안한다.</summary>
+    public static AutoDndPrompt Entry { get; } = new(
+        "집중 모드를 시작할까요?",
+        "작업에 몰입하고 있는 것 같아요.\n켜면 중요한 알림만 보여 드려요.",
+        "집중 시작", "나중에", "한동안 다시 제안하지 않습니다.");
+
+    /// <summary>설정한 집중 시간이 끝나 종료를 제안한다. 아무것도 누르지 않으면 집중을 이어 간다.</summary>
+    public static AutoDndPrompt TimerFinished { get; } = new(
+        "설정한 집중 시간이 끝났어요",
+        "집중 모드를 끌까요?\n더 하려면 그대로 두셔도 돼요.",
+        "집중 종료", "계속하기", "집중 모드를 그대로 유지합니다.");
+}
+
 /// <summary>
-/// 집중 모드 진입 제안 카드. 화면 상단 가운데에 내려오고, 포커스를 가져가지 않아 타이핑이 끊기지 않는다.
-/// 언제 띄우고 닫을지는 <see cref="Services.Focus.AutoDndController"/>가 정하고, 이 창은 보여 주기와 버튼 입력만 맡는다.
+/// AutoDND 제안 카드. 화면 상단 가운데에 내려오고, 포커스를 가져가지 않아 타이핑이 끊기지 않는다.
+/// 언제 띄우고 닫을지는 앱(<see cref="Services.Focus.AutoDndController"/>, 집중 타이머)이 정하고,
+/// 이 창은 보여 주기와 버튼 입력만 맡는다.
 /// </summary>
 public partial class AutoDndSuggestionWindow : Window
 {
@@ -32,10 +50,22 @@ public partial class AutoDndSuggestionWindow : Window
         Closed += OnClosed;
     }
 
+    /// <summary>지금 보이고 있거나 마지막으로 보인 제안 문구.</summary>
+    public AutoDndPrompt Prompt { get; private set; } = AutoDndPrompt.Entry;
+
     /// <summary>제안 카드를 보여 준다. <paramref name="timeout"/>은 남은 시간 막대에만 쓴다.</summary>
-    public void Present(TimeSpan timeout)
+    public void Present(TimeSpan timeout, AutoDndPrompt? prompt = null)
     {
         if (_closing) return;
+        Prompt = prompt ?? AutoDndPrompt.Entry;
+        TitleText.Text = Prompt.Title;
+        MessageText.Text = Prompt.Message;
+        AcceptButton.Content = Prompt.AcceptText;
+        DeclineButton.Content = Prompt.DeclineText;
+        System.Windows.Automation.AutomationProperties.SetName(Card, Prompt.Title);
+        System.Windows.Automation.AutomationProperties.SetName(AcceptButton, Prompt.AcceptText);
+        System.Windows.Automation.AutomationProperties.SetName(DeclineButton, Prompt.DeclineText);
+        System.Windows.Automation.AutomationProperties.SetHelpText(DeclineButton, Prompt.HelpText);
         Root.BeginAnimation(OpacityProperty, null);
         SlideTransform.BeginAnimation(TranslateTransform.YProperty, null);
         if (!IsVisible) Show();

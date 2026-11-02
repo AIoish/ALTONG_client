@@ -134,20 +134,43 @@ public sealed class AutoDndControllerTests
     }
 
     [TestMethod]
-    public void SkipsWin32Queries_WhenUnavailableOrInFocus()
+    public void QueriesWin32OnlyWhenNeeded()
     {
         var idle = new Idle(); var fullscreen = new Fullscreen();
         bool available = false, focus = false;
         var controller = new AutoDndController(new Tracker("Code.exe"), idle, fullscreen, () => focus, () => available);
         controller.Tick();
+        Assert.AreEqual(0, idle.Calls, "꺼져 있으면 Win32를 부르지 않는다.");
+        Assert.AreEqual(0, fullscreen.Calls);
+
         available = true; focus = true;
         controller.Tick();
-        Assert.AreEqual(0, idle.Calls);
-        Assert.AreEqual(0, fullscreen.Calls);
+        Assert.AreEqual(1, idle.Calls, "집중 중에도 자리비움 이탈을 위해 입력 유휴는 확인한다.");
+        Assert.AreEqual(0, fullscreen.Calls, "전체화면은 제안할 때만 필요하다.");
 
         focus = false;
         controller.Tick();
-        Assert.AreEqual(1, idle.Calls);
+        Assert.AreEqual(2, idle.Calls);
+        Assert.AreEqual(1, fullscreen.Calls);
+    }
+
+    [TestMethod]
+    public void RaisesAwayExit_ButNotDuringTimerBreak()
+    {
+        var clock = new Clock();
+        var idle = new Idle { Value = TimeSpan.FromMinutes(20) };
+        bool onBreak = true;
+        var controller = new AutoDndController(new Tracker("Code.exe"), idle, new Fullscreen(), () => true, () => true,
+            new AutoDndStateMachine(clock), isOnBreak: () => onBreak);
+        int exits = 0;
+        controller.AwayExitRequested += (_, _) => exits++;
+
+        clock.Advance(); controller.Tick();
+        Assert.AreEqual(0, exits, "타이머 휴식 중 자리비움은 정상이다.");
+
+        onBreak = false;
+        clock.Advance(); controller.Tick();
+        Assert.AreEqual(1, exits);
     }
 
     private sealed class Clock : TimeProvider
@@ -160,7 +183,8 @@ public sealed class AutoDndControllerTests
     private sealed class Idle : IUserIdleDetector
     {
         public int Calls { get; private set; }
-        public TimeSpan GetIdleTime() { Calls++; return TimeSpan.Zero; }
+        public TimeSpan Value { get; set; } = TimeSpan.Zero;
+        public TimeSpan GetIdleTime() { Calls++; return Value; }
     }
 
     private sealed class Fullscreen : IFullscreenDetector

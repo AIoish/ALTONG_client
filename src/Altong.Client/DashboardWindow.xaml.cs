@@ -821,7 +821,7 @@ public partial class DashboardWindow : Window
         AutoDndStatusText.Text = !enabled
             ? "꺼져 있어요. 집중 모드는 직접 켜고 끕니다."
             : _focusModeCoordinator?.CanStartDirectly == true
-                ? "켜져 있어요. [나중에]를 누르면 한동안 묻지 않고, 집중을 마친 뒤 30분은 묻지 않아요."
+                ? "켜져 있어요. [나중에]를 누르면 한동안 묻지 않아요. 집중 중 15분 동안 자리를 비우면 집중을 끝내고, 설정한 집중 시간이 끝나면 종료할지 물어요."
                 : "아래 '알통 자체 제어' 방식에서만 동작해요. 지금은 Windows 방해 금지 방식이라 제안하지 않아요.";
     }
 

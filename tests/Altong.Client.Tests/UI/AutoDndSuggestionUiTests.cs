@@ -82,6 +82,15 @@ public sealed class AutoDndSuggestionUiTests
                 Assert.AreEqual("나중에", decline.Content);
                 Assert.IsFalse(accept.Focusable, "버튼도 키보드 포커스를 가져가지 않는다.");
 
+                // 같은 카드로 타이머 종료를 제안한다.
+                window.Present(TimeSpan.FromSeconds(15), AutoDndPrompt.TimerFinished);
+                Assert.AreEqual(AutoDndPrompt.TimerFinished, window.Prompt);
+                Assert.AreEqual("집중 종료", accept.Content);
+                Assert.AreEqual("계속하기", decline.Content);
+                Assert.AreEqual("설정한 집중 시간이 끝났어요", ((TextBlock)window.FindName("TitleText")).Text);
+                Pump(TimeSpan.FromMilliseconds(260));
+                SavePreview(window, "autodnd-timer-finished.png");
+
                 accept.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 decline.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Assert.AreEqual(1, accepted);

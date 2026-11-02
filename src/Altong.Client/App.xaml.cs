@@ -52,6 +52,9 @@ public partial class App : System.Windows.Application
     {
         Interval = TimeSpan.FromSeconds(1)
     };
+    /// <summary>타이머 종료 제안 카드를 자동으로 닫는 타이머 (무응답이면 집중 유지).</summary>
+    private readonly System.Windows.Threading.DispatcherTimer _timerPromptTimer = new();
+    private AutoDndPromptKind _activePrompt;
     private readonly List<Task> _windowWrites = new();
     private DateTime _lastWindowCheckpointAt = DateTime.MinValue;
     private bool _windowCheckpointInProgress;
@@ -383,7 +386,12 @@ public partial class App : System.Windows.Application
         var enabled = FocusModeService.IsEnabled;
         RunOnUiThread(() =>
         {
-            if (!enabled) _notificationDockWindow?.EndNotificationSession();
+            if (!enabled)
+            {
+                _notificationDockWindow?.EndNotificationSession();
+                // 다른 경로로 집중이 끝났으면 타이머 종료 제안은 더 의미가 없다.
+                CloseTimerPrompt(immediately: true);
+            }
             FocusRoutine.Refresh();
             if (enabled)
             {
@@ -434,11 +442,17 @@ public partial class App : System.Windows.Application
         }
     }
 
-    // ───────────────────────────── AutoDND (작업 감지 후 집중 제안) ─────────────────────────────
+    // ───────────────────────────── AutoDND (작업 맥락 기반 집중 진입·이탈) ─────────────────────────────
+
+    private enum AutoDndPromptKind { None, Entry, TimerFinished }
+
+    private bool IsAutoDndAvailable =>
+        AutoDndSettings.Current.Enabled && _focusModeCoordinator?.CanStartDirectly == true;
 
     /// <summary>
-    /// 작업 앱을 일정 시간 쓰면 상단에 집중 제안 카드를 띄운다. 설정에서 켜져 있고 알통 자체 제어 방식일 때만 동작한다.
-    /// 제안만 하고 스스로 집중을 켜지는 않는다.
+    /// 진입: 작업 앱을 일정 시간 쓰면 상단에 집중 제안 카드를 띄운다(스스로 켜지는 않음).
+    /// 이탈: 집중 중 15분 동안 자리를 비우면 집중을 끝내고, 설정한 집중 시간이 끝나면 종료를 제안한다.
+    /// 설정에서 켜져 있고 알통 자체 제어 방식일 때만 동작한다.
     /// </summary>
     private void StartAutoDnd()
     {
@@ -447,14 +461,18 @@ public partial class App : System.Windows.Application
             new Win32UserIdleDetector(),
             new Win32FullscreenDetector(),
             () => FocusModeService.IsEnabled,
-            () => AutoDndSettings.Current.Enabled && _focusModeCoordinator?.CanStartDirectly == true);
+            () => IsAutoDndAvailable,
+            isOnBreak: () => FocusRoutine.Phase == FocusRoutinePhase.Break);
         _autoDnd.SuggestionRequested += AutoDnd_SuggestionRequested;
         _autoDnd.SuggestionClosed += AutoDnd_SuggestionClosed;
+        _autoDnd.AwayExitRequested += AutoDnd_AwayExitRequested;
 
         _autoDndSuggestionWindow = new AutoDndSuggestionWindow();
         _autoDndSuggestionWindow.Accepted += AutoDndSuggestion_Accepted;
         _autoDndSuggestionWindow.Declined += AutoDndSuggestion_Declined;
 
+        _timerPromptTimer.Interval = _autoDnd.Machine.Options.SuggestionTimeout;
+        _timerPromptTimer.Tick += TimerPromptTimer_Tick;
         _autoDndTimer.Tick += AutoDndTimer_Tick;
         _autoDndTimer.Start();
     }
@@ -463,10 +481,14 @@ public partial class App : System.Windows.Application
     {
         _autoDndTimer.Stop();
         _autoDndTimer.Tick -= AutoDndTimer_Tick;
+        _timerPromptTimer.Stop();
+        _timerPromptTimer.Tick -= TimerPromptTimer_Tick;
+        _activePrompt = AutoDndPromptKind.None;
         if (_autoDnd is not null)
         {
             _autoDnd.SuggestionRequested -= AutoDnd_SuggestionRequested;
             _autoDnd.SuggestionClosed -= AutoDnd_SuggestionClosed;
+            _autoDnd.AwayExitRequested -= AutoDnd_AwayExitRequested;
             _autoDnd = null;
         }
         if (_autoDndSuggestionWindow is not null)
@@ -488,21 +510,78 @@ public partial class App : System.Windows.Application
     private void AutoDnd_SuggestionRequested(object? sender, EventArgs e)
     {
         if (IsShuttingDown || _autoDnd is null) return;
-        _autoDndSuggestionWindow?.Present(_autoDnd.Machine.Options.SuggestionTimeout);
+        _activePrompt = AutoDndPromptKind.Entry;
+        _autoDndSuggestionWindow?.Present(_autoDnd.Machine.Options.SuggestionTimeout, AutoDndPrompt.Entry);
     }
 
-    private void AutoDnd_SuggestionClosed(object? sender, EventArgs e) => _autoDndSuggestionWindow?.Dismiss();
+    private void AutoDnd_SuggestionClosed(object? sender, EventArgs e)
+    {
+        if (_activePrompt != AutoDndPromptKind.Entry) return;
+        _activePrompt = AutoDndPromptKind.None;
+        _autoDndSuggestionWindow?.Dismiss();
+    }
+
+    /// <summary>이탈: 자리를 오래 비웠으니 집중을 끝낸다. 리포트는 돌아왔을 때 화면에 남아 있다.</summary>
+    private void AutoDnd_AwayExitRequested(object? sender, EventArgs e)
+    {
+        if (IsShuttingDown) return;
+        CloseTimerPrompt(immediately: true);
+        if (_focusModeCoordinator?.RequestStop() != true)
+            AppLogger.Info("[AutoDND] 자리비움으로 집중을 끝내려 했지만 끄지 못했습니다.");
+    }
+
+    /// <summary>이탈: 설정한 집중 시간이 끝나면 종료를 제안한다. 아무것도 누르지 않으면 집중을 이어 간다.</summary>
+    private void ShowTimerFinishedPrompt()
+    {
+        if (_autoDndSuggestionWindow is null || _autoDnd is null) return;
+        _activePrompt = AutoDndPromptKind.TimerFinished;
+        _autoDndSuggestionWindow.Present(_timerPromptTimer.Interval, AutoDndPrompt.TimerFinished);
+        _timerPromptTimer.Stop();
+        _timerPromptTimer.Start();
+    }
+
+    private void TimerPromptTimer_Tick(object? sender, EventArgs e) => CloseTimerPrompt(immediately: false);
+
+    private void CloseTimerPrompt(bool immediately)
+    {
+        _timerPromptTimer.Stop();
+        if (_activePrompt != AutoDndPromptKind.TimerFinished) return;
+        _activePrompt = AutoDndPromptKind.None;
+        if (immediately) _autoDndSuggestionWindow?.HideImmediately();
+        else _autoDndSuggestionWindow?.Dismiss();
+    }
 
     private void AutoDndSuggestion_Accepted(object? sender, EventArgs e)
     {
-        // 알통 자체 제어를 켜는 동안 UI 스레드가 몇 초 막히므로, 카드를 먼저 즉시 숨겨 멈춘 채 남지 않게 한다.
-        _autoDndSuggestionWindow?.HideImmediately();
-        if (_autoDnd?.Accept() != true) return;
-        if (_focusModeCoordinator?.RequestStart() != true)
-            AppLogger.Info("[AutoDND] 제안을 수락했지만 집중 모드를 켜지 못했습니다.");
+        // 알통 자체 제어를 켜고 끄는 동안 UI 스레드가 몇 초 막히므로, 카드를 먼저 즉시 숨겨 멈춘 채 남지 않게 한다.
+        switch (_activePrompt)
+        {
+            case AutoDndPromptKind.Entry:
+                _autoDndSuggestionWindow?.HideImmediately();
+                if (_autoDnd?.Accept() != true) return;
+                if (_focusModeCoordinator?.RequestStart() != true)
+                    AppLogger.Info("[AutoDND] 제안을 수락했지만 집중 모드를 켜지 못했습니다.");
+                break;
+
+            case AutoDndPromptKind.TimerFinished:
+                CloseTimerPrompt(immediately: true);
+                _focusModeCoordinator?.RequestStop();
+                break;
+        }
     }
 
-    private void AutoDndSuggestion_Declined(object? sender, EventArgs e) => _autoDnd?.Reject();
+    private void AutoDndSuggestion_Declined(object? sender, EventArgs e)
+    {
+        switch (_activePrompt)
+        {
+            case AutoDndPromptKind.Entry:
+                _autoDnd?.Reject();
+                break;
+            case AutoDndPromptKind.TimerFinished:
+                CloseTimerPrompt(immediately: false);
+                break;
+        }
+    }
 
     private void HideDashboard() => RunOnUiThread(() => _dashboardWindow?.Hide());
 
@@ -593,6 +672,12 @@ public partial class App : System.Windows.Application
                 break;
 
             case FocusRoutinePhase.Completed:
+                // AutoDND가 켜져 있으면 안내 말풍선 대신 [집중 종료] [계속하기] 카드로 종료를 제안한다.
+                if (IsAutoDndAvailable)
+                {
+                    ShowTimerFinishedPrompt();
+                    break;
+                }
                 _notificationDockWindow?.ShowRoutineReminder(
                     "설정한 집중 시간이 끝났어요.",
                     () => FocusRoutine.StatusText,

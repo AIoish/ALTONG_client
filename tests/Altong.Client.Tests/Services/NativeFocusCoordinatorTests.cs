@@ -100,6 +100,37 @@ public sealed class NativeFocusCoordinatorTests
     }
 
     [TestMethod]
+    public void RequestStop_OnlyTurnsFocusOff_NeverTogglesOn()
+    {
+        var focus = new FocusModeService(); var native = new Native();
+        native.SetBackend(FocusControlBackend.Altong);
+        using var coordinator = new FocusModeCoordinator(focus, new Observer(), new Launcher(), new Dispatcher(), native);
+        coordinator.Start();
+
+        Assert.IsFalse(coordinator.RequestStop(), "꺼져 있으면 토글과 달리 켜지 않는다.");
+        Assert.IsFalse(focus.IsEnabled); Assert.IsFalse(native.IsActive);
+
+        coordinator.RequestStart();
+        Assert.IsTrue(coordinator.RequestStop());
+        Assert.IsFalse(focus.IsEnabled); Assert.IsFalse(native.IsActive);
+    }
+
+    [TestMethod]
+    public void RequestStop_DoesNothingOnWindowsBackend()
+    {
+        var focus = new FocusModeService(); var native = new Native(); var launcher = new Launcher(); var observer = new Observer();
+        native.SetBackend(FocusControlBackend.Windows);
+        using var coordinator = new FocusModeCoordinator(focus, observer, launcher, new Dispatcher(), native);
+        coordinator.Start();
+        observer.Change(WindowsNotificationModeKind.AlarmsOnly);
+        Assert.IsTrue(focus.IsEnabled);
+
+        Assert.IsFalse(coordinator.RequestStop(), "Windows 방해 금지는 사용자가 직접 꺼야 한다.");
+        Assert.IsTrue(focus.IsEnabled);
+        Assert.AreEqual(0, launcher.OpenCount);
+    }
+
+    [TestMethod]
     public void GuardianLossRestoresAndEndsSession()
     {
         var focus = new FocusModeService(); var native = new Native();

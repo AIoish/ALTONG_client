@@ -14,7 +14,7 @@ public enum AutoDndState
     Suggesting,
     /// <summary>이번 작업 흐름에서는 이미 제안했으므로 흐름이 끊길 때까지 다시 묻지 않는다.</summary>
     Suppressed,
-    /// <summary>거절했거나 집중을 막 마쳐 일정 시간 묻지 않는다.</summary>
+    /// <summary>[나중에]를 눌러 일정 시간 묻지 않는다.</summary>
     Cooldown,
     /// <summary>집중 모드가 켜져 있다.</summary>
     InFocus,
@@ -26,12 +26,14 @@ public enum AutoDndState
 /// <param name="IsFullscreen">전체화면 앱·프레젠테이션 중인지.</param>
 /// <param name="IsFocusEnabled">집중 모드가 켜져 있는지 (수동·제안 수락 모두).</param>
 /// <param name="IsAvailable">AutoDND 설정이 켜져 있고 Altong 백엔드인지.</param>
+/// <param name="IsOnBreak">집중 타이머의 휴식 시간인지. 휴식 중 자리비움은 정상이라 자동 종료하지 않는다.</param>
 public readonly record struct AutoDndObservation(
     WorkCategory Category,
     TimeSpan IdleTime,
     bool IsFullscreen,
     bool IsFocusEnabled,
-    bool IsAvailable = true);
+    bool IsAvailable = true,
+    bool IsOnBreak = false);
 
 public sealed record AutoDndOptions
 {
@@ -47,10 +49,13 @@ public sealed record AutoDndOptions
     public TimeSpan AwayIdle { get; init; } = TimeSpan.FromSeconds(180);
     /// <summary>배너를 자동으로 닫기까지의 시간.</summary>
     public TimeSpan SuggestionTimeout { get; init; } = TimeSpan.FromSeconds(15);
-    /// <summary>작업이 이만큼 끊기거나 이만큼 자리를 비우면 작업 흐름이 끝난 것으로 보고 다시 제안할 수 있다.</summary>
+    /// <summary>
+    /// 작업이 이만큼 끊기거나 이만큼 자리를 비우면 작업 흐름이 끝난 것(휴식)으로 보고 다시 제안할 수 있다.
+    /// 무응답 뒤와 집중 종료 뒤에 같은 기준을 쓴다.
+    /// </summary>
     public TimeSpan StreakReset { get; init; } = TimeSpan.FromMinutes(5);
-    /// <summary>집중 모드가 꺼진 뒤 제안하지 않는 시간.</summary>
-    public TimeSpan PostSessionCooldown { get; init; } = TimeSpan.FromMinutes(30);
+    /// <summary>집중 중 입력이 이만큼 없으면 자리를 비운 것으로 보고 집중 종료를 요청한다 (타이머 휴식 시간 제외).</summary>
+    public TimeSpan AwayExit { get; init; } = TimeSpan.FromMinutes(15);
     /// <summary>연속 거절 횟수별 제안 금지 시간. 마지막 값을 계속 쓴다.</summary>
     public IReadOnlyList<TimeSpan> RejectionCooldowns { get; init; } =
         [TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(60)];
@@ -64,7 +69,9 @@ public sealed record AutoDndOptions
 /// <item>최근 120초 중 작업 90초 이상, 비작업 15초 미만이면 제안한다. Neutral(카톡·탐색기)은 진행도를 깎지 않는다.</item>
 /// <item>입력이 없거나 전체화면이면 <see cref="AutoDndState.PendingInput"/>으로 미뤘다가 다음 입력 때 제안한다.</item>
 /// <item>무응답(15초)은 거절로 세지 않고, 이번 작업 흐름 동안만 다시 묻지 않는다.</item>
-/// <item>[나중에]는 15→30→60분 쿨다운, 집중 종료 뒤에는 30분 쿨다운.</item>
+/// <item>[나중에]는 15→30→60분 쿨다운.</item>
+/// <item>집중을 끈 뒤 계속 작업하면 묻지 않고, 5분 이상 쉬었다가 다시 작업하면 제안한다.</item>
+/// <item>집중 중 15분 동안 입력이 없으면 <see cref="AwayExitRequested"/>로 종료를 요청한다 (이탈).</item>
 /// </list>
 /// 앱 재시작 시 거절 횟수는 초기화된다.
 /// </summary>
@@ -80,6 +87,7 @@ public sealed class AutoDndStateMachine
     private TimeSpan _work;
     private TimeSpan _leisure;
     private bool _streakSuppressed;
+    private bool _awayExitRequested;
 
     public AutoDndStateMachine(TimeProvider? timeProvider = null, AutoDndOptions? options = null)
     {
@@ -108,6 +116,9 @@ public sealed class AutoDndStateMachine
     /// <summary>상태가 바뀔 때 (이전 상태, 새 상태)로 알린다.</summary>
     public event EventHandler<(AutoDndState Previous, AutoDndState Current)>? StateChanged;
 
+    /// <summary>집중 중 자리를 오래 비워 집중을 끝내야 할 때. 집중 세션 하나에 한 번만 알린다.</summary>
+    public event EventHandler? AwayExitRequested;
+
     /// <summary>약 1초마다 호출해 관찰값을 반영하고 상태를 다시 정한다.</summary>
     public void Update(AutoDndObservation observation)
     {
@@ -126,16 +137,25 @@ public sealed class AutoDndStateMachine
             {
                 ResetTracking();
                 _streakSuppressed = false;
+                _awayExitRequested = false;
             }
             SetState(AutoDndState.InFocus);
+
+            // 이탈: 자리를 오래 비우면 집중을 끝낸다. 타이머 휴식 중 자리비움은 정상이므로 휴식이 끝난 뒤에 판단한다.
+            if (!_awayExitRequested && !observation.IsOnBreak && observation.IdleTime >= _options.AwayExit)
+            {
+                _awayExitRequested = true;
+                AwayExitRequested?.Invoke(this, EventArgs.Empty);
+            }
             return;
         }
 
         if (State == AutoDndState.InFocus)
         {
-            // 쉬려고 껐는데 작업 창이 떠 있다고 곧바로 다시 묻지 않는다.
-            var until = now + _options.PostSessionCooldown;
-            if (until > _cooldownUntil) _cooldownUntil = until;
+            // 집중을 끈 뒤 계속 작업하면 묻지 않는다 (집중 없이 하겠다는 뜻으로 본다).
+            // 5분 이상 쉬었다가 돌아와 다시 작업하면 제안한다. 자리비움으로 끝났다면 이미 쉰 것이라 바로 풀린다.
+            _streakSuppressed = true;
+            _lastWorkAt = now;
         }
 
         bool away = observation.IdleTime >= _options.AwayIdle;
