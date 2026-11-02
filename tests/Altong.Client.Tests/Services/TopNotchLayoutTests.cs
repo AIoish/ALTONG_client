@@ -65,41 +65,56 @@ public sealed class TopNotchLayoutTests
     }
 
     [TestMethod]
-    public void WindowLeft_CentersOnScreenByDefault()
+    public void NotchCenter_StartsInTheMiddleAndStaysOnScreen()
     {
-        Assert.AreEqual((1920 - 360) / 2d, TopNotchLayout.WindowLeft(0, 1920, 360, 0));
+        Assert.AreEqual(960d, TopNotchLayout.NotchCenter(0, 1920, 0));
+        Assert.AreEqual(1200d, TopNotchLayout.NotchCenter(0, 1920, 240));
+        double half = TopNotchLayout.NotchSurfaceWidth / 2;
+        Assert.AreEqual(half, TopNotchLayout.NotchCenter(0, 1920, -5000), .001);
+        Assert.AreEqual(1920 - half, TopNotchLayout.NotchCenter(0, 1920, 5000), .001);
+        Assert.AreEqual(240d, TopNotchLayout.CenterOffset(TopNotchLayout.NotchCenter(0, 1920, 240), 0, 1920), .001);
     }
 
     [TestMethod]
-    public void WindowLeft_KeepsTheWindowOnScreen()
+    public void Window_KeepsItsLeftEdgeAndGrowsDownOnlyWhileThePanelIsShown()
     {
-        Assert.AreEqual(0d, TopNotchLayout.WindowLeft(0, 1920, 360, -5000));
-        Assert.AreEqual(1920d - 360, TopNotchLayout.WindowLeft(0, 1920, 360, 5000));
+        // 상세(목록 왼쪽)까지 담을 만큼 왼쪽을 늘 두어 창의 왼쪽 위가 움직이지 않는다.
+        Assert.AreEqual(TopNotchLayout.PanelWidth / 2 + TopNotchLayout.DetailWidth, TopNotchLayout.WindowLeftExtent);
+        Assert.IsTrue(TopNotchLayout.WindowLeftExtent >= TopNotchLayout.ReminderWidth / 2);
+        Assert.IsTrue(TopNotchLayout.WindowRightExtent >= TopNotchLayout.PanelWidth / 2);
+        Assert.IsTrue(TopNotchLayout.WindowRightExtent >= TopNotchLayout.NotchSurfaceWidth / 2);
+        Assert.AreEqual(TopNotchLayout.WindowHeight, TopNotchLayout.WindowHeightFor(false, 480));
+        Assert.AreEqual(TopNotchLayout.NotchHeight + 480 + 2, TopNotchLayout.WindowHeightFor(true, 480));
+        Assert.AreEqual(TopNotchLayout.WindowHeight, TopNotchLayout.WindowHeightFor(true, 100));
     }
 
     [TestMethod]
-    public void CenterOffset_RoundTripsWithWindowLeft()
+    public void OpenProgress_MorphsTheNotchBeforeRevealingThePanel()
     {
-        double left = TopNotchLayout.WindowLeft(0, 1920, 360, 240);
-        Assert.AreEqual(240d, TopNotchLayout.CenterOffset(left, 0, 1920, 360), .001);
+        Assert.AreEqual(0d, TopNotchLayout.NotchMorph(0));
+        Assert.AreEqual(0d, TopNotchLayout.PanelReveal(0));
+        Assert.AreEqual(1d, TopNotchLayout.NotchMorph(1));
+        Assert.AreEqual(1d, TopNotchLayout.PanelReveal(1));
+        // 패널이 내려오기 시작할 때 노치는 이미 거의 다 넓어져 있다.
+        Assert.AreEqual(0d, TopNotchLayout.PanelReveal(TopNotchLayout.PanelRevealStart));
+        Assert.IsTrue(TopNotchLayout.NotchMorph(TopNotchLayout.PanelRevealStart) > .8);
+        Assert.AreEqual(1d, TopNotchLayout.NotchMorph(TopNotchLayout.NotchMorphSpan));
+        // 두 단계 모두 진행값에 따라 줄어들지 않는다.
+        double previousMorph = 0, previousReveal = 0;
+        for (double progress = 0; progress <= 1.0001; progress += .02)
+        {
+            double morph = TopNotchLayout.NotchMorph(progress), reveal = TopNotchLayout.PanelReveal(progress);
+            Assert.IsTrue(morph >= previousMorph - 1e-9 && reveal >= previousReveal - 1e-9);
+            previousMorph = morph;
+            previousReveal = reveal;
+        }
     }
 
     [TestMethod]
-    public void PanelFlyoutLeft_CentersTheListPanelUnderTheNotch()
+    public void PanelWidth_MatchesThePanelControl()
     {
-        // 목록만 있을 때: 창 332 = 여백 8 + 목록 316 + 여백 8. 목록 가운데가 노치 가운데(960)에 온다.
-        Assert.AreEqual(960d - 166, TopNotchLayout.PanelFlyoutLeft(960, 332, 0, 1920));
-        // 상세가 열리면 창이 왼쪽으로 넓어져도 목록 가운데는 그대로다.
-        Assert.AreEqual(960d - (704 - 8 - 158), TopNotchLayout.PanelFlyoutLeft(960, 704, 0, 1920));
-        // 화면 밖으로 나가면 작업 영역 안으로 민다.
-        Assert.AreEqual(0d, TopNotchLayout.PanelFlyoutLeft(100, 704, 0, 1920));
-        Assert.AreEqual(1920d - 332, TopNotchLayout.PanelFlyoutLeft(1910, 332, 0, 1920));
-    }
-
-    [TestMethod]
-    public void PanelWidth_MatchesTheFlyoutListPanel()
-    {
-        Assert.AreEqual(NotificationFlyoutWindow.NotchListWidth - 2 * TopNotchLayout.FlyoutInset, TopNotchLayout.PanelWidth);
+        Assert.AreEqual(TopNotchLayout.PanelWidth, NotificationPanel.ListWidth);
+        Assert.AreEqual(TopNotchLayout.DetailWidth, NotificationPanel.DetailWidth);
     }
 
     [TestMethod]
@@ -230,9 +245,8 @@ public sealed class TopNotchLayoutTests
         Assert.AreEqual(360.2, TopNotchLayout.NotchSurfaceWidth, .001);
         Assert.IsTrue(TopNotchLayout.NotchBottomWidth < TopNotchLayout.NotchSurfaceWidth);
         Assert.IsTrue(TopNotchLayout.NotchSurfaceWidth <= TopNotchLayout.WindowWidth);
-        // 패널은 노치가 거의 다 넓어진 뒤(넓어지는 시간 안쪽) 펼치기 시작한다.
-        Assert.IsTrue(TopNotchLayout.PanelRevealDelayMilliseconds < TopNotchLayout.OpenMorphMilliseconds);
-        Assert.IsTrue(TopNotchLayout.PanelRevealDelayMilliseconds >= TopNotchLayout.OpenMorphMilliseconds * .6);
+        // 패널은 노치가 다 넓어지기 전(겹치는 구간)부터 내려와 끊김 없이 이어진다.
+        Assert.IsTrue(TopNotchLayout.PanelRevealStart < TopNotchLayout.NotchMorphSpan);
         Assert.IsTrue(TopNotchLayout.NotchSurfaceWidth < TopNotchLayout.WindowWidth);
     }
 }

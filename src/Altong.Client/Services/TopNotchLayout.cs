@@ -14,14 +14,22 @@ public static class TopNotchLayout
     /// <summary>
     /// 노치 위쪽(띠에 닿는 쪽) 전체 폭. 양옆은 짧은 오목 어깨에서 비스듬히 내려와 둥글게 바닥으로 이어진다.
     /// 팀 시안 이미지의 윤곽을 측정해 한쪽당 3차 베지어 2개로 맞춘 값이다(오차 약 0.3px).
-    /// 모양은 NotificationDockWindow.xaml의 TopNotchSurface 경로와 같다.
+    /// 모양은 NotificationDockWindow.xaml의 NotchFace 경로와 같다.
     /// </summary>
     public const double NotchSurfaceWidth = 360.2;
     /// <summary>노치 아래쪽 평평한 부분의 폭.</summary>
     public const double NotchBottomWidth = 235.4;
-    /// <summary>노치 창 크기. 노치 아래 투명 영역은 안내 말풍선 자리이며 클릭은 아래 앱으로 전달된다.</summary>
+    /// <summary>
+    /// 노치 가운데를 기준으로 한 닫힌 노치·안내 말풍선 영역의 폭과, 패널이 닫혀 있을 때의 창 높이.
+    /// 노치 아래 투명 영역은 안내 말풍선(그림자 포함) 자리이며 클릭은 아래 앱으로 전달된다.
+    /// 실제 창 폭은 <see cref="WindowLeftExtent"/> + <see cref="WindowRightExtent"/>이고 높이는 <see cref="WindowHeightFor"/>다.
+    /// </summary>
     public const double WindowWidth = 420;
-    public const double WindowHeight = 168;
+    public const double WindowHeight = 190;
+    /// <summary>안내 말풍선 크기. 노치 바로 아래 가운데에 둔다.</summary>
+    public const double ReminderWidth = 344;
+    public const double ReminderHeight = 122;
+    public const double ReminderTop = NotchHeight + 4;
 
     public const string BlackBand = "#000000";
     /// <summary>바탕화면 그림 위쪽 중 평균색을 낼 높이의 비율.</summary>
@@ -58,37 +66,70 @@ public static class TopNotchLayout
     /// <summary>띠 높이를 모니터 배율에 맞춘 물리 픽셀로 바꾼다.</summary>
     public static int BandHeightPixels(double dpiScaleY) => (int)Math.Round(BandHeight * Math.Max(1, dpiScaleY));
 
-    /// <summary>노치 창의 왼쪽 위치. 화면 가운데에서 좌우로 옮긴 거리를 더하고 화면 안으로 제한한다.</summary>
-    public static double WindowLeft(double screenLeft, double screenWidth, double windowWidth, double centerOffset)
+    /// <summary>
+    /// 노치 가운데의 화면 x 좌표. 화면 가운데에서 좌우로 옮긴 거리를 더하고, 노치가 화면 밖으로 나가지 않게 제한한다.
+    /// </summary>
+    public static double NotchCenter(double screenLeft, double screenWidth, double centerOffset)
     {
-        double centered = screenLeft + (screenWidth - windowWidth) / 2 + centerOffset;
-        return Math.Clamp(centered, screenLeft, Math.Max(screenLeft, screenLeft + screenWidth - windowWidth));
+        double half = NotchSurfaceWidth / 2;
+        double center = screenLeft + screenWidth / 2 + centerOffset;
+        return Math.Clamp(center, screenLeft + half, Math.Max(screenLeft + half, screenLeft + screenWidth - half));
     }
 
-    /// <summary>창 위치를 화면 가운데에서 옮긴 거리로 바꾼다. 작업 영역이 바뀌어도 같은 거리를 유지한다.</summary>
-    public static double CenterOffset(double windowLeft, double screenLeft, double screenWidth, double windowWidth) =>
-        windowLeft - (screenLeft + (screenWidth - windowWidth) / 2);
+    /// <summary>노치 가운데 위치를 화면 가운데에서 옮긴 거리로 바꾼다. 작업 영역이 바뀌어도 같은 거리를 유지한다.</summary>
+    public static double CenterOffset(double notchCenter, double screenLeft, double screenWidth) =>
+        notchCenter - (screenLeft + screenWidth / 2);
 
-    /// <summary>알림 목록 패널의 폭. 패널이 열리면 노치 바닥이 이 폭까지 넓어져 패널과 한 덩어리로 이어진다.</summary>
+    /// <summary>누른 뒤 이만큼 움직였으면 클릭이 아니라 끌기로 본다.</summary>
+    public static bool IsDrag(double horizontalDelta, double verticalDelta, double horizontalThreshold, double verticalThreshold) =>
+        Math.Abs(horizontalDelta) >= horizontalThreshold || Math.Abs(verticalDelta) >= verticalThreshold;
+
+    /// <summary>알림 목록 영역의 폭. 패널이 열리면 노치 바닥이 이 폭까지 넓어져 패널과 한 덩어리로 이어진다.</summary>
     public const double PanelWidth = 316;
-    /// <summary>알림 패널 창의 투명 여백. 패널 카드는 창 안쪽으로 이만큼 들어가 있다.</summary>
-    public const double FlyoutInset = 8;
-    /// <summary>패널이 열릴 때 노치 바닥이 패널 폭까지 넓어지는 시간.</summary>
-    public const int OpenMorphMilliseconds = 160;
-    /// <summary>패널을 펼치기 시작하는 시점. 노치가 거의 다 넓어진 뒤라 좁은 노치 아래 넓은 패널이 보이지 않는다.</summary>
-    public const int PanelRevealDelayMilliseconds = 120;
-    /// <summary>패널이 위에서 아래로 펼쳐지는 시간.</summary>
-    public const int PanelRevealMilliseconds = 260;
-    /// <summary>노치와 패널 사이 이음매가 보이지 않도록 패널을 노치 바닥에 겹치는 양.</summary>
-    public const double PanelOverlap = 1;
+    /// <summary>상세 영역의 폭. 목록 왼쪽에 붙는다.</summary>
+    public const double DetailWidth = 372;
+    /// <summary>패널 최대 높이와 아래쪽 모서리 반지름.</summary>
+    public const double PanelMaxHeight = 480;
+    public const double PanelCornerRadius = 16;
+    /// <summary>패널 아래쪽과 작업 영역 끝 사이 최소 간격.</summary>
+    public const double PanelBottomMargin = 8;
+
+    /// <summary>패널을 여는 전체 시간과 닫는 시간. 노치가 넓어지는 단계와 패널이 내려오는 단계를 하나의 진행값으로 묶는다.</summary>
+    public const int OpenMilliseconds = 400;
+    public const int CloseMilliseconds = 260;
+    /// <summary>열기 진행값 중 노치가 넓어지는 구간(0~이 값).</summary>
+    public const double NotchMorphSpan = .42;
+    /// <summary>열기 진행값 중 패널이 내려오기 시작하는 지점. 노치가 거의 다 넓어진 뒤다.</summary>
+    public const double PanelRevealStart = .32;
+
+    /// <summary>열기 진행값(0~1)에서 노치가 넓어진 정도. 천천히 시작해 천천히 끝난다.</summary>
+    public static double NotchMorph(double openProgress)
+    {
+        double t = Math.Clamp(openProgress / NotchMorphSpan, 0, 1);
+        return t < .5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2;
+    }
+
+    /// <summary>열기 진행값(0~1)에서 패널이 내려온 비율. 처음에 빠르고 끝에서 길게 감속한다.</summary>
+    public static double PanelReveal(double openProgress)
+    {
+        double t = Math.Clamp((openProgress - PanelRevealStart) / (1 - PanelRevealStart), 0, 1);
+        return 1 - Math.Pow(1 - t, 4);
+    }
 
     /// <summary>
-    /// 패널 창의 왼쪽 위치. 목록 패널(창 오른쪽 끝)의 가운데를 노치 가운데에 맞춘다. 상세가 열리면 왼쪽으로 넓어진다.
-    /// 화면 밖으로 나가면 작업 영역 안으로 민다.
+    /// 노치 창이 노치 가운데에서 왼쪽·오른쪽으로 차지하는 폭. 상세(목록 왼쪽)까지 담을 수 있게 왼쪽을 늘 넉넉히 둔다.
+    /// 창의 왼쪽 위 모서리가 움직이지 않아, 패널을 열고 닫거나 상세를 열 때 창 크기가 바뀌어도
+    /// 이전 화면이 어긋난 위치에 잠깐 찍히지 않는다. 투명한 부분의 클릭은 아래 앱으로 전달된다.
     /// </summary>
-    public static double PanelFlyoutLeft(double notchCenterX, double flyoutWidth, double workLeft, double workRight) =>
-        Math.Clamp(notchCenterX - (flyoutWidth - FlyoutInset - PanelWidth / 2),
-            workLeft, Math.Max(workLeft, workRight - flyoutWidth));
+    public const double WindowLeftExtent = PanelWidth / 2 + DetailWidth;
+    public const double WindowRightExtent = WindowWidth / 2;
+
+    /// <summary>
+    /// 노치 창 높이. 패널이 보이는 동안에만 패널을 담을 만큼 아래로 늘린다(위쪽은 그대로).
+    /// 투명 창은 크기에 비례해 그리는 비용이 들기 때문에 닫혀 있을 때는 안내 말풍선 자리만 둔다.
+    /// </summary>
+    public static double WindowHeightFor(bool panelShown, double panelHeight) =>
+        panelShown ? Math.Max(WindowHeight, NotchHeight + panelHeight + 2) : WindowHeight;
 
     /// <summary>닫힌 노치의 왼쪽 옆선 제어점(노치 왼쪽 위 기준). 3차 베지어 두 개: 0→3, 3→6.</summary>
     private static readonly (double X, double Y)[] ClosedLeftSide =
