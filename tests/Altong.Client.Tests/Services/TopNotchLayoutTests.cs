@@ -111,6 +111,23 @@ public sealed class TopNotchLayoutTests
     }
 
     [TestMethod]
+    public void AlertRipple_PlaysOncePerBurst_AndNotWhileReadingOrFullscreen()
+    {
+        var start = new DateTime(2026, 11, 2, 9, 0, 0, DateTimeKind.Utc);
+        Assert.IsTrue(TopNotchLayout.ShouldPlayAlertRipple(start, DateTime.MinValue, true, false, false));
+        // 연달아 온 알림은 5초 안에 다시 흐르지 않는다.
+        Assert.IsFalse(TopNotchLayout.ShouldPlayAlertRipple(start.AddSeconds(2), start, true, false, false));
+        Assert.IsTrue(TopNotchLayout.ShouldPlayAlertRipple(start.AddSeconds(5), start, true, false, false));
+        // 패널을 열어 읽는 중, 전체화면, 노치가 숨겨진 동안에는 생략한다.
+        Assert.IsFalse(TopNotchLayout.ShouldPlayAlertRipple(start, DateTime.MinValue, true, true, false));
+        Assert.IsFalse(TopNotchLayout.ShouldPlayAlertRipple(start, DateTime.MinValue, true, false, true));
+        Assert.IsFalse(TopNotchLayout.ShouldPlayAlertRipple(start, DateTime.MinValue, false, false, false));
+        // 알림(선셋)과 켜짐(민트)은 색으로 구분되고, 알림이 더 빨리 지나간다.
+        Assert.AreNotEqual(TopNotchLayout.ActivationRipple, TopNotchLayout.AlertRipple);
+        Assert.IsTrue(TopNotchLayout.AlertRippleMilliseconds < TopNotchLayout.ActivationRippleMilliseconds);
+    }
+
+    [TestMethod]
     public void PanelWidth_MatchesThePanelControl()
     {
         Assert.AreEqual(TopNotchLayout.PanelWidth, NotificationPanel.ListWidth);

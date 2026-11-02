@@ -43,6 +43,7 @@ public partial class NotificationDockWindow : Window
     private double _notchCenterOffset;
     private bool _fullscreenSuppressed;
     private DateTime _topNotchActivatedAt = DateTime.MinValue;
+    private DateTime _lastAlertRippleAt = DateTime.MinValue;
     private double? _openTarget;
     private bool _panelShown;
     private bool _detailShown;
@@ -124,8 +125,11 @@ public partial class NotificationDockWindow : Window
     public void ReceiveNotification(NotificationRecord notification)
     {
         if (_isClosed) return;
-        if (_panelShown && IsVisible) _panel.PreserveScrollPosition(() => _notifications.Receive(notification));
-        else _notifications.Receive(notification);
+        bool added = false;
+        if (_panelShown && IsVisible) _panel.PreserveScrollPosition(() => added = _notifications.Receive(notification));
+        else added = _notifications.Receive(notification);
+        // 목록에는 필터를 통과한 알림만 들어온다. 새로 들어왔으면 노치에 선셋 일렁임을 한 번 흘려 알린다.
+        if (added) PlayAlertRipple();
     }
 
     // ───────────────────────────── 위치·모양 ─────────────────────────────
@@ -470,16 +474,37 @@ public partial class NotificationDockWindow : Window
     /// <summary>
     /// 켜짐 효과(일렁임). 청록·라벤더 색 물결이 노치 안을 왼쪽에서 오른쪽으로 약 3.5초에 한 번 천천히 흐르고,
     /// 끝나면 원래 검은 노치로 돌아온다. 반복하지 않으며 Windows 애니메이션 효과가 꺼져 있으면 생략한다.
+    /// 휴식 시작 등 안내 말풍선을 띄울 때도 같은 효과를 쓴다.
     /// </summary>
     public void PlayActivationAnimation()
     {
         _topNotchActivatedAt = Clock();
+        PlayRipple(TopNotchLayout.ActivationRipple, TopNotchLayout.ActivationRippleMilliseconds);
+    }
+
+    /// <summary>
+    /// 통과한 알림이 왔을 때의 일렁임(선셋). 약 1.8초에 빠르게 한 번 흐른다. 패널을 열어 읽는 중이거나 전체화면이면 생략하고,
+    /// 알림이 연달아 오면 5초 안에는 다시 재생하지 않는다.
+    /// </summary>
+    private void PlayAlertRipple()
+    {
+        var now = Clock();
+        if (!TopNotchLayout.ShouldPlayAlertRipple(now, _lastAlertRippleAt, IsVisible, _notifications.IsPanelOpen, _fullscreenSuppressed))
+            return;
+        _lastAlertRippleAt = now;
+        PlayRipple(TopNotchLayout.AlertRipple, TopNotchLayout.AlertRippleMilliseconds);
+    }
+
+    /// <summary>주어진 색으로 일렁임을 한 번 재생한다. 진행 중인 일렁임은 새 것으로 바꾼다.</summary>
+    private void PlayRipple((string Left, string Middle, string Right) colors, int milliseconds)
+    {
         TopNotchRipple.BeginAnimation(OpacityProperty, null);
         TopNotchRippleMove.BeginAnimation(TranslateTransform.XProperty, null);
         TopNotchRipple.Opacity = 0;
         if (!SystemParameters.ClientAreaAnimation || _fullscreenSuppressed) return;
+        SetRippleColors(colors);
 
-        var duration = TimeSpan.FromMilliseconds(3500);
+        var duration = TimeSpan.FromMilliseconds(milliseconds);
         TopNotchRippleMove.BeginAnimation(TranslateTransform.XProperty,
             new DoubleAnimation(-1, 1, duration)
             {
@@ -491,6 +516,22 @@ public partial class NotificationDockWindow : Window
         fade.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromPercent(.8)));
         fade.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromPercent(1)));
         TopNotchRipple.BeginAnimation(OpacityProperty, fade.AtDisplayRate());
+    }
+
+    /// <summary>일렁임 색을 바꾼다. 양 끝은 투명, 가운데 세 색은 불투명도 약 44%다.</summary>
+    private void SetRippleColors((string Left, string Middle, string Right) colors)
+    {
+        static Color Tint(string hex, byte alpha)
+        {
+            var color = (Color)ColorConverter.ConvertFromString(hex);
+            color.A = alpha;
+            return color;
+        }
+        RippleStopStart.Color = Tint(colors.Left, 0);
+        RippleStopLeft.Color = Tint(colors.Left, 0x70);
+        RippleStopMiddle.Color = Tint(colors.Middle, 0x70);
+        RippleStopRight.Color = Tint(colors.Right, 0x70);
+        RippleStopEnd.Color = Tint(colors.Right, 0);
     }
 
     private void PlayClickFeedback()

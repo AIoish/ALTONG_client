@@ -88,6 +88,26 @@ public static class TopNotchLayout
     public const double PanelWidth = 316;
     /// <summary>상세 영역의 폭. 목록 왼쪽에 붙는다.</summary>
     public const double DetailWidth = 372;
+    /// <summary>집중을 켤 때 흐르는 일렁임 색(민트: 청록·라벤더·청록). 노치 표시등과 같은 계열이다.</summary>
+    public static readonly (string Left, string Middle, string Right) ActivationRipple = ("#72B5A6", "#A99BE0", "#72B5A6");
+    /// <summary>
+    /// 통과한 알림이 왔을 때 흐르는 일렁임 색(선셋: 코랄·핑크·호박색). 알통에서 따뜻한 색은 긴급·중요 알림을 뜻하므로
+    /// 집중 시작(민트)과 색만으로 구분된다.
+    /// </summary>
+    public static readonly (string Left, string Middle, string Right) AlertRipple = ("#FF8B6B", "#FF6FA8", "#FFC36B");
+    /// <summary>켜짐 일렁임(천천히)과 알림 일렁임(빠르게)의 길이.</summary>
+    public const int ActivationRippleMilliseconds = 3500;
+    public const int AlertRippleMilliseconds = 1800;
+    /// <summary>알림이 연달아 와도 이 간격 안에는 알림 일렁임을 다시 재생하지 않는다(반복 깜빡임 방지).</summary>
+    public static readonly TimeSpan AlertRippleCooldown = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// 통과한 알림이 왔을 때 알림 일렁임을 재생할지. 노치가 보이고, 패널을 열어 읽고 있지 않으며, 전체화면이 아니고,
+    /// 직전 알림 일렁임에서 <see cref="AlertRippleCooldown"/>이 지났을 때만 재생한다.
+    /// </summary>
+    public static bool ShouldPlayAlertRipple(DateTime now, DateTime lastAlert, bool notchVisible, bool panelOpen, bool fullscreen) =>
+        notchVisible && !panelOpen && !fullscreen && now - lastAlert >= AlertRippleCooldown;
+
     /// <summary>패널 최대 높이와 아래쪽 모서리 반지름.</summary>
     public const double PanelMaxHeight = 480;
     public const double PanelCornerRadius = 16;

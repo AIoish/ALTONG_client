@@ -24,8 +24,9 @@
             <Path.RenderTransform><ScaleTransform x:Name="TopNotchClickScale" /></Path.RenderTransform>
         </Path>
         <!--
-            닫힌 노치 영역의 표시등과 켜짐 효과(일렁임). 노치 모양으로 잘라 그린다.
-            일렁임: 청록·라벤더 색 물결이 노치 안을 천천히 한 번 흐른다. 양 끝은 투명, 가운데는 불투명도 약 44%.
+            닫힌 노치 영역의 표시등과 일렁임. 노치 모양으로 잘라 그린다.
+            일렁임은 색 물결이 노치 안을 한 번 흐르는 효과다. 양 끝은 투명, 가운데는 불투명도 약 44%.
+            집중을 켤 때는 청록·라벤더(민트), 통과한 알림이 오면 코랄·핑크·호박색(선셋)으로 코드에서 색을 바꾼다.
         -->
         <Grid x:Name="NotchFace" Width="360.2" Height="30" IsHitTestVisible="False">
             <Grid.Clip>
@@ -37,11 +38,11 @@
                         <LinearGradientBrush.RelativeTransform>
                             <TranslateTransform x:Name="TopNotchRippleMove" X="-1" />
                         </LinearGradientBrush.RelativeTransform>
-                        <GradientStop Color="#0072B5A6" Offset="0" />
-                        <GradientStop Color="#7072B5A6" Offset=".3" />
-                        <GradientStop Color="#70A99BE0" Offset=".5" />
-                        <GradientStop Color="#7072B5A6" Offset=".7" />
-                        <GradientStop Color="#0072B5A6" Offset="1" />
+                        <GradientStop x:Name="RippleStopStart" Color="#0072B5A6" Offset="0" />
+                        <GradientStop x:Name="RippleStopLeft" Color="#7072B5A6" Offset=".3" />
+                        <GradientStop x:Name="RippleStopMiddle" Color="#70A99BE0" Offset=".5" />
+                        <GradientStop x:Name="RippleStopRight" Color="#7072B5A6" Offset=".7" />
+                        <GradientStop x:Name="RippleStopEnd" Color="#0072B5A6" Offset="1" />
                     </LinearGradientBrush>
                 </Rectangle.Fill>
             </Rectangle>
