@@ -77,6 +77,8 @@ public sealed class TopNotchPresentationTests
                 dock.BeginNotificationSession("ui");
                 dock.ReceiveNotification(Record("first", 5));
                 state.OpenPanel();
+                // 실제 마우스가 노치 밖에 있으면 0.3초 뒤 자동으로 닫히므로, 마우스 위치와 상관없게 고정해 둔다.
+                state.TogglePin();
                 Assert.IsTrue(dock.IsPanelShown, "패널을 열면 같은 창 안에 패널을 보인다.");
                 Assert.AreEqual(0, dock.OwnedWindows.Count, "패널은 별도 창이 아니다.");
                 PumpUntil(() => dock.TopNotchOpenProgress >= 1);
