@@ -81,7 +81,7 @@
 
 > 작업 맥락을 보고 집중 모드 **진입을 제안**하고, 자리를 비우거나 설정한 시간이 끝나면 **이탈**을 돕습니다. 진입은 스스로 켜지 않고 제안만 합니다. 설계 배경과 미룬 아이디어는 [ROADMAP.md](ROADMAP.md)의 보류 항목을 참고하세요.
 
-- **동작 조건:** 대시보드 설정의 **자동 집중 관리**가 켜져 있고(기본 켜짐), 집중 제어 방식이 **알통 자체 제어**일 때만 동작합니다. Windows 방해 금지 방식은 켜고 끄는 API가 없어 동작하지 않습니다. 설정은 체크하는 즉시 `%LOCALAPPDATA%/Altong/auto-dnd-settings.json`에 저장됩니다.
+- **동작 조건:** 대시보드 설정의 **자동 집중 관리**가 켜져 있고(기본 켜짐), 집중 제어 방식이 **알통 자체 제어**이고 제어할 앱이 하나 이상 있을 때만 동작합니다. Windows 방해 금지 방식은 켜고 끄는 API가 없어 동작하지 않고, 알통 자체 제어가 검증되지 않은 Windows 빌드에서는 제어 가능한 앱 목록이 비어 있어 동작하지 않습니다. 설정은 체크하는 즉시 `%LOCALAPPDATA%/Altong/auto-dnd-settings.json`에 저장됩니다.
 - **앱 분류:** 프로세스 이름만으로 나눕니다(`WorkContextClassifier`). 창 제목은 보지 않고, AutoDND 로그에도 남기지 않습니다.
   - 작업: VS Code·Visual Studio·Antigravity·JetBrains IDE·터미널, Office·한글·Notion·Obsidian, Figma·Adobe·AutoCAD 등
   - 중립(진행도를 쌓지도 깎지도 않음): 탐색기·설정, 카카오톡·Discord·Slack·Teams·Zoom, Spotify, 브라우저·PDF 뷰어, 목록에 없는 앱

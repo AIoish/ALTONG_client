@@ -100,6 +100,20 @@ public sealed class NativeFocusCoordinatorTests
     }
 
     [TestMethod]
+    public void HasControllableApps_RequiresAnEligibleSelectedSender()
+    {
+        var native = new Native();
+        using var coordinator = new FocusModeCoordinator(new FocusModeService(), new Observer(), new Launcher(), new Dispatcher(), native);
+        Assert.IsFalse(coordinator.HasControllableApps, "검증되지 않은 Windows 빌드에서는 앱 목록이 비어 있다.");
+
+        native.Senders = [new("Slack", "Slack", null), new("Windows.Defender", "보안", "보호됨")];
+        Assert.IsTrue(coordinator.HasControllableApps);
+
+        native.Excluded.Add("Slack");
+        Assert.IsFalse(coordinator.HasControllableApps, "사용자가 모든 앱을 뺐으면 제어할 앱이 없다.");
+    }
+
+    [TestMethod]
     public void RequestStop_OnlyTurnsFocusOff_NeverTogglesOn()
     {
         var focus = new FocusModeService(); var native = new Native();
@@ -242,8 +256,9 @@ public sealed class NativeFocusCoordinatorTests
         public bool IsActive { get; private set; }
         public string Status => "test";
         public FocusControlBackend Backend { get; private set; }
-        public IReadOnlyList<NotificationSender> Senders => [];
-        public bool IsSelected(string id) => true;
+        public IReadOnlyList<NotificationSender> Senders { get; set; } = [];
+        public HashSet<string> Excluded { get; } = [];
+        public bool IsSelected(string id) => !Excluded.Contains(id);
         public void SetSelected(string id, bool selected) { }
         public void SetBackend(FocusControlBackend backend) => Backend = backend;
         public void Refresh() { }

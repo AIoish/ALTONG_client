@@ -468,7 +468,8 @@ public partial class App : System.Windows.Application
     private enum AutoDndPromptKind { None, Entry, TimerFinished }
 
     private bool IsAutoDndAvailable =>
-        AutoDndSettings.Current.Enabled && _focusModeCoordinator?.CanStartDirectly == true;
+        AutoDndSettings.Current.Enabled
+        && _focusModeCoordinator is { CanStartDirectly: true, HasControllableApps: true };
 
     /// <summary>
     /// 진입: 작업 앱을 일정 시간 쓰면 상단에 집중 제안 카드를 띄운다(스스로 켜지는 않음).

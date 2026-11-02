@@ -61,6 +61,13 @@ public sealed class FocusModeCoordinator : IDisposable
     public bool CanStartDirectly => Backend == FocusControlBackend.Altong && NativeControl is not null;
 
     /// <summary>
+    /// 알통 자체 제어로 실제로 제어할 앱이 하나 이상 있는지. 검증되지 않은 Windows 빌드에서는 앱 목록이 비어 있고,
+    /// 사용자가 모든 앱을 뺐을 때도 false다. 이때 켜기를 시도하면 오류 안내만 뜨므로 자동 제안을 하지 않는다.
+    /// </summary>
+    public bool HasControllableApps =>
+        NativeControl is { } control && control.Senders.Any(s => s.IsEligible && control.IsSelected(s.Id));
+
+    /// <summary>
     /// 집중 모드를 켜기만 한다. 이미 켜져 있으면 아무것도 하지 않아 토글처럼 반대로 꺼지는 일이 없다.
     /// 알통 자체 제어 방식에서만 동작하며, 켰으면 true를 돌려준다.
     /// </summary>
