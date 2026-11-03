@@ -55,6 +55,96 @@ public sealed class NativeFocusCoordinatorTests
     }
 
     [TestMethod]
+    public void RequestStart_OnlyTurnsFocusOn_NeverTogglesOff()
+    {
+        var focus = new FocusModeService(); var native = new Native(); var launcher = new Launcher();
+        native.SetBackend(FocusControlBackend.Altong);
+        using var coordinator = new FocusModeCoordinator(focus, new Observer(), launcher, new Dispatcher(), native);
+        coordinator.Start();
+        Assert.IsTrue(coordinator.CanStartDirectly);
+
+        Assert.IsTrue(coordinator.RequestStart());
+        Assert.IsTrue(focus.IsEnabled); Assert.IsTrue(native.IsActive);
+
+        // 이미 켜져 있으면 토글과 달리 끄지 않는다.
+        Assert.IsFalse(coordinator.RequestStart());
+        Assert.IsTrue(focus.IsEnabled); Assert.IsTrue(native.IsActive);
+        Assert.AreEqual(0, launcher.OpenCount);
+    }
+
+    [TestMethod]
+    public void RequestStart_DoesNothingOnWindowsBackend()
+    {
+        var focus = new FocusModeService(); var native = new Native(); var launcher = new Launcher();
+        native.SetBackend(FocusControlBackend.Windows);
+        using var coordinator = new FocusModeCoordinator(focus, new Observer(), launcher, new Dispatcher(), native);
+        coordinator.Start();
+
+        Assert.IsFalse(coordinator.CanStartDirectly);
+        Assert.IsFalse(coordinator.RequestStart());
+        Assert.IsFalse(focus.IsEnabled);
+        Assert.AreEqual(0, launcher.OpenCount, "AutoDND 수락으로 Windows 설정 창을 열지 않는다.");
+    }
+
+    [TestMethod]
+    public void RequestStart_ReportsFailureWhenNativeApplyFails()
+    {
+        var focus = new FocusModeService(); var native = new Native { Fail = true };
+        native.SetBackend(FocusControlBackend.Altong);
+        using var coordinator = new FocusModeCoordinator(focus, new Observer(), new Launcher(), new Dispatcher(), native);
+        coordinator.Start();
+
+        Assert.IsFalse(coordinator.RequestStart());
+        Assert.IsFalse(focus.IsEnabled);
+        Assert.IsNotNull(coordinator.Guidance);
+    }
+
+    [TestMethod]
+    public void HasControllableApps_RequiresAnEligibleSelectedSender()
+    {
+        var native = new Native();
+        using var coordinator = new FocusModeCoordinator(new FocusModeService(), new Observer(), new Launcher(), new Dispatcher(), native);
+        Assert.IsFalse(coordinator.HasControllableApps, "검증되지 않은 Windows 빌드에서는 앱 목록이 비어 있다.");
+
+        native.Senders = [new("Slack", "Slack", null), new("Windows.Defender", "보안", "보호됨")];
+        Assert.IsTrue(coordinator.HasControllableApps);
+
+        native.Excluded.Add("Slack");
+        Assert.IsFalse(coordinator.HasControllableApps, "사용자가 모든 앱을 뺐으면 제어할 앱이 없다.");
+    }
+
+    [TestMethod]
+    public void RequestStop_OnlyTurnsFocusOff_NeverTogglesOn()
+    {
+        var focus = new FocusModeService(); var native = new Native();
+        native.SetBackend(FocusControlBackend.Altong);
+        using var coordinator = new FocusModeCoordinator(focus, new Observer(), new Launcher(), new Dispatcher(), native);
+        coordinator.Start();
+
+        Assert.IsFalse(coordinator.RequestStop(), "꺼져 있으면 토글과 달리 켜지 않는다.");
+        Assert.IsFalse(focus.IsEnabled); Assert.IsFalse(native.IsActive);
+
+        coordinator.RequestStart();
+        Assert.IsTrue(coordinator.RequestStop());
+        Assert.IsFalse(focus.IsEnabled); Assert.IsFalse(native.IsActive);
+    }
+
+    [TestMethod]
+    public void RequestStop_DoesNothingOnWindowsBackend()
+    {
+        var focus = new FocusModeService(); var native = new Native(); var launcher = new Launcher(); var observer = new Observer();
+        native.SetBackend(FocusControlBackend.Windows);
+        using var coordinator = new FocusModeCoordinator(focus, observer, launcher, new Dispatcher(), native);
+        coordinator.Start();
+        observer.Change(WindowsNotificationModeKind.AlarmsOnly);
+        Assert.IsTrue(focus.IsEnabled);
+
+        Assert.IsFalse(coordinator.RequestStop(), "Windows 방해 금지는 사용자가 직접 꺼야 한다.");
+        Assert.IsTrue(focus.IsEnabled);
+        Assert.AreEqual(0, launcher.OpenCount);
+    }
+
+    [TestMethod]
     public void GuardianLossRestoresAndEndsSession()
     {
         var focus = new FocusModeService(); var native = new Native();
@@ -166,8 +256,9 @@ public sealed class NativeFocusCoordinatorTests
         public bool IsActive { get; private set; }
         public string Status => "test";
         public FocusControlBackend Backend { get; private set; }
-        public IReadOnlyList<NotificationSender> Senders => [];
-        public bool IsSelected(string id) => true;
+        public IReadOnlyList<NotificationSender> Senders { get; set; } = [];
+        public HashSet<string> Excluded { get; } = [];
+        public bool IsSelected(string id) => !Excluded.Contains(id);
         public void SetSelected(string id, bool selected) { }
         public void SetBackend(FocusControlBackend backend) => Backend = backend;
         public void Refresh() { }
