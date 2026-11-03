@@ -25,6 +25,17 @@ public interface INotificationSenderSettings
     void SetBanner(string id, int value);
     void SetSound(string id, string value);
     void RestoreRegistry(string id, bool sound, RegistrySetting value);
+    /// <summary>
+    /// 켜기·끄기처럼 여러 발신자를 연달아 다루는 동안 비싼 연결(COM 서버)을 한 번만 열어 함께 쓰게 한다.
+    /// 돌려준 값을 Dispose하면 연결을 놓는다. 기본 구현은 아무것도 하지 않는다.
+    /// </summary>
+    IDisposable BeginBatch() => NoBatch.Instance;
+}
+
+internal sealed class NoBatch : IDisposable
+{
+    public static readonly NoBatch Instance = new();
+    public void Dispose() { }
 }
 
 public static class NotificationSenderPolicy

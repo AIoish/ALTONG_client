@@ -24,6 +24,14 @@ public sealed class NotificationSuppressionTransaction
     private readonly string _mutexName;
     public bool HasPendingRecovery => File.Exists(_path);
 
+    /// <summary>남은 복구 파일이 이 토큰의 것인지. 읽지 못하면 안전하게 그렇다고 본다(감시를 남겨 둔다).</summary>
+    public bool HasPendingRecoveryFor(string token)
+    {
+        if (!HasPendingRecovery) return false;
+        try { return JsonSerializer.Deserialize<NotificationRecoveryJournal>(File.ReadAllText(_path))?.Token == token; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return true; }
+    }
+
     public NotificationSuppressionTransaction(INotificationSenderSettings settings, string? journalPath = null)
     {
         _settings = settings;
@@ -31,19 +39,33 @@ public sealed class NotificationSuppressionTransaction
         _mutexName = "Local\\Altong.NotificationRecovery." + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(_path.ToUpperInvariant())))[..24];
     }
 
-    public int Begin(IEnumerable<string> selected, Action<NotificationRecoveryJournal> startGuardian)
+    /// <param name="senders">
+    /// 호출자가 방금 조회한 발신자 목록. 주면 다시 조회하지 않는다(발신자 조회는 앱 수에 비례해 수 초가 걸린다).
+    /// 대신 앱마다 백업하며 읽은 실제 상태로 알림 켜짐·알림센터 보관을 다시 확인하므로, 그 사이 바뀐 앱은 쓰기 전에 막힌다.
+    /// </param>
+    /// <param name="token">미리 띄운 감시 프로세스와 맞출 복구 토큰. 없으면 새로 만든다.</param>
+    public int Begin(IEnumerable<string> selected, Action<NotificationRecoveryJournal> startGuardian,
+        IReadOnlyCollection<NotificationSender>? senders = null, string? token = null)
     {
         using var gate = Enter();
         if (HasPendingRecovery) throw new InvalidOperationException("이전 알림 설정을 먼저 복구해 주세요.");
+        using var batch = _settings.BeginBatch();
         if (_settings.CompatibilityError is { } error) throw new NotSupportedException(error);
-        var eligible = _settings.Enumerate().Where(s => s.IsEligible).Select(s => s.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var eligible = (senders ?? _settings.Enumerate()).Where(s => s.IsEligible).Select(s => s.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         string[] ids = selected.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (ids.Length == 0) throw new InvalidOperationException("제어할 앱을 한 개 이상 선택해 주세요.");
         if (ids.Any(id => !eligible.Contains(id))) throw new InvalidOperationException("제어 대상 앱 목록이 바뀌었습니다. 목록을 새로 조회해 주세요.");
         using var process = Process.GetCurrentProcess();
         var journal = new NotificationRecoveryJournal { OwnerPid = process.Id, OwnerStartTicks = process.StartTime.ToUniversalTime().Ticks };
+        if (token is not null) journal.Token = token;
         foreach (string id in ids)
-            journal.Senders.Add(new(id, _settings.Read(id), _settings.ReadRegistry(id, false), _settings.ReadRegistry(id, true)));
+        {
+            var original = _settings.Read(id);
+            // 리스너는 알림센터에 남은 알림을 읽는다. 목록 조회 뒤 알림이나 알림센터 보관이 꺼졌으면 손대지 않는다.
+            if (!original.Enabled || !original.ShowInActionCenter)
+                throw new InvalidOperationException("제어 대상 앱 목록이 바뀌었습니다. 목록을 새로 조회해 주세요.");
+            journal.Senders.Add(new(id, original, _settings.ReadRegistry(id, false), _settings.ReadRegistry(id, true)));
+        }
         DurableJson.Write(_path, journal);
         try
         {
@@ -82,6 +104,7 @@ public sealed class NotificationSuppressionTransaction
 
     private void RestoreCore(NotificationRecoveryJournal journal)
     {
+        using var batch = _settings.BeginBatch();
         var failures = new List<Exception>();
         foreach (var item in journal.Senders.ToArray())
         {

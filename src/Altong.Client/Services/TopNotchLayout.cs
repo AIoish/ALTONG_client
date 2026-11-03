@@ -6,9 +6,33 @@ namespace Altong.Client.Services;
 /// </summary>
 public static class TopNotchLayout
 {
+    /// <summary>
+    /// [임시] 노치·띠 크기 비교용 후보. 패널 하단 버튼으로 실행 중에 바꿔 보고, 크기를 정하면 이 목록과 버튼을 지운다.
+    /// 높이를 줄이면 옆선 곡선도 같은 비율로 줄고, 폭은 후보마다 정한다(마지막 후보는 높이만 줄이고 폭은 유지).
+    /// </summary>
+    public static readonly NotchSize[] SizeOptions =
+    {
+        new("30", 30, 360.2),
+        new("24", 24, 288.16),
+        new("20", 20, 240.13),
+        new("16", 16, 192.11),
+        new("12", 12, 144.08),
+        new("8", 8, 96.05),
+        new("20W", 20, 360.2),
+    };
+
+    /// <summary>[임시] 지금 쓰는 노치 크기. 기본은 30px(시안 그대로)이다.</summary>
+    public static NotchSize Size { get; private set; } = SizeOptions[0];
+
+    /// <summary>[임시] 노치 크기를 바꾼다. 창은 <see cref="NotificationDockWindow"/>가 다시 배치한다.</summary>
+    public static void SetSize(NotchSize size) => Size = size;
+
+    /// <summary>시안(30px) 대비 높이 비율. 옆선 곡선·렌즈를 이 비율로 줄인다.</summary>
+    public static double HeightScale => Size.Height / 30;
+
     /// <summary>띠 높이(DIP). 노치 높이와 같아 노치가 띠 안에 들어간다.</summary>
-    public const double BandHeight = 30;
-    public const double NotchHeight = BandHeight;
+    public static double BandHeight => Size.Height;
+    public static double NotchHeight => BandHeight;
     /// <summary>호버·패널이 열린 동안 보이는 노치 윤곽선의 불투명도. 검은 띠에서 노치 범위만 알 수 있을 정도로 둔다.</summary>
     public const double OutlineOpacity = .55;
     /// <summary>
@@ -16,9 +40,9 @@ public static class TopNotchLayout
     /// 팀 시안 이미지의 윤곽을 측정해 한쪽당 3차 베지어 2개로 맞춘 값이다(오차 약 0.3px).
     /// 모양은 NotificationDockWindow.xaml의 NotchFace 경로와 같다.
     /// </summary>
-    public const double NotchSurfaceWidth = 360.2;
+    public static double NotchSurfaceWidth => Size.Width;
     /// <summary>노치 아래쪽 평평한 부분의 폭.</summary>
-    public const double NotchBottomWidth = 235.4;
+    public static double NotchBottomWidth => NotchSurfaceWidth - 2 * ClosedLeftSide[^1].X * HeightScale;
     /// <summary>
     /// 노치 가운데를 기준으로 한 닫힌 노치·안내 말풍선 영역의 폭과, 패널이 닫혀 있을 때의 창 높이.
     /// 노치 아래 투명 영역은 안내 말풍선(그림자 포함) 자리이며 클릭은 아래 앱으로 전달된다.
@@ -29,7 +53,7 @@ public static class TopNotchLayout
     /// <summary>안내 말풍선 크기. 노치 바로 아래 가운데에 둔다.</summary>
     public const double ReminderWidth = 344;
     public const double ReminderHeight = 122;
-    public const double ReminderTop = NotchHeight + 4;
+    public static double ReminderTop => NotchHeight + 4;
 
     public const string BlackBand = "#000000";
     /// <summary>
@@ -46,17 +70,13 @@ public static class TopNotchLayout
 
     /// <summary>
     /// 노치 가운데의 화면 x 좌표. 화면 가운데에서 좌우로 옮긴 거리를 더하고, 노치가 화면 밖으로 나가지 않게 제한한다.
-    /// 왼쪽으로는 목록 왼쪽에 붙는 상세 패널(<see cref="WindowLeftExtent"/>)까지 화면 안에 들어오는 곳까지만 옮긴다.
-    /// 다만 화면 가운데(기본 위치)보다 더 오른쪽으로 밀지는 않는다. 좁은 화면에서도 노치는 처음에 가운데에 놓인다.
+    /// 상세 패널은 왼쪽에 자리가 없으면 오른쪽에 붙으므로(<see cref="DetailOnRight"/>) 노치는 화면 끝까지 옮길 수 있다.
     /// </summary>
     public static double NotchCenter(double screenLeft, double screenWidth, double centerOffset)
     {
         double half = NotchSurfaceWidth / 2;
         double center = screenLeft + screenWidth / 2 + centerOffset;
-        double max = Math.Max(screenLeft + half, screenLeft + screenWidth - half);
-        double min = Math.Max(screenLeft + half,
-            Math.Min(Math.Min(screenLeft + WindowLeftExtent, screenLeft + screenWidth / 2), max));
-        return Math.Clamp(center, min, max);
+        return Math.Clamp(center, screenLeft + half, Math.Max(screenLeft + half, screenLeft + screenWidth - half));
     }
 
     /// <summary>노치 가운데 위치를 화면 가운데에서 옮긴 거리로 바꾼다. 작업 영역이 바뀌어도 같은 거리를 유지한다.</summary>
@@ -143,7 +163,22 @@ public static class TopNotchLayout
     /// 이전 화면이 어긋난 위치에 잠깐 찍히지 않는다. 투명한 부분의 클릭은 아래 앱으로 전달된다.
     /// </summary>
     public const double WindowLeftExtent = PanelWidth / 2 + DetailWidth;
+    /// <summary>상세가 붙지 않는 쪽 폭. 창 폭(<see cref="WindowLeftExtent"/> + 이 값)은 좁은 화면(1024px)보다 작게 유지한다.
+    /// 창이 화면보다 넓으면 Windows가 창 크기를 줄여 노치 위치가 어긋난다.</summary>
     public const double WindowRightExtent = WindowWidth / 2;
+
+    /// <summary>
+    /// 창 안에서 노치 가운데의 x. 상세가 붙는 쪽을 넓게 둔다. 상세가 왼쪽이면 왼쪽이 <see cref="WindowLeftExtent"/>,
+    /// 오른쪽이면 왼쪽이 <see cref="WindowRightExtent"/>다. 창 폭은 같다.
+    /// </summary>
+    public static double NotchCenterInWindow(bool detailOnRight) => detailOnRight ? WindowRightExtent : WindowLeftExtent;
+
+    /// <summary>
+    /// 상세 패널을 목록 오른쪽에 붙일지. 기본은 왼쪽이고, 노치를 화면 왼쪽 끝으로 옮겨 왼쪽에 상세가 들어갈 자리가 없을 때만 오른쪽에 붙인다.
+    /// </summary>
+    public static bool DetailOnRight(double notchCenter, double screenLeft, double screenWidth) =>
+        notchCenter - PanelWidth / 2 - DetailWidth < screenLeft
+        && notchCenter + PanelWidth / 2 + DetailWidth <= screenLeft + screenWidth;
 
     /// <summary>
     /// 노치 창 높이. 패널이 보이는 동안에만 패널을 담을 만큼 아래로 늘린다(위쪽은 그대로).
@@ -175,8 +210,17 @@ public static class TopNotchLayout
     public static (double X, double Y)[] NotchLeftSide(double progress)
     {
         double t = Math.Clamp(progress, 0, 1);
+        double scale = HeightScale;
+        // 열린 옆선은 패널 옆면(노치 가운데에서 패널 폭의 절반)에서 수직으로 끝나도록 옮긴다.
+        // 노치가 패널보다 좁으면 위쪽 시작점도 노치 밖으로 넓어진다.
+        double openEnd = (NotchSurfaceWidth - PanelWidth) / 2;
+        double openShift = openEnd - OpenLeftSide[^1].X * scale;
         return ClosedLeftSide.Zip(OpenLeftSide, (closed, open) =>
-            (closed.X + (open.X - closed.X) * t, closed.Y + (open.Y - closed.Y) * t)).ToArray();
+        {
+            double cx = closed.X * scale, cy = closed.Y * scale;
+            double ox = open.X * scale + openShift, oy = open.Y * scale;
+            return (cx + (ox - cx) * t, cy + (oy - cy) * t);
+        }).ToArray();
     }
 
     /// <summary>
@@ -266,3 +310,6 @@ public readonly record struct PixelRect(int Left, int Top, int Right, int Bottom
 
 /// <summary>새 알림 일렁임 결정: 생략, 지금 재생, 지금 것이 끝난 뒤 한 번 더.</summary>
 public enum AlertRippleDecision { Skip, Play, Queue }
+
+/// <summary>[임시] 노치·띠 크기 후보. <see cref="Label"/>은 비교 버튼 글자다.</summary>
+public readonly record struct NotchSize(string Label, double Height, double Width);

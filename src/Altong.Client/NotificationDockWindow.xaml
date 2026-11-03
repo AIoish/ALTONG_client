@@ -20,7 +20,7 @@
               LostMouseCapture="Notch_LostMouseCapture"
               MouseEnter="Pointer_Changed" MouseLeave="Pointer_Changed"
               AutomationProperties.Name="Altong 상단 노치"
-              AutomationProperties.HelpText="커서를 올려 알림 패널 펼치기, 클릭하여 대시보드 열기, 좌우로 드래그하여 이동">
+              AutomationProperties.HelpText="커서를 올려 알림 패널 펼치기, 클릭하여 알림 패널 열고 닫기, 좌우로 드래그하여 이동">
             <Path.RenderTransform><ScaleTransform x:Name="TopNotchClickScale" /></Path.RenderTransform>
         </Path>
         <!--

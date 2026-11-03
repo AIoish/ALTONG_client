@@ -44,11 +44,9 @@ public sealed class TopNotchLayoutTests
         Assert.AreEqual(960d, TopNotchLayout.NotchCenter(0, 1920, 0));
         Assert.AreEqual(1200d, TopNotchLayout.NotchCenter(0, 1920, 240));
         double half = TopNotchLayout.NotchSurfaceWidth / 2;
-        // 왼쪽 끝으로 옮겨도 목록 왼쪽에 붙는 상세 패널까지 화면 안에 남는다.
-        Assert.AreEqual(TopNotchLayout.WindowLeftExtent, TopNotchLayout.NotchCenter(0, 1920, -5000), .001);
-        // 상세까지 담기에 좁은 화면(예: CI의 1024px)에서도 기본 위치는 가운데이고, 왼쪽으로는 더 옮기지 않는다.
+        // 노치는 화면 끝까지 옮길 수 있다(상세 패널은 자리가 없으면 반대쪽에 붙는다).
+        Assert.AreEqual(half, TopNotchLayout.NotchCenter(0, 1920, -5000), .001);
         Assert.AreEqual(512d, TopNotchLayout.NotchCenter(0, 1024, 0), .001);
-        Assert.AreEqual(512d, TopNotchLayout.NotchCenter(0, 1024, -5000), .001);
         Assert.AreEqual(1920 - half, TopNotchLayout.NotchCenter(0, 1920, 5000), .001);
         Assert.AreEqual(240d, TopNotchLayout.CenterOffset(TopNotchLayout.NotchCenter(0, 1920, 240), 0, 1920), .001);
     }
@@ -125,6 +123,42 @@ public sealed class TopNotchLayoutTests
     }
 
     [TestMethod]
+    public void DetailPanel_MovesToTheRightOnlyWhenTheLeftHasNoRoom()
+    {
+        Assert.IsFalse(TopNotchLayout.DetailOnRight(960, 0, 1920), "가운데에서는 상세가 왼쪽에 붙는다.");
+        Assert.IsFalse(TopNotchLayout.DetailOnRight(TopNotchLayout.WindowLeftExtent, 0, 1920));
+        Assert.IsTrue(TopNotchLayout.DetailOnRight(TopNotchLayout.WindowLeftExtent - 1, 0, 1920));
+        Assert.IsTrue(TopNotchLayout.DetailOnRight(TopNotchLayout.NotchSurfaceWidth / 2, 0, 1920));
+        Assert.IsFalse(TopNotchLayout.DetailOnRight(1920 - TopNotchLayout.NotchSurfaceWidth / 2, 0, 1920), "오른쪽 끝에서는 왼쪽에 붙는다.");
+        // 상세가 붙는 쪽을 넓게 두고, 창 폭은 좁은 화면(1024px)보다 작게 유지한다.
+        Assert.AreEqual(TopNotchLayout.WindowLeftExtent, TopNotchLayout.NotchCenterInWindow(false));
+        Assert.AreEqual(TopNotchLayout.WindowRightExtent, TopNotchLayout.NotchCenterInWindow(true));
+        Assert.IsTrue(TopNotchLayout.WindowLeftExtent + TopNotchLayout.WindowRightExtent < 1024);
+    }
+
+    [TestMethod]
+    public void NotchSizeOptions_ScaleTheShapeAndStillOpenIntoThePanel()
+    {
+        try
+        {
+            foreach (var size in TopNotchLayout.SizeOptions)
+            {
+                TopNotchLayout.SetSize(size);
+                var closed = TopNotchLayout.NotchLeftSide(0);
+                var open = TopNotchLayout.NotchLeftSide(1);
+                Assert.AreEqual(size.Height, TopNotchLayout.BandHeight, size.Label);
+                Assert.AreEqual(size.Height, closed[^1].Y, .001, size.Label);
+                Assert.AreEqual(size.Height, open[^1].Y, .001, size.Label);
+                // 노치가 작아져도 열리면 바닥이 목록 패널 폭과 같아진다.
+                Assert.AreEqual(TopNotchLayout.PanelWidth, TopNotchLayout.NotchSurfaceWidth - 2 * open[^1].X, .01, size.Label);
+                Assert.IsTrue(TopNotchLayout.NotchBottomWidth > 0, size.Label);
+                Assert.IsTrue(TopNotchLayout.NotchSurfaceWidth / 2 <= TopNotchLayout.WindowRightExtent, size.Label);
+            }
+        }
+        finally { TopNotchLayout.SetSize(TopNotchLayout.SizeOptions[0]); }
+    }
+
+    [TestMethod]
     public void NotchLeftSide_ClosedMatchesTheMockAndOpenMatchesThePanel()
     {
         var closed = TopNotchLayout.NotchLeftSide(0);
@@ -134,7 +168,7 @@ public sealed class TopNotchLayoutTests
         // 열림: 바닥 폭이 목록 패널 폭과 같아 패널 옆면으로 곧게 이어진다.
         Assert.AreEqual(TopNotchLayout.PanelWidth, TopNotchLayout.NotchSurfaceWidth - 2 * open[^1].X, .01);
         // 높이와 위쪽 시작점은 그대로다.
-        Assert.AreEqual(0d, open[0].X);
+        Assert.AreEqual(0d, open[0].X, .001);
         Assert.AreEqual(TopNotchLayout.NotchHeight, open[^1].Y);
         // 닫힘은 바닥에서 수평으로 끝나고(마지막 두 점의 y가 같음), 열림은 수직으로 끝나 패널 옆면과 꺾임 없이 이어진다.
         Assert.AreEqual(closed[^2].Y, closed[^1].Y);

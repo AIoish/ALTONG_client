@@ -38,6 +38,7 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
         EnsureSupported();
         using var root = Registry.CurrentUser.OpenSubKey(SettingsPath);
         var rows = new List<NotificationSender>();
+        using var batch = BeginBatch();
         foreach (string id in root?.GetSubKeyNames() ?? [])
         {
             try
@@ -110,18 +111,66 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
     private static SenderState ReadState(IntPtr p) => new(ReadInt(p, 5) != 0, ReadInt(p, 9) != 0,
         ReadInt(p, 7), ReadString(p, 33));
 
+    /// <summary>
+    /// 이 COM 서버는 다른 프로세스(LOCAL_SERVER)라 factory를 만들 때마다 비용이 크다. 일괄 작업(<see cref="BeginBatch"/>) 동안에는
+    /// factory 하나를 함께 쓰고, 끝나면 놓는다. 오래 들고 있지 않아 서버가 다시 시작돼도 끊긴 연결이 남지 않는다.
+    /// COM 포인터는 만든 스레드에서만 쓰므로 다른 스레드의 호출은 따로 만든다.
+    /// </summary>
+    private IntPtr _batchFactory;
+    private int _batchDepth;
+    private int _batchThread;
+
+    public IDisposable BeginBatch()
+    {
+        int thread = Environment.CurrentManagedThreadId;
+        if (_batchDepth > 0 && _batchThread != thread) return NoBatch.Instance;
+        _batchThread = thread;
+        _batchDepth++;
+        return new Batch(this);
+    }
+
+    private sealed class Batch(WindowsNotificationSenderSettings owner) : IDisposable
+    {
+        private bool _disposed;
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (--owner._batchDepth == 0) ReleaseFactory(ref owner._batchFactory);
+        }
+    }
+
     private T WithSender<T>(string id, Func<IntPtr, T> action)
+    {
+        EnsureSupported();
+        bool batched = _batchDepth > 0 && _batchThread == Environment.CurrentManagedThreadId;
+        if (!batched)
+        {
+            IntPtr factory = CreateFactory();
+            try { return WithSender(id, factory, action); }
+            finally { ReleaseFactory(ref factory); }
+        }
+        if (_batchFactory == IntPtr.Zero) _batchFactory = CreateFactory();
+        try { return WithSender(id, _batchFactory, action); }
+        catch (COMException)
+        {
+            // 함께 쓰던 연결이 끊겼을 수 있다. 새 factory로 한 번만 다시 시도한다.
+            ReleaseFactory(ref _batchFactory);
+            _batchFactory = CreateFactory();
+            return WithSender(id, _batchFactory, action);
+        }
+    }
+
+    /// <summary>이미 만든 factory로 발신자 하나를 열어 <paramref name="action"/>을 실행한다. factory는 호출자가 놓는다.</summary>
+    private T WithSender<T>(string id, IntPtr factory, Func<IntPtr, T> action)
     {
         EnsureSupported();
         // GetSettingsForAumid may create settings. Only ever open an already registered sender.
         using var registered = Registry.CurrentUser.OpenSubKey(SettingsPath + "\\" + id);
         if (registered is null) throw new InvalidOperationException("등록되지 않은 알림 발신자입니다.");
-        IntPtr factory = IntPtr.Zero, sender = IntPtr.Zero, typed = IntPtr.Zero;
+        IntPtr sender = IntPtr.Zero, typed = IntPtr.Zero;
         try
         {
-            var clsid = ClassId;
-            var iid = FactoryId;
-            Marshal.ThrowExceptionForHR(CoCreateInstance(ref clsid, IntPtr.Zero, 4, ref iid, out factory));
             Marshal.ThrowExceptionForHR(Method<GetSender>(factory, 3)(factory, id, out sender));
             var senderIid = SenderId;
             Marshal.ThrowExceptionForHR(Marshal.QueryInterface(sender, in senderIid, out typed));
@@ -131,8 +180,21 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
         {
             if (typed != IntPtr.Zero) Marshal.Release(typed);
             if (sender != IntPtr.Zero) Marshal.Release(sender);
-            if (factory != IntPtr.Zero) Marshal.Release(factory);
         }
+    }
+
+    private static IntPtr CreateFactory()
+    {
+        var clsid = ClassId;
+        var iid = FactoryId;
+        Marshal.ThrowExceptionForHR(CoCreateInstance(ref clsid, IntPtr.Zero, 4, ref iid, out IntPtr factory));
+        return factory;
+    }
+
+    private static void ReleaseFactory(ref IntPtr factory)
+    {
+        if (factory != IntPtr.Zero) Marshal.Release(factory);
+        factory = IntPtr.Zero;
     }
 
     private void EnsureSupported()

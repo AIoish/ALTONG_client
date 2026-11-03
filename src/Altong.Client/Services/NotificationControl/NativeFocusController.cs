@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 
@@ -26,6 +27,8 @@ public sealed class NativeFocusController : INativeFocusController
     private readonly NotificationControlPreferences _preferences;
     private readonly string _preferencesPath;
     private string? _startupError;
+    /// <summary>마지막 발신자 조회가 실패했을 때의 안내. 성공하면 null.</summary>
+    private string? _listError;
     private readonly string? _preferencesError;
     private readonly string? _preferencesNotice;
     public bool IsActive { get; private set; }
@@ -91,24 +94,34 @@ public sealed class NativeFocusController : INativeFocusController
         try { _preferences.Save(_preferencesPath); } catch { _preferences.Backend = previous; throw; }
         Refresh();
     }
+    /// <summary>발신자 목록을 다시 조회하고 상태 문구를 갱신한다. 앱 수에 비례해 오래 걸리므로 목록이 필요할 때만 부른다.</summary>
     public void Refresh()
     {
-        string summary;
         try
         {
             if (_settings.CompatibilityError is { } error)
             {
                 Senders = [];
-                summary = error;
+                _listError = error;
             }
             else
             {
                 Senders = _settings.Enumerate();
-                summary = IsActive ? $"알통 자체 제어 중 · {AppliedCount}개 앱 · 알림센터 보관 유지"
-                    : $"제어 가능한 앱 {Senders.Count(s => s.IsEligible)}개 · 알림센터 보관 유지";
+                _listError = null;
             }
         }
-        catch (Exception ex) { Senders = []; summary = $"앱 조회 실패: {ex.Message}"; }
+        catch (Exception ex) { Senders = []; _listError = $"앱 조회 실패: {ex.Message}"; }
+        UpdateStatus();
+    }
+
+    /// <summary>
+    /// 목록은 다시 조회하지 않고 상태 문구만 갱신한다. 켜기·끄기는 배너·알림음만 바꾸고 제어 대상 여부(알림·알림센터 보관)는
+    /// 바꾸지 않으므로 직전 목록을 그대로 쓴다.
+    /// </summary>
+    private void UpdateStatus()
+    {
+        string summary = _listError ?? (IsActive ? $"알통 자체 제어 중 · {AppliedCount}개 앱 · 알림센터 보관 유지"
+            : $"제어 가능한 앱 {Senders.Count(s => s.IsEligible)}개 · 알림센터 보관 유지");
         Status = string.Join(Environment.NewLine,
             new[] { _preferencesError, _startupError, _preferencesNotice, summary }.Where(s => !string.IsNullOrEmpty(s)));
     }
@@ -118,18 +131,42 @@ public sealed class NativeFocusController : INativeFocusController
         if (IsActive) return;
         if (_preferencesError is { } preferencesError) throw new InvalidOperationException(preferencesError);
         if (_startupError is { } error) throw new InvalidOperationException(error);
-        Refresh();
-        AppliedCount = _transaction.Begin(Senders.Where(s => s.IsEligible && IsSelected(s.Id)).Select(s => s.Id), _guardian.Start);
-        IsActive = true;
-        Refresh();
+        var watch = Stopwatch.StartNew();
+        // 복구 감시 프로세스 기동(약 0.5초)을 목록 조회와 겹친다. 알림 설정을 바꾸기 직전에 준비를 확인한다.
+        string token = Guid.NewGuid().ToString("N");
+        using (var self = Process.GetCurrentProcess())
+            _guardian.Prepare(self.Id, self.StartTime.ToUniversalTime().Ticks, token);
+        try
+        {
+            // 목록은 여기서 한 번만 조회하고, 적용(Begin)과 상태 갱신에 그대로 쓴다.
+            Refresh();
+            long listMs = watch.ElapsedMilliseconds;
+            var senders = Senders;
+            AppliedCount = _transaction.Begin(senders.Where(s => s.IsEligible && IsSelected(s.Id)).Select(s => s.Id),
+                _ => _guardian.WaitReady(), senders, token);
+            IsActive = true;
+            UpdateStatus();
+            // 개수와 시간만 남긴다(앱 이름·ID는 기록하지 않는다).
+            AppLogger.Info($"[NotificationControl] 자체 제어 켜기 {watch.ElapsedMilliseconds}ms (목록 조회 {listMs}ms · 발신자 {senders.Count}개 · 적용 {AppliedCount}개)");
+        }
+        catch
+        {
+            // 실패하면 Begin이 바꾼 설정을 이미 되돌렸다. 이번 켜기의 복구가 남아 있지 않으면 아무 일도 하지 않은 감시를 끝낸다.
+            // 일부 복구가 남았으면 감시가 그 복구를 맡아야 하므로 그대로 둔다.
+            if (!_transaction.HasPendingRecoveryFor(token)) _guardian.Abort();
+            throw;
+        }
     }
     public void Stop()
     {
+        var watch = Stopwatch.StartNew();
+        bool wasActive = IsActive;
         _transaction.Restore();
         IsActive = false;
         AppliedCount = 0;
         _startupError = null;
-        Refresh();
+        UpdateStatus();
+        if (wasActive) AppLogger.Info($"[NotificationControl] 자체 제어 끄기 {watch.ElapsedMilliseconds}ms");
     }
     public void CheckHealth()
     {

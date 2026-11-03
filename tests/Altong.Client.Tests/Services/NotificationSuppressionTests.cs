@@ -152,6 +152,53 @@ public sealed class NotificationSuppressionTests
         Assert.IsFalse(transaction.HasPendingRecovery);
     }
 
+    [TestMethod]
+    public void BeginReusesTheCallersSenderList_WithoutEnumeratingAgain()
+    {
+        var settings = new FakeSettings();
+        var senders = settings.Enumerate();
+        var transaction = new NotificationSuppressionTransaction(settings, JournalPath);
+        Assert.AreEqual(1, transaction.Begin(["App"], _ => { }, senders));
+        Assert.AreEqual(1, settings.Enumerations, "발신자 목록은 호출자가 조회한 한 번만 쓴다.");
+        transaction.Restore();
+    }
+
+    [TestMethod]
+    public void BeginAndRestoreEachShareOneBatch_AndKeepTheGivenToken()
+    {
+        var settings = new FakeSettings();
+        var transaction = new NotificationSuppressionTransaction(settings, JournalPath);
+        string token = Guid.NewGuid().ToString("N");
+        int writesInBatch = -1;
+        settings.BeforeWrite = () => { if (settings.OpenBatches == 1) writesInBatch = settings.Writes; };
+        transaction.Begin(["App"], journal => Assert.AreEqual(token, journal.Token), settings.Enumerate(), token);
+        Assert.AreEqual(1, settings.Batches, "켜기 한 번은 연결을 한 번만 연다.");
+        Assert.AreEqual(0, settings.OpenBatches);
+        Assert.IsTrue(writesInBatch >= 0, "설정 쓰기는 일괄 작업 안에서 일어난다.");
+        Assert.IsTrue(transaction.HasPendingRecoveryFor(token));
+        Assert.IsFalse(transaction.HasPendingRecoveryFor(Guid.NewGuid().ToString("N")));
+        transaction.Restore();
+        Assert.AreEqual(2, settings.Batches, "끄기도 연결을 한 번만 연다.");
+        Assert.AreEqual(0, settings.OpenBatches);
+        Assert.IsFalse(transaction.HasPendingRecoveryFor(token));
+    }
+
+    [TestMethod]
+    public void StaleSenderListStillBlocksAppsThatStoppedRetainingNotifications()
+    {
+        var settings = new FakeSettings();
+        var senders = settings.Enumerate();
+        // 목록 조회 뒤 사용자가 알림센터 보관을 껐다.
+        settings.State = settings.State with { ShowInActionCenter = false };
+        var transaction = new NotificationSuppressionTransaction(settings, JournalPath);
+        Assert.ThrowsException<InvalidOperationException>(() => transaction.Begin(["App"], _ => { }, senders));
+        Assert.AreEqual(0, settings.Writes);
+        Assert.IsFalse(transaction.HasPendingRecovery);
+        settings.State = settings.State with { ShowInActionCenter = true, Enabled = false };
+        Assert.ThrowsException<InvalidOperationException>(() => transaction.Begin(["App"], _ => { }, senders));
+        Assert.AreEqual(0, settings.Writes);
+    }
+
     private sealed class FakeSettings : INotificationSenderSettings
     {
         public string? CompatibilityError => null;
@@ -160,7 +207,10 @@ public sealed class NotificationSuppressionTests
         public int Writes;
         public bool FailNextSoundWrite;
         public Action? BeforeWrite;
-        public IReadOnlyList<NotificationSender> Enumerate() => [new("App", "Test app", null)];
+        public int Enumerations, Batches, OpenBatches;
+        public IDisposable BeginBatch() { Batches++; OpenBatches++; return new Lease(() => OpenBatches--); }
+        private sealed class Lease(Action release) : IDisposable { public void Dispose() => release(); }
+        public IReadOnlyList<NotificationSender> Enumerate() { Enumerations++; return [new("App", "Test app", null)]; }
         public bool IsRegistered(string id) => id == "App";
         public SenderState Read(string id) => State;
         public RegistrySetting ReadRegistry(string id, bool sound) => sound ? SoundRegistry : BannerRegistry;
