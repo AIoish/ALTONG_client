@@ -101,6 +101,7 @@ public partial class App : System.Windows.Application
         {
             if (!IsShuttingDown) ShowDashboard();
         })));
+        RegisterUnhandledExceptionLogging();
 
         // WinExe(GUI 앱)에서 dotnet run을 실행한 부모 터미널로 콘솔 출력 연결
         if (AttachConsole(AttachParentProcess))
@@ -868,6 +869,19 @@ public partial class App : System.Windows.Application
         {
             _windowsDndGuidanceWindow.Dismiss();
         }
+    }
+
+    /// <summary>처리되지 않은 예외를 로그에 남긴다. 기존 동작(WPF는 종료, WinForms 트레이는 계속 실행)은 그대로 둔다.</summary>
+    private void RegisterUnhandledExceptionLogging()
+    {
+        // 원인 추적에 스택이 필요하므로 예외 전체(ToString)를 남긴다.
+        DispatcherUnhandledException += (_, e) =>
+            AppLogger.Error($"[Unhandled] UI 스레드 예외: {e.Exception}");
+        // 핸들러를 달면 WinForms 기본 오류 창 대신 여기서 처리된다. 기본 창의 [계속]과 같이 앱은 계속 실행된다.
+        System.Windows.Forms.Application.ThreadException += (_, e) =>
+            AppLogger.Error($"[Unhandled] 트레이(WinForms) 예외: {e.Exception}");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            AppLogger.Error($"[Unhandled] 앱 종료 예외: {e.ExceptionObject}");
     }
 
     private void PostToUiThread(Action action) =>
