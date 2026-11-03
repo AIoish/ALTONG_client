@@ -44,7 +44,8 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
             var lazyTask = _sessionTaskCache.GetOrAdd(
                 sessionId,
                 id => new Lazy<Task<ReportSummarySupply>>(
-                    () => GenerateSummarySupplyAsync(id, cancellationToken),
+                    // 모델 로딩과 추론은 동기 네이티브 호출이 섞여 있어 UI 스레드가 멈추지 않도록 스레드 풀에서 실행한다.
+                    () => Task.Run(() => GenerateSummarySupplyAsync(id, cancellationToken), cancellationToken),
                     LazyThreadSafetyMode.ExecutionAndPublication));
 
             Task<ReportSummarySupply> task;
@@ -99,31 +100,36 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
             return new ReportSummarySupply([]);
         }
 
-        // 2. 대화방/발신자/앱 단위로 알림 그룹화 (Sender가 있으면 Sender 우선, 없으면 Title 사용)
-        var groups = blocked
-            .GroupBy(n => (
-                AppKey: BriefingPromptBuilder.NormalizeAppIdentity(n.AppName),
-                GroupKey: (!string.IsNullOrWhiteSpace(n.Sender) ? n.Sender : (n.Title ?? "")).Trim()
-            ))
+        // 2. AI 레포와 같은 규칙(앱·발신자·카카오톡 방·30분·대화 연결)으로 묶고,
+        //    모델 학습 범위(그룹당 7개)나 문맥을 넘는 그룹은 시간 순서대로 고르게 나눈다.
+        using var session = await _engine.OpenSessionAsync(cancellationToken).ConfigureAwait(false);
+        var chunks = BriefingGrouping.Group(blocked)
+            .SelectMany(group => BriefingGrouping.SplitEvenly(group, BriefingGrouping.MaxNotificationsPerChunk,
+                session is null ? null : chunk => session.Fits(
+                    NormalizeDisplayAppName(chunk[0].AppName), BriefingGrouping.ModelSender(chunk[0]), chunk)))
             .ToList();
 
         var summaryItems = new List<NotificationSummaryItem>();
         var referenceNow = _nowProvider();
 
-        foreach (var group in groups)
+        foreach (var groupNotifications in chunks)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var groupNotifications = group.OrderBy(n => n.ReceivedAt).ToList();
-            var appName = NormalizeDisplayAppName(groupNotifications[0].AppName);
-            var sender = groupNotifications.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n.Sender))?.Sender?.Trim() ?? "";
+            var first = groupNotifications[0];
+            var appName = NormalizeDisplayAppName(first.AppName);
+            var sender = first.Sender?.Trim() ?? "";
+            var room = BriefingGrouping.KakaoRoom(first)?.Trim();
+            var groupKey = $"{BriefingGrouping.AppIdentity(first.AppName)}|{BriefingGrouping.NormalizeIdentity(BriefingGrouping.ModelSender(first))}|{room}";
 
             string summaryText;
             string primaryCategory;
 
             // 3. AI 모델 호출 (가능한 경우) 또는 Fallback
-            var aiOutput = await _engine.SummarizeNotificationGroupAsync(
-                appName, sender, groupNotifications, maxSummaryLines: 3, cancellationToken).ConfigureAwait(false);
+            var aiOutput = session is null
+                ? null
+                : await session.SummarizeAsync(appName, BriefingGrouping.ModelSender(first), groupNotifications,
+                    maxSummaryLines: 3, cancellationToken).ConfigureAwait(false);
 
             if (aiOutput is not null && aiOutput.SummaryLines.Count > 0)
             {
@@ -144,8 +150,8 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
             }
 
             var notiIds = groupNotifications.Select(n => n.Id).ToList();
-            var summaryId = ComputeDeterministicId("sum", sessionId, group.Key.GroupKey, notiIds);
-            var eventId = ComputeDeterministicId("evt", sessionId, group.Key.GroupKey, notiIds);
+            var summaryId = ComputeDeterministicId("sum", sessionId, groupKey, notiIds);
+            var eventId = ComputeDeterministicId("evt", sessionId, groupKey, notiIds);
 
             // 4. 일정 추출기 실행
             var (isScheduleRelated, schedule) = BriefingScheduleExtractor.Extract(
@@ -161,7 +167,9 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
                 IsScheduleRelated: isScheduleRelated,
                 Schedule: schedule)
             {
-                AppName = appName
+                AppName = appName,
+                Sender = string.IsNullOrEmpty(sender) ? null : sender,
+                Room = string.IsNullOrEmpty(room) ? null : room
             };
 
             summaryItems.Add(item);

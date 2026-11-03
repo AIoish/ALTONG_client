@@ -119,9 +119,8 @@ public sealed class BriefingEngineTests
     public void LlamaBriefingEngine_ParseResponse_HandlesPureJson()
     {
         var rawJson = "{\"primary_category\":\"일정/회의\",\"summary_lines\":[\"내일 2시에 주간 회의를 진행합니다.\"]}";
-        var fallback = Array.Empty<NotificationRecord>();
 
-        var result = LlamaBriefingEngine.ParseResponse(rawJson, fallback);
+        var result = LlamaBriefingEngine.ParseResponse(rawJson);
 
         Assert.IsNotNull(result);
         Assert.AreEqual("일정/회의", result!.PrimaryCategory);
@@ -133,9 +132,8 @@ public sealed class BriefingEngineTests
     public void LlamaBriefingEngine_ParseResponse_HandlesMarkdownCodeBlock()
     {
         var rawMarkdown = "```json\n{\"primary_category\":\"일반 업무\",\"summary_lines\":[\"작업 완료 보고서가 제출되었습니다.\"]}\n```";
-        var fallback = Array.Empty<NotificationRecord>();
 
-        var result = LlamaBriefingEngine.ParseResponse(rawMarkdown, fallback);
+        var result = LlamaBriefingEngine.ParseResponse(rawMarkdown);
 
         Assert.IsNotNull(result);
         Assert.AreEqual("일반 업무", result!.PrimaryCategory);
@@ -143,20 +141,37 @@ public sealed class BriefingEngineTests
     }
 
     [TestMethod]
-    public void LlamaBriefingEngine_ParseResponse_MalformedJson_FallsBackGracefully()
+    public void LlamaBriefingEngine_ParseResponse_MalformedJson_ReturnsNullForProviderFallback()
     {
-        var malformed = "이것은 일반 텍스트 요약입니다.";
-        var fallback = new[]
-        {
-            new NotificationRecord("id-1", "KakaoTalk", "홍길동", "팀방", "내일 회의 확인 바랍니다.", DateTime.UtcNow)
-        };
+        // 엔진은 형식을 벗어난 응답을 고치거나 일부만 주워 쓰지 않는다. 대체 요약은 제공자가 만든다.
+        Assert.IsNull(LlamaBriefingEngine.ParseResponse("이것은 일반 텍스트 요약입니다."));
+    }
 
-        var result = LlamaBriefingEngine.ParseResponse(malformed, fallback);
+    // AI 레포 category_prompt.parse_response와 같은 기준: 기준을 벗어난 응답은 모두 거부한다.
+    [DataTestMethod]
+    [DataRow("{\"primary_category\":\"일반 업무\",\"summary_lines\":[\"하나\",\"둘\",\"셋\",\"넷\"]}", DisplayName = "3줄 초과")]
+    [DataRow("{\"primary_category\":\"일반 업무\",\"summary_lines\":[]}", DisplayName = "빈 배열")]
+    [DataRow("{\"primary_category\":\"일반 업무\",\"summary_lines\":[\"  \"]}", DisplayName = "빈 줄")]
+    [DataRow("{\"primary_category\":\"업무\",\"summary_lines\":[\"보고서를 제출했습니다.\"]}", DisplayName = "허용되지 않은 분류")]
+    [DataRow("{\"primary_category\":\"일반 업무\",\"summary_lines\":[\"보고서를 제출했습니다.\"],\"note\":\"x\"}", DisplayName = "추가 필드")]
+    [DataRow("{\"summary_lines\":[\"보고서를 제출했습니다.\"]}", DisplayName = "분류 없음")]
+    [DataRow("{\"primary_category\":\"일반 업무\",\"summary_lines\":[\"보고서를 제출했습니다.\"]} 추가 설명", DisplayName = "뒤에 붙은 문장")]
+    [DataRow("{\"primary_category\":\"일반 업무\",\"summary_lines\":[\"회의는 3시", DisplayName = "잘린 JSON")]
+    [DataRow("[\"보고서를 제출했습니다.\"]", DisplayName = "배열만 출력")]
+    public void LlamaBriefingEngine_ParseResponse_RejectsOutputOutsideContract(string raw)
+    {
+        Assert.IsNull(LlamaBriefingEngine.ParseResponse(raw));
+    }
 
-        Assert.IsNotNull(result);
-        Assert.AreEqual("기타", result!.PrimaryCategory);
-        Assert.AreEqual(1, result.SummaryLines.Count);
-        Assert.AreEqual("홍길동: 내일 회의 확인 바랍니다.", result.SummaryLines[0]);
+    [TestMethod]
+    public void LlamaBriefingEngine_ParseResponse_RejectsLineOver160CharsAndMoreLinesThanRequested()
+    {
+        var longLine = new string('가', BriefingPromptBuilder.MaxLineLength + 1);
+        Assert.IsNull(LlamaBriefingEngine.ParseResponse($"{{\"primary_category\":\"기타\",\"summary_lines\":[\"{longLine}\"]}}"));
+
+        const string twoLines = "{\"primary_category\":\"기타\",\"summary_lines\":[\"첫 문장입니다.\",\"둘째 문장입니다.\"]}";
+        Assert.IsNull(LlamaBriefingEngine.ParseResponse(twoLines, maxSummaryLines: 1));
+        Assert.AreEqual(2, LlamaBriefingEngine.ParseResponse(twoLines, maxSummaryLines: 2)!.SummaryLines.Count);
     }
 
     private sealed class FakeNotificationRepository(IReadOnlyList<NotificationRecord> records) : INotificationRepository
@@ -230,7 +245,8 @@ public sealed class BriefingEngineTests
                 "내일 오후 2시에 회의실 3에서 프로젝트 기획 회의 진행합니다.", DateTime.UtcNow)
         };
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        // 정확성 확인용 제한. CPU가 바쁜 PC에서는 요약 1건이 30초를 넘기도 해서(실측 17~37초) 여유를 둔다.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         var output = await engine.SummarizeNotificationGroupAsync("KakaoTalk", notifications, maxSummaryLines: 2, ct: cts.Token);
         Assert.IsNotNull(output);
         Assert.IsFalse(string.IsNullOrWhiteSpace(output!.PrimaryCategory));
@@ -305,7 +321,7 @@ public sealed class BriefingEngineTests
                 new NotificationRecord($"id-{idx}", app, sender, it.Title, it.Body, DateTime.UtcNow.AddMinutes(idx * 5))
             ).ToList();
 
-            using var scenarioCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var scenarioCts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
             var scenarioOutput = await engine.SummarizeNotificationGroupAsync(app, sender, notis, maxSummaryLines: 2, ct: scenarioCts.Token);
 
             Console.WriteLine($"\n================== [시나리오 검증: {name}] ==================");
@@ -380,9 +396,8 @@ public sealed class BriefingEngineTests
     public void LlamaBriefingEngine_ParseResponse_StripsCompletedThinkBlock()
     {
         var rawWithThink = "<think>\nLet me analyze the notification carefully. The user has a meeting tomorrow.\n</think>\n{\"primary_category\":\"일정/회의\",\"summary_lines\":[\"내일 오후 3시에 기획 회의를 진행합니다.\"]}";
-        var fallback = Array.Empty<NotificationRecord>();
 
-        var result = LlamaBriefingEngine.ParseResponse(rawWithThink, fallback);
+        var result = LlamaBriefingEngine.ParseResponse(rawWithThink);
 
         Assert.IsNotNull(result);
         Assert.AreEqual("일정/회의", result!.PrimaryCategory);
@@ -394,17 +409,8 @@ public sealed class BriefingEngineTests
     public void LlamaBriefingEngine_ParseResponse_TruncatedThinkBlock_DoesNotLeakEnglishMonologue()
     {
         var truncatedThink = "<think>\nOkay, the user wants to summarize \"meeting room changed\" and \"tomorrow at 2pm\" into Korean JSON.";
-        var fallback = new[]
-        {
-            new NotificationRecord("id-1", "KakaoTalk", "기획팀", "단톡방", "회의실 B로 장소 변경되었습니다.", DateTime.UtcNow)
-        };
 
-        var result = LlamaBriefingEngine.ParseResponse(truncatedThink, fallback);
-
-        Assert.IsNotNull(result);
-        Assert.AreEqual("기타", result!.PrimaryCategory);
-        Assert.AreEqual(1, result.SummaryLines.Count);
-        Assert.AreEqual("기획팀: 회의실 B로 장소 변경되었습니다.", result.SummaryLines[0]);
+        Assert.IsNull(LlamaBriefingEngine.ParseResponse(truncatedThink));
     }
 
     [TestMethod]
@@ -458,12 +464,13 @@ public sealed class BriefingEngineTests
     [TestMethod]
     public async Task LlamaReportSummaryProvider_GroupsConsecutiveNotificationsBySenderAndNormalizesAppName()
     {
+        // 카카오톡 title은 방 이름이다 (AI 레포와의 계약). 같은 방·같은 발신자의 연속 알림.
         var now = new DateTime(2026, 10, 13, 10, 0, 0, DateTimeKind.Utc);
         var fakeNotifications = new[]
         {
-            new NotificationRecord("1", "KakaoTalk.exe", "연구실 단톡방", "주간 회의", "내일 오전 10시에 주간 회의 진행합니다.", now,
+            new NotificationRecord("1", "KakaoTalk.exe", "조교", "연구실 단톡방", "내일 오전 10시에 주간 회의 진행합니다.", now,
                 IsPassed: false, SessionId: "session-group"),
-            new NotificationRecord("2", "KakaoTalk", "연구실 단톡방", "주간 회의 취소", "교수님 출장으로 내일 주간 회의는 취소되었습니다.", now.AddMinutes(1),
+            new NotificationRecord("2", "KakaoTalk", "조교", "연구실 단톡방", "교수님 출장으로 내일 주간 회의는 취소되었습니다.", now.AddMinutes(1),
                 IsPassed: false, SessionId: "session-group")
         };
         var fakeRepo = new FakeNotificationRepository(fakeNotifications);
@@ -475,9 +482,49 @@ public sealed class BriefingEngineTests
 
         var supply = await provider.ReadAsync("session-group", CancellationToken.None);
 
-        Assert.AreEqual(1, supply.Items.Count, "같은 Sender에서 제목만 바뀐 연속 알림은 단일 그룹으로 묶여야 합니다.");
+        Assert.AreEqual(1, supply.Items.Count, "같은 방·같은 발신자의 연속 알림은 단일 그룹으로 묶여야 합니다.");
         Assert.AreEqual("KakaoTalk", supply.Items[0].AppName, ".exe 접미사가 제거된 정규화 앱 이름이어야 합니다.");
         StringAssert.Contains(supply.Items[0].Text, "취소되었습니다");
+        Assert.AreEqual("조교", supply.Items[0].Sender);
+        Assert.AreEqual("연구실 단톡방", supply.Items[0].Room);
+        Assert.AreEqual("연구실 단톡방 · 조교", supply.Items[0].SourceLabel);
+    }
+
+    [TestMethod]
+    public async Task LlamaReportSummaryProvider_SplitsSameSenderByRoomAndThirtyMinuteSpan()
+    {
+        var now = new DateTime(2026, 10, 13, 10, 0, 0, DateTimeKind.Utc);
+        var fakeNotifications = new[]
+        {
+            new NotificationRecord("1", "KakaoTalk", "이시영", "Aton~", "회의 자료 올렸어요", now, IsPassed: false, SessionId: "s"),
+            new NotificationRecord("2", "KakaoTalk", "이시영", "가족방", "회의 끝나고 전화할게", now.AddMinutes(1), IsPassed: false, SessionId: "s"),
+            new NotificationRecord("3", "KakaoTalk", "이시영", "Aton~", "회의 자료 다시 올렸어요", now.AddMinutes(40), IsPassed: false, SessionId: "s"),
+        };
+
+        using var provider = new LlamaReportSummaryProvider(new FakeNotificationRepository(fakeNotifications), "non_existent_model.gguf", () => now);
+        var supply = await provider.ReadAsync("s", CancellationToken.None);
+
+        Assert.AreEqual(3, supply.Items.Count, "방이 다르거나 30분을 넘기면 다른 그룹입니다.");
+        CollectionAssert.AreEqual(new[] { "Aton~", "가족방", "Aton~" }, supply.Items.Select(i => i.Room).ToArray());
+    }
+
+    [TestMethod]
+    public async Task LlamaReportSummaryProvider_SplitsLongConversationEvenlyInTimeOrder()
+    {
+        var now = new DateTime(2026, 10, 13, 10, 0, 0, DateTimeKind.Utc);
+        var fakeNotifications = Enumerable.Range(0, 15).Select(i => new NotificationRecord(
+            $"m{i:00}", "KakaoTalk", "김팀장", "프로젝트 팀방", $"메시지 {i}", now.AddMinutes(i),
+            IsPassed: false, SessionId: "long")).ToArray();
+
+        using var provider = new LlamaReportSummaryProvider(new FakeNotificationRepository(fakeNotifications), "non_existent_model.gguf", () => now);
+        var supply = await provider.ReadAsync("long", CancellationToken.None);
+
+        // 15개 → 5 + 5 + 5. 대체 요약은 덩어리의 마지막 메시지를 담는다.
+        Assert.AreEqual(3, supply.Items.Count);
+        StringAssert.Contains(supply.Items[0].Text, "외 4건: 메시지 4");
+        StringAssert.Contains(supply.Items[1].Text, "외 4건: 메시지 9");
+        StringAssert.Contains(supply.Items[2].Text, "외 4건: 메시지 14");
+        Assert.AreEqual(3, supply.Items.Select(i => i.SummaryId).Distinct().Count());
     }
 
     [TestMethod]
@@ -551,18 +598,10 @@ public sealed class BriefingEngineTests
     }
 
     [TestMethod]
-    public void LlamaBriefingEngine_ParseResponse_UnclosedSecondThinkBlock_FallsBackGracefully()
+    public void LlamaBriefingEngine_ParseResponse_UnclosedSecondThinkBlock_ReturnsNull()
     {
         var raw = "<think>first thought</think><think>second unclosed thought with \"english quoted phrase\"";
-        var fallback = new[]
-        {
-            new NotificationRecord("id-1", "Slack", "운영팀", "점검 안내", "오늘 밤 11시 서버 점검 예정입니다.", DateTime.UtcNow)
-        };
 
-        var result = LlamaBriefingEngine.ParseResponse(raw, fallback);
-
-        Assert.IsNotNull(result);
-        Assert.AreEqual("기타", result!.PrimaryCategory);
-        Assert.AreEqual("운영팀: 오늘 밤 11시 서버 점검 예정입니다.", result.SummaryLines[0]);
+        Assert.IsNull(LlamaBriefingEngine.ParseResponse(raw));
     }
 }

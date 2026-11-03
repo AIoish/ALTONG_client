@@ -44,6 +44,18 @@
                         </Border>
                         <TextBlock Text="{Binding SourceText}" Style="{StaticResource CalendarMuted}" FontSize="11" VerticalAlignment="Center" Margin="0,0,0,4" />
                     </WrapPanel>
+                    <!-- 출처(방 · 발신자)는 모델이 아니라 원본 알림에서 가져온다. 없으면 숨긴다. -->
+                    <TextBlock Text="{Binding Summary.SourceLabel}" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource CalendarMuted}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Summary.SourceLabel}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                     <TextBlock Text="{Binding Summary.Text}" TextWrapping="Wrap" Foreground="#F3F4F6" FontSize="14" LineHeight="23" />
                     <StackPanel Visibility="{Binding IsScheduleRelated, Converter={StaticResource CalendarBoolVisibility}}" Margin="0,14,0,0">
                         <Border Background="#27242D" BorderBrush="#48424F" BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,0,0,12">
