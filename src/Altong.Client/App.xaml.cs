@@ -59,6 +59,7 @@ public partial class App : System.Windows.Application
     /// <summary>타이머 종료 제안 카드를 자동으로 닫는 타이머 (무응답이면 집중 유지).</summary>
     private readonly System.Windows.Threading.DispatcherTimer _timerPromptTimer = new();
     private AutoDndPromptKind _activePrompt;
+    private bool _isShowingDashboard;
     private readonly List<Task> _windowWrites = new();
     private DateTime _lastWindowCheckpointAt = DateTime.MinValue;
     private bool _windowCheckpointInProgress;
@@ -205,9 +206,11 @@ public partial class App : System.Windows.Application
         _windowsDndGuidanceWindow.OpenSettingsRequested +=
             WindowsDndGuidanceWindow_OpenSettingsRequested;
 
-        _trayIconService = new TrayIconService(ShowDashboard);
-        _trayIconService.SetDashboardAction(ToggleDashboard);
-        _trayIconService.SetDashboardCloseAction(HideDashboard);
+        // 트레이 클릭은 WinForms 메시지 처리 도중에 들어오므로, 창 생성은 그 처리가 끝난 뒤로 미룬다.
+        // 더블클릭의 두 번째 이벤트가 첫 창 생성 도중에 끼어들지 않고 차례대로 실행된다.
+        _trayIconService = new TrayIconService(() => PostToUiThread(ShowDashboard));
+        _trayIconService.SetDashboardAction(() => PostToUiThread(ToggleDashboard));
+        _trayIconService.SetDashboardCloseAction(() => PostToUiThread(HideDashboard));
 
         FocusModeService.StateChanged += FocusModeService_StateChanged;
         _focusModeCoordinator.StateChanged += FocusModeCoordinator_StateChanged;
@@ -330,33 +333,50 @@ public partial class App : System.Windows.Application
     {
         RunOnUiThread(() =>
         {
-            if (_dashboardWindow is null)
+            // 창을 만드는 도중(CreateWindowEx 안)에 들어온 두 번째 열기 요청이 Show()를 다시 부르면
+            // WPF가 HWND를 하나 더 만들고 "VisualTarget의 루트 Visual은 부모를 가질 수 없습니다"로 실패한다.
+            // 이미 여는 중이면 그 창이 곧 뜨므로 무시한다.
+            if (_isShowingDashboard) return;
+            _isShowingDashboard = true;
+            try
             {
-                _dashboardWindow = new DashboardWindow(
-                    FocusSettings,
-                    FocusRoutine,
-                    SessionResults,
-                    ActiveWindowTracker,
-                    FocusModeService,
-                    _focusModeCoordinator,
-                    ShowCurrentRoutineReminder,
-                    RequestShutdown,
-                    summaryProvider: null,
-                    autoDndSettings: AutoDndSettings,
-                    startupRegistration: StartupRegistration);
-                _dashboardWindow.Closed += DashboardWindow_Closed;
-                MainWindow = _dashboardWindow;
+                ShowDashboardCore();
             }
-
-            _dashboardWindow.Show();
-
-            if (_dashboardWindow.WindowState == WindowState.Minimized)
+            finally
             {
-                _dashboardWindow.WindowState = WindowState.Normal;
+                _isShowingDashboard = false;
             }
-
-            _dashboardWindow.Activate();
         });
+    }
+
+    private void ShowDashboardCore()
+    {
+        if (_dashboardWindow is null)
+        {
+            _dashboardWindow = new DashboardWindow(
+                FocusSettings,
+                FocusRoutine,
+                SessionResults,
+                ActiveWindowTracker,
+                FocusModeService,
+                _focusModeCoordinator,
+                ShowCurrentRoutineReminder,
+                RequestShutdown,
+                summaryProvider: null,
+                autoDndSettings: AutoDndSettings,
+                startupRegistration: StartupRegistration);
+            _dashboardWindow.Closed += DashboardWindow_Closed;
+            MainWindow = _dashboardWindow;
+        }
+
+        _dashboardWindow.Show();
+
+        if (_dashboardWindow.WindowState == WindowState.Minimized)
+        {
+            _dashboardWindow.WindowState = WindowState.Normal;
+        }
+
+        _dashboardWindow.Activate();
     }
 
     private void DashboardWindow_Closed(object? sender, EventArgs e)
@@ -645,6 +665,7 @@ public partial class App : System.Windows.Application
     {
         RunOnUiThread(() =>
         {
+            if (_isShowingDashboard) return;
             if (_dashboardWindow?.IsVisible == true)
             {
                 _dashboardWindow.Hide();
@@ -848,6 +869,12 @@ public partial class App : System.Windows.Application
             _windowsDndGuidanceWindow.Dismiss();
         }
     }
+
+    private void PostToUiThread(Action action) =>
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!IsShuttingDown) action();
+        }));
 
     private void RunOnUiThread(Action action)
     {
