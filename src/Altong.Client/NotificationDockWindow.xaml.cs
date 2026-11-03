@@ -39,6 +39,8 @@ public partial class NotificationDockWindow : Window
     private bool _isDragging;
     /// <summary>노치를 눌러 패널을 닫은 뒤 커서가 노치를 벗어날 때까지는 호버로 다시 열지 않는다.</summary>
     private bool _hoverSuppressedUntilLeave;
+    /// <summary>패널이 호버로 열렸고 아직 클릭하지 않았는지. 호버로 열린 직후의 클릭이 패널을 닫아 버리지 않게 한다.</summary>
+    private bool _openedByHover;
     private TopBandWindow? _topBand;
     // 상단 띠는 바탕화면이 그대로 비치는 상태로 시작한다. 패널 하단에서 검정으로 바꿀 수 있다.
     private TopBandStyle _topBandStyle = TopBandStyle.Wallpaper;
@@ -193,6 +195,9 @@ public partial class NotificationDockWindow : Window
             _panelHeight = Math.Clamp(SystemParameters.WorkArea.Bottom - TopNotchLayout.NotchHeight - TopNotchLayout.PanelBottomMargin,
                 120, TopNotchLayout.PanelMaxHeight);
         double center = TopNotchLayout.NotchCenter(0, SystemParameters.PrimaryScreenWidth, _notchCenterOffset);
+        // 노치를 왼쪽 끝으로 옮겨 상세가 들어갈 자리가 없으면 상세를 목록 오른쪽에 붙인다.
+        _panel.SetDetailSide(TopNotchLayout.DetailOnRight(center, 0, SystemParameters.PrimaryScreenWidth));
+        bool detailLeft = detail && !_panel.DetailOnRight;
         _centerX = TopNotchLayout.WindowLeftExtent;
         Left = center - TopNotchLayout.WindowLeftExtent;
         Top = 0;
@@ -202,7 +207,7 @@ public partial class NotificationDockWindow : Window
         Canvas.SetTop(NotchFace, 0);
         Canvas.SetLeft(ReminderBubble, _centerX - TopNotchLayout.ReminderWidth / 2);
         Canvas.SetTop(ReminderBubble, TopNotchLayout.ReminderTop);
-        Canvas.SetLeft(PanelHost, _centerX - TopNotchLayout.PanelWidth / 2 - (detail ? TopNotchLayout.DetailWidth : 0));
+        Canvas.SetLeft(PanelHost, _centerX - TopNotchLayout.PanelWidth / 2 - (detailLeft ? TopNotchLayout.DetailWidth : 0));
         Canvas.SetTop(PanelHost, TopNotchLayout.NotchHeight);
         PanelHost.Width = _panel.PanelWidth;
         PanelHost.Height = _panelHeight;
@@ -256,8 +261,11 @@ public partial class NotificationDockWindow : Window
                 double radius = Math.Min(TopNotchLayout.PanelCornerRadius, reveal / 2);
                 var corner = new System.Windows.Size(radius, radius);
                 bool detail = _panel.HasDetail;
-                double leftEdge = detail ? listLeft - TopNotchLayout.DetailWidth : listLeft;
-                if (detail)
+                bool detailRight = detail && _panel.DetailOnRight;
+                bool detailLeft = detail && !detailRight;
+                double leftEdge = detailLeft ? listLeft - TopNotchLayout.DetailWidth : listLeft;
+                double rightEdge = detailRight ? listRight + TopNotchLayout.DetailWidth : listRight;
+                if (detailLeft)
                 {
                     context.LineTo(new Point(leftEdge + radius, top), true, true);
                     context.ArcTo(new Point(leftEdge, top + radius), corner, 0, false, SweepDirection.Counterclockwise, true, true);
@@ -268,8 +276,13 @@ public partial class NotificationDockWindow : Window
                 }
                 context.LineTo(new Point(leftEdge, bottom - radius), true, true);
                 context.ArcTo(new Point(leftEdge + radius, bottom), corner, 0, false, SweepDirection.Counterclockwise, true, true);
-                context.LineTo(new Point(listRight - radius, bottom), true, true);
-                context.ArcTo(new Point(listRight, bottom - radius), corner, 0, false, SweepDirection.Counterclockwise, true, true);
+                context.LineTo(new Point(rightEdge - radius, bottom), true, true);
+                context.ArcTo(new Point(rightEdge, bottom - radius), corner, 0, false, SweepDirection.Counterclockwise, true, true);
+                if (detailRight)
+                {
+                    context.LineTo(new Point(rightEdge, top + radius), true, true);
+                    context.ArcTo(new Point(rightEdge - radius, top), corner, 0, false, SweepDirection.Counterclockwise, true, true);
+                }
                 context.LineTo(new Point(listRight, top), true, true);
                 context.LineTo(R(6), true, true);
             }
@@ -741,6 +754,7 @@ public partial class NotificationDockWindow : Window
         if (_isClosed || !IsVisible || !IsPointerOverNotch || _isPressed || !_notifications.IsActive
             || _fullscreenSuppressed) return;
         HideReminderBubble();
+        _openedByHover = true;
         _notifications.OpenPanel();
     }
 
@@ -839,11 +853,19 @@ public partial class NotificationDockWindow : Window
         StopHoverTimers();
         if (_notifications.IsPanelOpen)
         {
+            // 커서를 올려 두면 0.5초 만에 패널이 열리므로, 사용자는 대개 열린 뒤에 클릭한다.
+            // 그 첫 클릭은 "열기"로 보고 닫지 않는다. 그다음 클릭부터 닫는다.
+            if (_openedByHover)
+            {
+                _openedByHover = false;
+                return;
+            }
             _hoverSuppressedUntilLeave = true;
             _notifications.ClosePanel();
             return;
         }
         HideReminderBubble();
+        _openedByHover = false;
         _notifications.OpenPanel();
     }
 
@@ -887,6 +909,7 @@ public partial class NotificationDockWindow : Window
     private void Notifications_Changed(object? sender, EventArgs e)
     {
         if (_isClosed) return;
+        if (!_notifications.IsPanelOpen) _openedByHover = false;
         _panel.Refresh();
         UpdateNotificationVisuals();
         if (_notifications.IsPanelOpen && IsVisible && !_fullscreenSuppressed)
@@ -939,8 +962,10 @@ public partial class NotificationDockWindow : Window
         _windowSource?.AddHook(Dock_WindowProc);
     }
 
-    private static nint Dock_WindowProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    private nint Dock_WindowProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        // 노치의 z-순서가 바뀌면(다른 알통 창 활성화 등) 띠가 노치 위로 올라오지 않았는지 확인한다.
+        if (message == 0x0047) _topBand?.ScheduleKeepBelowNotch(); // WM_WINDOWPOSCHANGED
         // 클릭 순간 노치가 활성 창을 가로채지 않아 작업 중인 앱과 대시보드의 활성 상태를 유지한다.
         if (message == 0x0021) // WM_MOUSEACTIVATE
         {

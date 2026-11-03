@@ -70,17 +70,13 @@ public static class TopNotchLayout
 
     /// <summary>
     /// 노치 가운데의 화면 x 좌표. 화면 가운데에서 좌우로 옮긴 거리를 더하고, 노치가 화면 밖으로 나가지 않게 제한한다.
-    /// 왼쪽으로는 목록 왼쪽에 붙는 상세 패널(<see cref="WindowLeftExtent"/>)까지 화면 안에 들어오는 곳까지만 옮긴다.
-    /// 다만 화면 가운데(기본 위치)보다 더 오른쪽으로 밀지는 않는다. 좁은 화면에서도 노치는 처음에 가운데에 놓인다.
+    /// 상세 패널은 왼쪽에 자리가 없으면 오른쪽에 붙으므로(<see cref="DetailOnRight"/>) 노치는 화면 끝까지 옮길 수 있다.
     /// </summary>
     public static double NotchCenter(double screenLeft, double screenWidth, double centerOffset)
     {
         double half = NotchSurfaceWidth / 2;
         double center = screenLeft + screenWidth / 2 + centerOffset;
-        double max = Math.Max(screenLeft + half, screenLeft + screenWidth - half);
-        double min = Math.Max(screenLeft + half,
-            Math.Min(Math.Min(screenLeft + WindowLeftExtent, screenLeft + screenWidth / 2), max));
-        return Math.Clamp(center, min, max);
+        return Math.Clamp(center, screenLeft + half, Math.Max(screenLeft + half, screenLeft + screenWidth - half));
     }
 
     /// <summary>노치 가운데 위치를 화면 가운데에서 옮긴 거리로 바꾼다. 작업 영역이 바뀌어도 같은 거리를 유지한다.</summary>
@@ -167,7 +163,15 @@ public static class TopNotchLayout
     /// 이전 화면이 어긋난 위치에 잠깐 찍히지 않는다. 투명한 부분의 클릭은 아래 앱으로 전달된다.
     /// </summary>
     public const double WindowLeftExtent = PanelWidth / 2 + DetailWidth;
-    public const double WindowRightExtent = WindowWidth / 2;
+    /// <summary>상세 패널이 목록 오른쪽에 붙을 때도 담도록 오른쪽도 왼쪽만큼 둔다. 창 가운데가 늘 노치 가운데라 배율이 다른 옆 모니터에 걸려도 주 모니터 배율을 따른다.</summary>
+    public const double WindowRightExtent = WindowLeftExtent;
+
+    /// <summary>
+    /// 상세 패널을 목록 오른쪽에 붙일지. 기본은 왼쪽이고, 노치를 화면 왼쪽 끝으로 옮겨 왼쪽에 상세가 들어갈 자리가 없을 때만 오른쪽에 붙인다.
+    /// </summary>
+    public static bool DetailOnRight(double notchCenter, double screenLeft, double screenWidth) =>
+        notchCenter - PanelWidth / 2 - DetailWidth < screenLeft
+        && notchCenter + PanelWidth / 2 + DetailWidth <= screenLeft + screenWidth;
 
     /// <summary>
     /// 노치 창 높이. 패널이 보이는 동안에만 패널을 담을 만큼 아래로 늘린다(위쪽은 그대로).

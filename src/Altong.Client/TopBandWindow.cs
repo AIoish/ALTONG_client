@@ -207,11 +207,14 @@ public sealed class TopBandWindow : Window
         {
             var data = NewData();
             SHAppBarMessage(AbmActivate, ref data);
+            ScheduleKeepBelowNotch();
         }
         else if (message == WmWindowPosChanged && !_positioning)
         {
             var data = NewData();
             SHAppBarMessage(AbmWindowPosChanged, ref data);
+            // 셸이나 다른 창 활성화(예: 대시보드 열기)로 띠가 노치 위로 올라가면, 띠가 노치를 덮고 클릭·호버를 가로챈다.
+            ScheduleKeepBelowNotch();
         }
         else if (message == WmDisplayChange)
         {
@@ -226,8 +229,15 @@ public sealed class TopBandWindow : Window
     private void SetFullscreen(bool opened)
     {
         // 바탕화면 보기·화면 캡처·시작 메뉴처럼 잠깐 화면을 덮는 셸 화면은 전체화면 앱으로 보지 않는다.
-        if (opened && (TopNotchLayout.IsShellWindowClass(ForegroundClassName())
-                       || TopNotchLayout.IsSystemOverlayProcess(ForegroundProcessName()))) opened = false;
+        // 알통 자신의 창(대시보드·리포트 등)도 전체화면 앱이 아니다. 대시보드를 열 때 노치가 사라지지 않게 한다.
+        string? process = ForegroundProcessName();
+        string? className = ForegroundClassName();
+        bool ignored = opened && (TopNotchLayout.IsShellWindowClass(className)
+                                  || TopNotchLayout.IsSystemOverlayProcess(process)
+                                  || ForegroundIsOwnProcess());
+        // 원인을 확인할 수 있게 앞 창의 프로세스·클래스 이름만 남긴다(창 제목은 남기지 않는다).
+        AppLogger.Info($"[TopBand] 전체화면 알림 {(opened ? "시작" : "끝")} · 앞 창 {process ?? "?"}/{className ?? "?"}{(ignored ? " · 무시" : "")}");
+        if (ignored) opened = false;
         if (IsFullscreenActive == opened) return;
         IsFullscreenActive = opened;
         if (opened)
@@ -254,6 +264,24 @@ public sealed class TopBandWindow : Window
         SetWindowPos(_hwnd, hwnd, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
     }
 
+    private bool _keepBelowPending;
+
+    /// <summary>
+    /// z-순서가 바뀐 뒤 띠가 노치 바로 아래가 아니면 다시 내린다. 메시지 처리 중에는 순서를 바꾸지 않고 한 번만 예약하며,
+    /// 이미 노치 바로 아래면 아무것도 하지 않아 다시 이 메시지가 반복되지 않는다.
+    /// </summary>
+    public void ScheduleKeepBelowNotch()
+    {
+        if (_keepBelowPending || _keepBelow == 0 || IsFullscreenActive) return;
+        _keepBelowPending = true;
+        _ = Dispatcher.BeginInvoke(() =>
+        {
+            _keepBelowPending = false;
+            if (_hwnd == 0 || _keepBelow == 0 || IsFullscreenActive) return;
+            if (GetWindow(_hwnd, GwHwndPrev) != _keepBelow) PlaceBelow(_keepBelow);
+        });
+    }
+
     private static string? ForegroundProcessName()
     {
         var hwnd = GetForegroundWindow();
@@ -268,6 +296,14 @@ public sealed class TopBandWindow : Window
         {
             return null;
         }
+    }
+
+    private static bool ForegroundIsOwnProcess()
+    {
+        var hwnd = GetForegroundWindow();
+        if (hwnd == 0) return false;
+        GetWindowThreadProcessId(hwnd, out uint processId);
+        return processId == (uint)Environment.ProcessId;
     }
 
     private static string? ForegroundClassName()
@@ -336,6 +372,9 @@ public sealed class TopBandWindow : Window
 
     [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
+    private const uint GwHwndPrev = 3;
+    [DllImport("user32.dll")]
+    private static extern nint GetWindow(nint hwnd, uint command);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetClassName(nint hwnd, StringBuilder name, int maxCount);

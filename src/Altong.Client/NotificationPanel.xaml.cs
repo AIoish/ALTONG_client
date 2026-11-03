@@ -40,6 +40,28 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
 
     public TopBandStyle BandStyle => _bandStyle;
     public bool HasDetail => _state.SelectedItem is not null;
+    /// <summary>상세 패널이 목록 오른쪽에 붙는지. 노치를 화면 왼쪽 끝으로 옮겼을 때만 오른쪽이다.</summary>
+    public bool DetailOnRight { get; private set; }
+
+    /// <summary>상세 패널을 목록 왼쪽 또는 오른쪽에 붙인다. 목록 쪽 테두리 선도 함께 옮긴다.</summary>
+    public void SetDetailSide(bool right)
+    {
+        if (DetailOnRight == right) return;
+        DetailOnRight = right;
+        Grid.SetColumn(DetailPanel, right ? 1 : 0);
+        Grid.SetColumn(ListPanel, right ? 0 : 1);
+        DetailPanel.BorderThickness = right ? new Thickness(1, 0, 0, 0) : new Thickness(0, 0, 1, 0);
+        ApplyColumns();
+    }
+
+    /// <summary>첫 열·둘째 열 폭. 상세가 왼쪽이면 [상세, 목록], 오른쪽이면 [목록, 상세] 순서다.</summary>
+    private void ApplyColumns()
+    {
+        var detail = new GridLength(HasDetail ? DetailWidth : 0);
+        var list = new GridLength(ListWidth);
+        DetailColumn.Width = DetailOnRight ? list : detail;
+        ListColumn.Width = DetailOnRight ? detail : list;
+    }
     public double PanelWidth => ListWidth + (HasDetail ? DetailWidth : 0);
 
     /// <summary>상단 띠 색 선택을 표시한다.</summary>
@@ -108,7 +130,7 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
 
         bool hasDetail = HasDetail;
         bool openingDetail = hasDetail && DetailPanel.Visibility != Visibility.Visible;
-        DetailColumn.Width = new GridLength(hasDetail ? DetailWidth : 0);
+        ApplyColumns();
         DetailPanel.Visibility = hasDetail ? Visibility.Visible : Visibility.Collapsed;
         Width = PanelWidth;
         if (_displayedDetail != _state.SelectedItem)
@@ -118,12 +140,12 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
             DetailScroll.ScrollToTop();
         }
         // 새 알림 수신·읽음 갱신 시에는 재생하지 않고 상세를 펼칠 때만 강조한다.
-        if (openingDetail && IsVisible) AnimateEntrance(DetailPanel);
+        if (openingDetail && IsVisible) AnimateEntrance(DetailPanel, DetailOnRight ? -6 : 6);
         else if (!hasDetail) ResetEntrance(DetailPanel);
     }
 
     /// <summary>상세가 나타날 때 한 번만 옆에서 들어온다.</summary>
-    private static void AnimateEntrance(FrameworkElement panel)
+    private static void AnimateEntrance(FrameworkElement panel, double offset)
     {
         ResetEntrance(panel);
         if (!SystemParameters.ClientAreaAnimation) return;
@@ -135,7 +157,7 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
             FillBehavior = FillBehavior.Stop,
         }.AtDisplayRate(), HandoffBehavior.SnapshotAndReplace);
         ((TranslateTransform)panel.RenderTransform).BeginAnimation(TranslateTransform.XProperty,
-            new DoubleAnimation(6, 0, duration)
+            new DoubleAnimation(offset, 0, duration)
             {
                 EasingFunction = easing,
                 FillBehavior = FillBehavior.Stop,
