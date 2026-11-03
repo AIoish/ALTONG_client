@@ -130,7 +130,10 @@ public sealed class TopNotchLayoutTests
         Assert.IsTrue(TopNotchLayout.DetailOnRight(TopNotchLayout.WindowLeftExtent - 1, 0, 1920));
         Assert.IsTrue(TopNotchLayout.DetailOnRight(TopNotchLayout.NotchSurfaceWidth / 2, 0, 1920));
         Assert.IsFalse(TopNotchLayout.DetailOnRight(1920 - TopNotchLayout.NotchSurfaceWidth / 2, 0, 1920), "오른쪽 끝에서는 왼쪽에 붙는다.");
-        Assert.AreEqual(TopNotchLayout.WindowLeftExtent, TopNotchLayout.WindowRightExtent);
+        // 상세가 붙는 쪽을 넓게 두고, 창 폭은 좁은 화면(1024px)보다 작게 유지한다.
+        Assert.AreEqual(TopNotchLayout.WindowLeftExtent, TopNotchLayout.NotchCenterInWindow(false));
+        Assert.AreEqual(TopNotchLayout.WindowRightExtent, TopNotchLayout.NotchCenterInWindow(true));
+        Assert.IsTrue(TopNotchLayout.WindowLeftExtent + TopNotchLayout.WindowRightExtent < 1024);
     }
 
     [TestMethod]

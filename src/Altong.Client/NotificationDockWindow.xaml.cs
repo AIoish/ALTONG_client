@@ -198,8 +198,9 @@ public partial class NotificationDockWindow : Window
         // 노치를 왼쪽 끝으로 옮겨 상세가 들어갈 자리가 없으면 상세를 목록 오른쪽에 붙인다.
         _panel.SetDetailSide(TopNotchLayout.DetailOnRight(center, 0, SystemParameters.PrimaryScreenWidth));
         bool detailLeft = detail && !_panel.DetailOnRight;
-        _centerX = TopNotchLayout.WindowLeftExtent;
-        Left = center - TopNotchLayout.WindowLeftExtent;
+        // 상세가 붙는 쪽을 넓게 둔다. 쪽이 바뀌는 건 노치를 끌 때(패널이 닫혀 있을 때)뿐이다.
+        _centerX = TopNotchLayout.NotchCenterInWindow(_panel.DetailOnRight);
+        Left = center - _centerX;
         Top = 0;
         Width = TopNotchLayout.WindowLeftExtent + TopNotchLayout.WindowRightExtent;
         Height = TopNotchLayout.WindowHeightFor(_panelShown, _panelHeight);

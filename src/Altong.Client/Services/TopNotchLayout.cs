@@ -163,8 +163,15 @@ public static class TopNotchLayout
     /// 이전 화면이 어긋난 위치에 잠깐 찍히지 않는다. 투명한 부분의 클릭은 아래 앱으로 전달된다.
     /// </summary>
     public const double WindowLeftExtent = PanelWidth / 2 + DetailWidth;
-    /// <summary>상세 패널이 목록 오른쪽에 붙을 때도 담도록 오른쪽도 왼쪽만큼 둔다. 창 가운데가 늘 노치 가운데라 배율이 다른 옆 모니터에 걸려도 주 모니터 배율을 따른다.</summary>
-    public const double WindowRightExtent = WindowLeftExtent;
+    /// <summary>상세가 붙지 않는 쪽 폭. 창 폭(<see cref="WindowLeftExtent"/> + 이 값)은 좁은 화면(1024px)보다 작게 유지한다.
+    /// 창이 화면보다 넓으면 Windows가 창 크기를 줄여 노치 위치가 어긋난다.</summary>
+    public const double WindowRightExtent = WindowWidth / 2;
+
+    /// <summary>
+    /// 창 안에서 노치 가운데의 x. 상세가 붙는 쪽을 넓게 둔다. 상세가 왼쪽이면 왼쪽이 <see cref="WindowLeftExtent"/>,
+    /// 오른쪽이면 왼쪽이 <see cref="WindowRightExtent"/>다. 창 폭은 같다.
+    /// </summary>
+    public static double NotchCenterInWindow(bool detailOnRight) => detailOnRight ? WindowRightExtent : WindowLeftExtent;
 
     /// <summary>
     /// 상세 패널을 목록 오른쪽에 붙일지. 기본은 왼쪽이고, 노치를 화면 왼쪽 끝으로 옮겨 왼쪽에 상세가 들어갈 자리가 없을 때만 오른쪽에 붙인다.
