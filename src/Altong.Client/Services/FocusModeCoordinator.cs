@@ -57,6 +57,50 @@ public sealed class FocusModeCoordinator : IDisposable
         _dispatcher.Invoke(RequestToggleOnUiThread);
     }
 
+    /// <summary>설정 창 안내 없이 바로 집중을 켤 수 있는지 (알통 자체 제어 방식).</summary>
+    public bool CanStartDirectly => Backend == FocusControlBackend.Altong && NativeControl is not null;
+
+    /// <summary>
+    /// 알통 자체 제어로 실제로 제어할 앱이 하나 이상 있는지. 검증되지 않은 Windows 빌드에서는 앱 목록이 비어 있고,
+    /// 사용자가 모든 앱을 뺐을 때도 false다. 이때 켜기를 시도하면 오류 안내만 뜨므로 자동 제안을 하지 않는다.
+    /// </summary>
+    public bool HasControllableApps =>
+        NativeControl is { } control && control.Senders.Any(s => s.IsEligible && control.IsSelected(s.Id));
+
+    /// <summary>
+    /// 집중 모드를 켜기만 한다. 이미 켜져 있으면 아무것도 하지 않아 토글처럼 반대로 꺼지는 일이 없다.
+    /// 알통 자체 제어 방식에서만 동작하며, 켰으면 true를 돌려준다.
+    /// </summary>
+    public bool RequestStart()
+    {
+        ThrowIfDisposed();
+        bool started = false;
+        _dispatcher.Invoke(() =>
+        {
+            if (!CanStartDirectly || _focusModeService.IsEnabled) return;
+            StartAltongFocus();
+            started = _focusModeService.IsEnabled;
+        });
+        return started;
+    }
+
+    /// <summary>
+    /// 집중 모드를 끄기만 한다. 이미 꺼져 있으면 아무것도 하지 않는다. 알통 자체 제어 방식에서만 동작하며
+    /// (Windows 방식은 사용자가 직접 방해 금지를 꺼야 함), 껐으면 true를 돌려준다.
+    /// </summary>
+    public bool RequestStop()
+    {
+        ThrowIfDisposed();
+        bool stopped = false;
+        _dispatcher.Invoke(() =>
+        {
+            if (!CanStartDirectly || !_focusModeService.IsEnabled) return;
+            StopAltongFocus();
+            stopped = !_focusModeService.IsEnabled;
+        });
+        return stopped;
+    }
+
     public void CancelGuidance()
     {
         ThrowIfDisposed();
@@ -148,24 +192,16 @@ public sealed class FocusModeCoordinator : IDisposable
 
     private void RequestToggleOnUiThread()
     {
-        if (Backend == FocusControlBackend.Altong && NativeControl is not null)
+        if (CanStartDirectly)
         {
-            try
+            if (_focusModeService.IsEnabled)
             {
-                if (_focusModeService.IsEnabled)
-                {
-                    NativeControl.Stop();
-                    _focusModeService.Stop();
-                }
-                else
-                {
-                    NativeControl.Start();
-                    _focusModeService.Start();
-                }
-                SetGuidance(null);
+                StopAltongFocus();
             }
-            catch (Exception ex) { ShowNativeError(ex); }
-            StateChanged?.Invoke(this, EventArgs.Empty);
+            else
+            {
+                StartAltongFocus();
+            }
             return;
         }
         var state = _notificationModeObserver.Refresh();
@@ -191,6 +227,30 @@ public sealed class FocusModeCoordinator : IDisposable
                     false));
                 break;
         }
+    }
+
+    private void StartAltongFocus()
+    {
+        try
+        {
+            NativeControl!.Start();
+            _focusModeService.Start();
+            SetGuidance(null);
+        }
+        catch (Exception ex) { ShowNativeError(ex); }
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void StopAltongFocus()
+    {
+        try
+        {
+            NativeControl!.Stop();
+            _focusModeService.Stop();
+            SetGuidance(null);
+        }
+        catch (Exception ex) { ShowNativeError(ex); }
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void OpenSettingsFor(FocusModeGuidanceKind kind)

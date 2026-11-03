@@ -8,6 +8,7 @@ using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Services;
 using Altong.Client.Services.Calendar;
+using Altong.Client.Services.Focus;
 using Altong.Client.Services.NotificationControl;
 using Color = System.Windows.Media.Color;
 using ContentControl = System.Windows.Controls.ContentControl;
@@ -24,6 +25,8 @@ public partial class DashboardWindow : Window
     private readonly FocusModeCoordinator? _focusModeCoordinator;
     private readonly Action? _showRoutineReminder;
     private readonly Action? _shutdownApplication;
+    private readonly AutoDndSettingsStore? _autoDndSettings;
+    private readonly StartupRegistration? _startupRegistration;
     private bool _settingsReady;
     public SessionResultsService Results { get; }
     private bool _dashboardDataLoading;
@@ -55,9 +58,13 @@ public partial class DashboardWindow : Window
         Action? shutdownApplication = null,
         IReportSummaryProvider? summaryProvider = null,
         string? summaryStatePath = null,
-        Action<string>? openCalendar = null)
+        Action<string>? openCalendar = null,
+        AutoDndSettingsStore? autoDndSettings = null,
+        StartupRegistration? startupRegistration = null)
     {
         Results = results;
+        _autoDndSettings = autoDndSettings;
+        _startupRegistration = startupRegistration;
         _focusSettings = focusSettings;
         _focusRoutine = focusRoutine;
         _activeWindowTracker = activeWindowTracker;
@@ -95,6 +102,7 @@ public partial class DashboardWindow : Window
         _clockTimer.Tick += (_, _) => UpdateClock();
         UpdateClock();
         AppVersionText.Text = $"ALTONG · {typeof(DashboardWindow).Assembly.GetName().Version}";
+        UpdateLaunchAtStartupView();
         UpdateFocusModeView();
         SourceInitialized += (_, _) => FitToWorkArea();
         StateChanged += (_, _) =>
@@ -769,6 +777,7 @@ public partial class DashboardWindow : Window
         UseWindowsControlButton.IsEnabled = control is not null && _focusModeCoordinator!.Backend != FocusControlBackend.Windows;
         RefreshNotificationAppsButton.IsEnabled = control is not null;
         RestoreNotificationAppsButton.IsEnabled = control is not null;
+        UpdateAutoDndView();
         NotificationSenderList.Children.Clear();
         if (control is null) return;
         foreach (var row in control.Senders.Where(row => row.IsEligible))
@@ -801,6 +810,74 @@ public partial class DashboardWindow : Window
                 Foreground = (System.Windows.Media.Brush)FindResource("MutedText"),
                 Margin = new Thickness(0, 4, 0, 4)
             });
+        }
+    }
+
+    private void UpdateAutoDndView()
+    {
+        if (_autoDndSettings is null)
+        {
+            AutoDndSettingsCard.Visibility = Visibility.Collapsed;
+            return;
+        }
+        bool enabled = _autoDndSettings.Current.Enabled;
+        AutoDndEnabledCheckBox.IsChecked = enabled;
+        AutoDndStatusText.Text = !enabled
+            ? "꺼져 있어요. 집중 모드는 직접 켜고 끕니다."
+            : _focusModeCoordinator?.CanStartDirectly != true
+                ? "아래 '알통 자체 제어' 방식에서만 동작해요. 지금은 Windows 방해 금지 방식이라 제안하지 않아요."
+                : _focusModeCoordinator.HasControllableApps != true
+                    ? "알통 자체 제어로 조절할 앱이 없어 제안하지 않아요. 아래 앱 목록을 확인해 주세요."
+                    : "켜져 있어요. [나중에]를 누르면 한동안 묻지 않아요. 집중 중 15분 동안 자리를 비우면 집중을 끝내고, 설정한 집중 시간이 끝나면 종료할지 물어요.";
+    }
+
+    private void AutoDndEnabledCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        if (_autoDndSettings is null) return;
+        try
+        {
+            _autoDndSettings.Save(new AutoDndSettings(AutoDndEnabledCheckBox.IsChecked == true));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AutoDndStatusText.Text = "설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.";
+            AutoDndEnabledCheckBox.IsChecked = _autoDndSettings.Current.Enabled;
+            return;
+        }
+        UpdateAutoDndView();
+    }
+
+    private void UpdateLaunchAtStartupView()
+    {
+        if (_startupRegistration is null)
+        {
+            LaunchAtStartupCheckBox.Visibility = Visibility.Collapsed;
+            LaunchAtStartupStatusText.Visibility = Visibility.Collapsed;
+            return;
+        }
+        try { LaunchAtStartupCheckBox.IsChecked = _startupRegistration.IsEnabled; }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            LaunchAtStartupCheckBox.IsEnabled = false;
+            LaunchAtStartupStatusText.Text = "시작 프로그램 설정을 확인할 수 없어요.";
+        }
+    }
+
+    private void LaunchAtStartupCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        if (_startupRegistration is null) return;
+        bool enabled = LaunchAtStartupCheckBox.IsChecked == true;
+        try
+        {
+            _startupRegistration.SetEnabled(enabled);
+            LaunchAtStartupStatusText.Text = enabled
+                ? "다음에 Windows에 로그인하면 알통이 트레이에서 조용히 시작해요."
+                : "Windows 시작 시 실행하지 않아요.";
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            LaunchAtStartupCheckBox.IsChecked = !enabled;
+            LaunchAtStartupStatusText.Text = "시작 프로그램 설정을 바꾸지 못했어요. 잠시 후 다시 시도해 주세요.";
         }
     }
 

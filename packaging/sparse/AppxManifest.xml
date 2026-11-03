@@ -33,9 +33,8 @@
     <Application
       Id="App"
       Executable="Altong.Client.exe"
-      EntryPoint="Windows.FullTrustApplication"
       uap10:TrustLevel="mediumIL"
-      uap10:RuntimeBehavior="packagedClassicApp">
+      uap10:RuntimeBehavior="win32App">
       <uap:VisualElements
         DisplayName="Altong"
         Description="AI Notification Manager"
