@@ -19,6 +19,28 @@ public sealed record NotificationSummaryItem(
 {
     [JsonPropertyName("app_name")]
     public string? AppName { get; init; }
+
+    /// <summary>요약한 알림의 발신자. 모델이 아니라 원본 알림에서 가져온다.</summary>
+    [JsonPropertyName("sender")]
+    public string? Sender { get; init; }
+
+    /// <summary>카카오톡 방 이름 (카카오톡 알림의 title). 다른 앱은 null.</summary>
+    [JsonPropertyName("room")]
+    public string? Room { get; init; }
+
+    /// <summary>요약 위에 보여 줄 출처. 예: "Aton~ · 이시영". 1:1 대화처럼 방 이름과 발신자가 같으면 한 번만 쓴다.</summary>
+    [JsonIgnore]
+    public string? SourceLabel
+    {
+        get
+        {
+            var room = Room?.Trim();
+            var sender = Sender?.Trim();
+            var parts = new[] { room, string.Equals(room, sender, StringComparison.Ordinal) ? null : sender }
+                .Where(part => !string.IsNullOrEmpty(part)).ToArray();
+            return parts.Length == 0 ? null : string.Join(" · ", parts);
+        }
+    }
 }
 
 public sealed record CalendarSchedule(

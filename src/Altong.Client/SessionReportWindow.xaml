@@ -135,7 +135,21 @@
                         </StackPanel>
                         <ItemsControl x:Name="ReportSummaryItemsControl" Visibility="Collapsed">
                             <ItemsControl.ItemTemplate><DataTemplate>
-                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                <StackPanel Margin="0,0,0,8">
+                                    <!-- 출처(방 · 발신자)는 모델이 아니라 원본 알림에서 가져온다. 없으면 숨긴다. -->
+                                    <TextBlock Text="{Binding SourceLabel}" FontSize="12" Margin="0,0,0,2">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource Muted}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SourceLabel}" Value="{x:Null}">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                                </StackPanel>
                             </DataTemplate></ItemsControl.ItemTemplate>
                         </ItemsControl>
                         <TextBlock x:Name="SummaryLoadStatusText" Style="{StaticResource Muted}" FontSize="12" Margin="0,8,0,0" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />

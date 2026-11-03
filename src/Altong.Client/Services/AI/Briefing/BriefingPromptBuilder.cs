@@ -118,8 +118,14 @@ public static class BriefingPromptBuilder
                "형식: {\"primary_category\":\"허용 카테고리\",\"summary_lines\":[\"요약 문장\"]}";
     }
 
-    public static string RenderChatMl(string systemPrompt, string userPrompt)
-    {
-        return $"<|im_start|>system\n{systemPrompt}<|im_end|>\n<|im_start|>user\n{userPrompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
-    }
+    public static string RenderChatMl(string systemPrompt, string userPrompt) =>
+        RenderChatMlPrefix(systemPrompt) + RenderChatMlSuffix(userPrompt);
+
+    /// <summary>모든 그룹에 공통인 시스템 부분. 한 번만 처리해 두고 그룹마다 재사용한다.</summary>
+    public static string RenderChatMlPrefix(string systemPrompt) =>
+        $"<|im_start|>system\n{systemPrompt}<|im_end|>\n";
+
+    /// <summary>그룹마다 달라지는 사용자 부분과 비사고 모드 assistant 시작.</summary>
+    public static string RenderChatMlSuffix(string userPrompt) =>
+        $"<|im_start|>user\n{userPrompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
 }
