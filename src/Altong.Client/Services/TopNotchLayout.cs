@@ -6,9 +6,31 @@ namespace Altong.Client.Services;
 /// </summary>
 public static class TopNotchLayout
 {
+    /// <summary>
+    /// [임시] 노치·띠 크기 비교용 후보. 패널 하단 버튼으로 실행 중에 바꿔 보고, 크기를 정하면 이 목록과 버튼을 지운다.
+    /// 높이를 줄이면 옆선 곡선도 같은 비율로 줄고, 폭은 후보마다 정한다(마지막 후보는 높이만 줄이고 폭은 유지).
+    /// </summary>
+    public static readonly NotchSize[] SizeOptions =
+    {
+        new("30", 30, 360.2),
+        new("24", 24, 288.16),
+        new("20", 20, 240.13),
+        new("16", 16, 192.11),
+        new("20W", 20, 360.2),
+    };
+
+    /// <summary>[임시] 지금 쓰는 노치 크기. 기본은 30px(시안 그대로)이다.</summary>
+    public static NotchSize Size { get; private set; } = SizeOptions[0];
+
+    /// <summary>[임시] 노치 크기를 바꾼다. 창은 <see cref="NotificationDockWindow"/>가 다시 배치한다.</summary>
+    public static void SetSize(NotchSize size) => Size = size;
+
+    /// <summary>시안(30px) 대비 높이 비율. 옆선 곡선·렌즈를 이 비율로 줄인다.</summary>
+    public static double HeightScale => Size.Height / 30;
+
     /// <summary>띠 높이(DIP). 노치 높이와 같아 노치가 띠 안에 들어간다.</summary>
-    public const double BandHeight = 30;
-    public const double NotchHeight = BandHeight;
+    public static double BandHeight => Size.Height;
+    public static double NotchHeight => BandHeight;
     /// <summary>호버·패널이 열린 동안 보이는 노치 윤곽선의 불투명도. 검은 띠에서 노치 범위만 알 수 있을 정도로 둔다.</summary>
     public const double OutlineOpacity = .55;
     /// <summary>
@@ -16,9 +38,9 @@ public static class TopNotchLayout
     /// 팀 시안 이미지의 윤곽을 측정해 한쪽당 3차 베지어 2개로 맞춘 값이다(오차 약 0.3px).
     /// 모양은 NotificationDockWindow.xaml의 NotchFace 경로와 같다.
     /// </summary>
-    public const double NotchSurfaceWidth = 360.2;
+    public static double NotchSurfaceWidth => Size.Width;
     /// <summary>노치 아래쪽 평평한 부분의 폭.</summary>
-    public const double NotchBottomWidth = 235.4;
+    public static double NotchBottomWidth => NotchSurfaceWidth - 2 * ClosedLeftSide[^1].X * HeightScale;
     /// <summary>
     /// 노치 가운데를 기준으로 한 닫힌 노치·안내 말풍선 영역의 폭과, 패널이 닫혀 있을 때의 창 높이.
     /// 노치 아래 투명 영역은 안내 말풍선(그림자 포함) 자리이며 클릭은 아래 앱으로 전달된다.
@@ -29,7 +51,7 @@ public static class TopNotchLayout
     /// <summary>안내 말풍선 크기. 노치 바로 아래 가운데에 둔다.</summary>
     public const double ReminderWidth = 344;
     public const double ReminderHeight = 122;
-    public const double ReminderTop = NotchHeight + 4;
+    public static double ReminderTop => NotchHeight + 4;
 
     public const string BlackBand = "#000000";
     /// <summary>
@@ -175,8 +197,17 @@ public static class TopNotchLayout
     public static (double X, double Y)[] NotchLeftSide(double progress)
     {
         double t = Math.Clamp(progress, 0, 1);
+        double scale = HeightScale;
+        // 열린 옆선은 패널 옆면(노치 가운데에서 패널 폭의 절반)에서 수직으로 끝나도록 옮긴다.
+        // 노치가 패널보다 좁으면 위쪽 시작점도 노치 밖으로 넓어진다.
+        double openEnd = (NotchSurfaceWidth - PanelWidth) / 2;
+        double openShift = openEnd - OpenLeftSide[^1].X * scale;
         return ClosedLeftSide.Zip(OpenLeftSide, (closed, open) =>
-            (closed.X + (open.X - closed.X) * t, closed.Y + (open.Y - closed.Y) * t)).ToArray();
+        {
+            double cx = closed.X * scale, cy = closed.Y * scale;
+            double ox = open.X * scale + openShift, oy = open.Y * scale;
+            return (cx + (ox - cx) * t, cy + (oy - cy) * t);
+        }).ToArray();
     }
 
     /// <summary>
@@ -266,3 +297,6 @@ public readonly record struct PixelRect(int Left, int Top, int Right, int Bottom
 
 /// <summary>새 알림 일렁임 결정: 생략, 지금 재생, 지금 것이 끝난 뒤 한 번 더.</summary>
 public enum AlertRippleDecision { Skip, Play, Queue }
+
+/// <summary>[임시] 노치·띠 크기 후보. <see cref="Label"/>은 비교 버튼 글자다.</summary>
+public readonly record struct NotchSize(string Label, double Height, double Width);

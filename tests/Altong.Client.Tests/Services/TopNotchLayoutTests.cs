@@ -125,6 +125,28 @@ public sealed class TopNotchLayoutTests
     }
 
     [TestMethod]
+    public void NotchSizeOptions_ScaleTheShapeAndStillOpenIntoThePanel()
+    {
+        try
+        {
+            foreach (var size in TopNotchLayout.SizeOptions)
+            {
+                TopNotchLayout.SetSize(size);
+                var closed = TopNotchLayout.NotchLeftSide(0);
+                var open = TopNotchLayout.NotchLeftSide(1);
+                Assert.AreEqual(size.Height, TopNotchLayout.BandHeight, size.Label);
+                Assert.AreEqual(size.Height, closed[^1].Y, .001, size.Label);
+                Assert.AreEqual(size.Height, open[^1].Y, .001, size.Label);
+                // 노치가 작아져도 열리면 바닥이 목록 패널 폭과 같아진다.
+                Assert.AreEqual(TopNotchLayout.PanelWidth, TopNotchLayout.NotchSurfaceWidth - 2 * open[^1].X, .01, size.Label);
+                Assert.IsTrue(TopNotchLayout.NotchBottomWidth > 0, size.Label);
+                Assert.IsTrue(TopNotchLayout.NotchSurfaceWidth / 2 <= TopNotchLayout.WindowRightExtent, size.Label);
+            }
+        }
+        finally { TopNotchLayout.SetSize(TopNotchLayout.SizeOptions[0]); }
+    }
+
+    [TestMethod]
     public void NotchLeftSide_ClosedMatchesTheMockAndOpenMatchesThePanel()
     {
         var closed = TopNotchLayout.NotchLeftSide(0);
@@ -134,7 +156,7 @@ public sealed class TopNotchLayoutTests
         // 열림: 바닥 폭이 목록 패널 폭과 같아 패널 옆면으로 곧게 이어진다.
         Assert.AreEqual(TopNotchLayout.PanelWidth, TopNotchLayout.NotchSurfaceWidth - 2 * open[^1].X, .01);
         // 높이와 위쪽 시작점은 그대로다.
-        Assert.AreEqual(0d, open[0].X);
+        Assert.AreEqual(0d, open[0].X, .001);
         Assert.AreEqual(TopNotchLayout.NotchHeight, open[^1].Y);
         // 닫힘은 바닥에서 수평으로 끝나고(마지막 두 점의 y가 같음), 열림은 수직으로 끝나 패널 옆면과 꺾임 없이 이어진다.
         Assert.AreEqual(closed[^2].Y, closed[^1].Y);
