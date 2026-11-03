@@ -352,13 +352,12 @@
                         </Border>
                     </Grid>
                     <!-- [임시] 노치·띠 높이 비교 버튼. 크기를 정하면 지운다. 20W는 높이만 20으로 줄이고 폭은 유지한다. -->
-                    <Grid x:Name="NotchSizeBar" Margin="0,8,0,0">
-                        <TextBlock Text="노치 높이(임시)" FontSize="11" Foreground="{StaticResource MutedText}"
-                                   VerticalAlignment="Center" HorizontalAlignment="Left" />
-                        <Border Background="#202225" CornerRadius="8" Padding="2" HorizontalAlignment="Right">
+                    <StackPanel x:Name="NotchSizeBar" Margin="0,8,0,0">
+                        <TextBlock Text="노치 높이(임시)" FontSize="11" Foreground="{StaticResource MutedText}" Margin="0,0,0,4" />
+                        <Border Background="#202225" CornerRadius="8" Padding="2" HorizontalAlignment="Left">
                             <StackPanel x:Name="NotchSizeButtons" Orientation="Horizontal" />
                         </Border>
-                    </Grid>
+                    </StackPanel>
                 </StackPanel>
             </Grid>
         </Border>

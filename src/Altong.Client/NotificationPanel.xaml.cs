@@ -66,7 +66,7 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
             {
                 Content = size.Label,
                 Tag = size,
-                Width = 38,
+                Width = 36,
                 Height = 26,
                 Margin = new Thickness(1),
                 FontSize = 11,

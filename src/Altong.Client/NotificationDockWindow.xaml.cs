@@ -146,9 +146,10 @@ public partial class NotificationDockWindow : Window
         double scale = TopNotchLayout.HeightScale;
         NotchFace.Width = TopNotchLayout.NotchSurfaceWidth;
         NotchFace.Height = TopNotchLayout.NotchHeight;
-        double lens = TopNotchLayout.LensDiameter * scale;
+        // 아주 얇은 노치에서도 렌즈가 사라지지 않게 최소 크기를 둔다.
+        double lens = Math.Max(3, TopNotchLayout.LensDiameter * scale);
         TopNotchLens.Width = TopNotchLens.Height = lens;
-        double glow = TopNotchLayout.LensFlashDiameter * scale;
+        double glow = Math.Max(8, TopNotchLayout.LensFlashDiameter * scale);
         TopNotchLensGlow.Width = TopNotchLensGlow.Height = glow;
         double saved = _centerX;
         _centerX = TopNotchLayout.NotchSurfaceWidth / 2;
