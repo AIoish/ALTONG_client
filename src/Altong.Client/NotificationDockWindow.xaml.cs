@@ -37,6 +37,8 @@ public partial class NotificationDockWindow : Window
     private double _pressNotchCenter;
     private bool _isPressed;
     private bool _isDragging;
+    /// <summary>노치를 눌러 패널을 닫은 뒤 커서가 노치를 벗어날 때까지는 호버로 다시 열지 않는다.</summary>
+    private bool _hoverSuppressedUntilLeave;
     private TopBandWindow? _topBand;
     // 상단 띠는 바탕화면이 그대로 비치는 상태로 시작한다. 패널 하단에서 검정으로 바꿀 수 있다.
     private TopBandStyle _topBandStyle = TopBandStyle.Wallpaper;
@@ -684,10 +686,11 @@ public partial class NotificationDockWindow : Window
             return;
         }
         bool open = _notifications.IsPanelOpen;
+        if (!IsPointerOverNotch) _hoverSuppressedUntilLeave = false;
         if (open ? IsPointerOverSurface : IsPointerOverNotch)
         {
             _leaveTimer.Stop();
-            if (!open && !_hoverTimer.IsEnabled) _hoverTimer.Start();
+            if (!open && !_hoverSuppressedUntilLeave && !_hoverTimer.IsEnabled) _hoverTimer.Start();
         }
         else
         {
@@ -780,9 +783,32 @@ public partial class NotificationDockWindow : Window
         if (!dragged)
         {
             PlayClickFeedback();
-            ShowDashboardRequested?.Invoke(this, EventArgs.Empty);
+            ToggleNotificationPanel();
         }
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// 노치 클릭. 호버를 기다리지 않고 알림 패널을 바로 열고, 열려 있으면 닫는다. 닫은 뒤에는 커서가 노치를 벗어날 때까지
+    /// 호버로 다시 열지 않는다. 집중 세션이 없어 알림 패널을 쓸 수 없으면 대시보드를 연다.
+    /// </summary>
+    private void ToggleNotificationPanel()
+    {
+        if (_isClosed || !IsVisible || _fullscreenSuppressed) return;
+        if (!_notifications.IsActive)
+        {
+            ShowDashboardRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+        StopHoverTimers();
+        if (_notifications.IsPanelOpen)
+        {
+            _hoverSuppressedUntilLeave = true;
+            _notifications.ClosePanel();
+            return;
+        }
+        HideReminderBubble();
+        _notifications.OpenPanel();
     }
 
     /// <summary>노치를 띠 안에서 좌우로 옮긴다. 옮긴 거리는 실행 중에만 유지한다.</summary>
