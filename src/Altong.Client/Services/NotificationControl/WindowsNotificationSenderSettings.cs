@@ -38,43 +38,25 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
         EnsureSupported();
         using var root = Registry.CurrentUser.OpenSubKey(SettingsPath);
         var rows = new List<NotificationSender>();
-        // 이 COM 서버는 다른 프로세스(LOCAL_SERVER)라 만들 때마다 비용이 크다. 한 번 조회하는 동안에만 factory를 함께 쓰고,
-        // 끝나면 놓는다(오래 들고 있으면 서버가 다시 시작됐을 때 끊긴 프록시가 남는다). 실패한 앱은 새 factory로 한 번 더 시도한다.
-        IntPtr factory = IntPtr.Zero;
-        try
+        using var batch = BeginBatch();
+        foreach (string id in root?.GetSubKeyNames() ?? [])
         {
-            foreach (string id in root?.GetSubKeyNames() ?? [])
+            try
             {
-                NotificationSender ReadRow(IntPtr shared) => WithSender(id, shared, p =>
+                rows.Add(WithSender(id, p =>
                 {
                     var state = ReadState(p);
                     string name = ReadString(p, 37);
                     int valid = ReadInt(p, 43);
                     return new NotificationSender(id, string.IsNullOrWhiteSpace(name) ? id : name,
                         NotificationSenderPolicy.ExclusionReason(id, valid != 0, state.Enabled, state.ShowInActionCenter));
-                });
-                try
-                {
-                    if (factory == IntPtr.Zero) factory = CreateFactory();
-                    rows.Add(ReadRow(factory));
-                }
-                catch (Exception)
-                {
-                    ReleaseFactory(ref factory);
-                    try
-                    {
-                        factory = CreateFactory();
-                        rows.Add(ReadRow(factory));
-                    }
-                    catch (Exception ex)
-                    {
-                        ReleaseFactory(ref factory);
-                        rows.Add(new(id, id, $"설정 접근 불가 ({ex.GetType().Name})"));
-                    }
-                }
+                }));
+            }
+            catch (Exception ex)
+            {
+                rows.Add(new(id, id, $"설정 접근 불가 ({ex.GetType().Name})"));
             }
         }
-        finally { ReleaseFactory(ref factory); }
         return rows.OrderBy(row => !row.IsEligible).ThenBy(row => row.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
     }
 
@@ -129,12 +111,54 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
     private static SenderState ReadState(IntPtr p) => new(ReadInt(p, 5) != 0, ReadInt(p, 9) != 0,
         ReadInt(p, 7), ReadString(p, 33));
 
+    /// <summary>
+    /// 이 COM 서버는 다른 프로세스(LOCAL_SERVER)라 factory를 만들 때마다 비용이 크다. 일괄 작업(<see cref="BeginBatch"/>) 동안에는
+    /// factory 하나를 함께 쓰고, 끝나면 놓는다. 오래 들고 있지 않아 서버가 다시 시작돼도 끊긴 연결이 남지 않는다.
+    /// COM 포인터는 만든 스레드에서만 쓰므로 다른 스레드의 호출은 따로 만든다.
+    /// </summary>
+    private IntPtr _batchFactory;
+    private int _batchDepth;
+    private int _batchThread;
+
+    public IDisposable BeginBatch()
+    {
+        int thread = Environment.CurrentManagedThreadId;
+        if (_batchDepth > 0 && _batchThread != thread) return NoBatch.Instance;
+        _batchThread = thread;
+        _batchDepth++;
+        return new Batch(this);
+    }
+
+    private sealed class Batch(WindowsNotificationSenderSettings owner) : IDisposable
+    {
+        private bool _disposed;
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (--owner._batchDepth == 0) ReleaseFactory(ref owner._batchFactory);
+        }
+    }
+
     private T WithSender<T>(string id, Func<IntPtr, T> action)
     {
         EnsureSupported();
-        IntPtr factory = CreateFactory();
-        try { return WithSender(id, factory, action); }
-        finally { ReleaseFactory(ref factory); }
+        bool batched = _batchDepth > 0 && _batchThread == Environment.CurrentManagedThreadId;
+        if (!batched)
+        {
+            IntPtr factory = CreateFactory();
+            try { return WithSender(id, factory, action); }
+            finally { ReleaseFactory(ref factory); }
+        }
+        if (_batchFactory == IntPtr.Zero) _batchFactory = CreateFactory();
+        try { return WithSender(id, _batchFactory, action); }
+        catch (COMException)
+        {
+            // 함께 쓰던 연결이 끊겼을 수 있다. 새 factory로 한 번만 다시 시도한다.
+            ReleaseFactory(ref _batchFactory);
+            _batchFactory = CreateFactory();
+            return WithSender(id, _batchFactory, action);
+        }
     }
 
     /// <summary>이미 만든 factory로 발신자 하나를 열어 <paramref name="action"/>을 실행한다. factory는 호출자가 놓는다.</summary>

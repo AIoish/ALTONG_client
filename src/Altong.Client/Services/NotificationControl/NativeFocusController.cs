@@ -131,16 +131,31 @@ public sealed class NativeFocusController : INativeFocusController
         if (IsActive) return;
         if (_preferencesError is { } preferencesError) throw new InvalidOperationException(preferencesError);
         if (_startupError is { } error) throw new InvalidOperationException(error);
-        // 목록은 여기서 한 번만 조회하고, 적용(Begin)과 상태 갱신에 그대로 쓴다.
         var watch = Stopwatch.StartNew();
-        Refresh();
-        long listMs = watch.ElapsedMilliseconds;
-        var senders = Senders;
-        AppliedCount = _transaction.Begin(senders.Where(s => s.IsEligible && IsSelected(s.Id)).Select(s => s.Id), _guardian.Start, senders);
-        IsActive = true;
-        UpdateStatus();
-        // 개수와 시간만 남긴다(앱 이름·ID는 기록하지 않는다).
-        AppLogger.Info($"[NotificationControl] 자체 제어 켜기 {watch.ElapsedMilliseconds}ms (목록 조회 {listMs}ms · 발신자 {senders.Count}개 · 적용 {AppliedCount}개)");
+        // 복구 감시 프로세스 기동(약 0.5초)을 목록 조회와 겹친다. 알림 설정을 바꾸기 직전에 준비를 확인한다.
+        string token = Guid.NewGuid().ToString("N");
+        using (var self = Process.GetCurrentProcess())
+            _guardian.Prepare(self.Id, self.StartTime.ToUniversalTime().Ticks, token);
+        try
+        {
+            // 목록은 여기서 한 번만 조회하고, 적용(Begin)과 상태 갱신에 그대로 쓴다.
+            Refresh();
+            long listMs = watch.ElapsedMilliseconds;
+            var senders = Senders;
+            AppliedCount = _transaction.Begin(senders.Where(s => s.IsEligible && IsSelected(s.Id)).Select(s => s.Id),
+                _ => _guardian.WaitReady(), senders, token);
+            IsActive = true;
+            UpdateStatus();
+            // 개수와 시간만 남긴다(앱 이름·ID는 기록하지 않는다).
+            AppLogger.Info($"[NotificationControl] 자체 제어 켜기 {watch.ElapsedMilliseconds}ms (목록 조회 {listMs}ms · 발신자 {senders.Count}개 · 적용 {AppliedCount}개)");
+        }
+        catch
+        {
+            // 실패하면 Begin이 바꾼 설정을 이미 되돌렸다. 이번 켜기의 복구가 남아 있지 않으면 아무 일도 하지 않은 감시를 끝낸다.
+            // 일부 복구가 남았으면 감시가 그 복구를 맡아야 하므로 그대로 둔다.
+            if (!_transaction.HasPendingRecoveryFor(token)) _guardian.Abort();
+            throw;
+        }
     }
     public void Stop()
     {
