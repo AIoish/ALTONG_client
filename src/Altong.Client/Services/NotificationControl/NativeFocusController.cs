@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 
@@ -131,19 +132,26 @@ public sealed class NativeFocusController : INativeFocusController
         if (_preferencesError is { } preferencesError) throw new InvalidOperationException(preferencesError);
         if (_startupError is { } error) throw new InvalidOperationException(error);
         // 목록은 여기서 한 번만 조회하고, 적용(Begin)과 상태 갱신에 그대로 쓴다.
+        var watch = Stopwatch.StartNew();
         Refresh();
+        long listMs = watch.ElapsedMilliseconds;
         var senders = Senders;
         AppliedCount = _transaction.Begin(senders.Where(s => s.IsEligible && IsSelected(s.Id)).Select(s => s.Id), _guardian.Start, senders);
         IsActive = true;
         UpdateStatus();
+        // 개수와 시간만 남긴다(앱 이름·ID는 기록하지 않는다).
+        AppLogger.Info($"[NotificationControl] 자체 제어 켜기 {watch.ElapsedMilliseconds}ms (목록 조회 {listMs}ms · 발신자 {senders.Count}개 · 적용 {AppliedCount}개)");
     }
     public void Stop()
     {
+        var watch = Stopwatch.StartNew();
+        bool wasActive = IsActive;
         _transaction.Restore();
         IsActive = false;
         AppliedCount = 0;
         _startupError = null;
         UpdateStatus();
+        if (wasActive) AppLogger.Info($"[NotificationControl] 자체 제어 끄기 {watch.ElapsedMilliseconds}ms");
     }
     public void CheckHealth()
     {
