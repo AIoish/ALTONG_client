@@ -26,6 +26,8 @@ public sealed class NativeFocusController : INativeFocusController
     private readonly NotificationControlPreferences _preferences;
     private readonly string _preferencesPath;
     private string? _startupError;
+    /// <summary>마지막 발신자 조회가 실패했을 때의 안내. 성공하면 null.</summary>
+    private string? _listError;
     private readonly string? _preferencesError;
     private readonly string? _preferencesNotice;
     public bool IsActive { get; private set; }
@@ -91,24 +93,34 @@ public sealed class NativeFocusController : INativeFocusController
         try { _preferences.Save(_preferencesPath); } catch { _preferences.Backend = previous; throw; }
         Refresh();
     }
+    /// <summary>발신자 목록을 다시 조회하고 상태 문구를 갱신한다. 앱 수에 비례해 오래 걸리므로 목록이 필요할 때만 부른다.</summary>
     public void Refresh()
     {
-        string summary;
         try
         {
             if (_settings.CompatibilityError is { } error)
             {
                 Senders = [];
-                summary = error;
+                _listError = error;
             }
             else
             {
                 Senders = _settings.Enumerate();
-                summary = IsActive ? $"알통 자체 제어 중 · {AppliedCount}개 앱 · 알림센터 보관 유지"
-                    : $"제어 가능한 앱 {Senders.Count(s => s.IsEligible)}개 · 알림센터 보관 유지";
+                _listError = null;
             }
         }
-        catch (Exception ex) { Senders = []; summary = $"앱 조회 실패: {ex.Message}"; }
+        catch (Exception ex) { Senders = []; _listError = $"앱 조회 실패: {ex.Message}"; }
+        UpdateStatus();
+    }
+
+    /// <summary>
+    /// 목록은 다시 조회하지 않고 상태 문구만 갱신한다. 켜기·끄기는 배너·알림음만 바꾸고 제어 대상 여부(알림·알림센터 보관)는
+    /// 바꾸지 않으므로 직전 목록을 그대로 쓴다.
+    /// </summary>
+    private void UpdateStatus()
+    {
+        string summary = _listError ?? (IsActive ? $"알통 자체 제어 중 · {AppliedCount}개 앱 · 알림센터 보관 유지"
+            : $"제어 가능한 앱 {Senders.Count(s => s.IsEligible)}개 · 알림센터 보관 유지");
         Status = string.Join(Environment.NewLine,
             new[] { _preferencesError, _startupError, _preferencesNotice, summary }.Where(s => !string.IsNullOrEmpty(s)));
     }
@@ -118,10 +130,12 @@ public sealed class NativeFocusController : INativeFocusController
         if (IsActive) return;
         if (_preferencesError is { } preferencesError) throw new InvalidOperationException(preferencesError);
         if (_startupError is { } error) throw new InvalidOperationException(error);
+        // 목록은 여기서 한 번만 조회하고, 적용(Begin)과 상태 갱신에 그대로 쓴다.
         Refresh();
-        AppliedCount = _transaction.Begin(Senders.Where(s => s.IsEligible && IsSelected(s.Id)).Select(s => s.Id), _guardian.Start);
+        var senders = Senders;
+        AppliedCount = _transaction.Begin(senders.Where(s => s.IsEligible && IsSelected(s.Id)).Select(s => s.Id), _guardian.Start, senders);
         IsActive = true;
-        Refresh();
+        UpdateStatus();
     }
     public void Stop()
     {
@@ -129,7 +143,7 @@ public sealed class NativeFocusController : INativeFocusController
         IsActive = false;
         AppliedCount = 0;
         _startupError = null;
-        Refresh();
+        UpdateStatus();
     }
     public void CheckHealth()
     {

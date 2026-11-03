@@ -152,6 +152,33 @@ public sealed class NotificationSuppressionTests
         Assert.IsFalse(transaction.HasPendingRecovery);
     }
 
+    [TestMethod]
+    public void BeginReusesTheCallersSenderList_WithoutEnumeratingAgain()
+    {
+        var settings = new FakeSettings();
+        var senders = settings.Enumerate();
+        var transaction = new NotificationSuppressionTransaction(settings, JournalPath);
+        Assert.AreEqual(1, transaction.Begin(["App"], _ => { }, senders));
+        Assert.AreEqual(1, settings.Enumerations, "발신자 목록은 호출자가 조회한 한 번만 쓴다.");
+        transaction.Restore();
+    }
+
+    [TestMethod]
+    public void StaleSenderListStillBlocksAppsThatStoppedRetainingNotifications()
+    {
+        var settings = new FakeSettings();
+        var senders = settings.Enumerate();
+        // 목록 조회 뒤 사용자가 알림센터 보관을 껐다.
+        settings.State = settings.State with { ShowInActionCenter = false };
+        var transaction = new NotificationSuppressionTransaction(settings, JournalPath);
+        Assert.ThrowsException<InvalidOperationException>(() => transaction.Begin(["App"], _ => { }, senders));
+        Assert.AreEqual(0, settings.Writes);
+        Assert.IsFalse(transaction.HasPendingRecovery);
+        settings.State = settings.State with { ShowInActionCenter = true, Enabled = false };
+        Assert.ThrowsException<InvalidOperationException>(() => transaction.Begin(["App"], _ => { }, senders));
+        Assert.AreEqual(0, settings.Writes);
+    }
+
     private sealed class FakeSettings : INotificationSenderSettings
     {
         public string? CompatibilityError => null;
@@ -160,7 +187,8 @@ public sealed class NotificationSuppressionTests
         public int Writes;
         public bool FailNextSoundWrite;
         public Action? BeforeWrite;
-        public IReadOnlyList<NotificationSender> Enumerate() => [new("App", "Test app", null)];
+        public int Enumerations;
+        public IReadOnlyList<NotificationSender> Enumerate() { Enumerations++; return [new("App", "Test app", null)]; }
         public bool IsRegistered(string id) => id == "App";
         public SenderState Read(string id) => State;
         public RegistrySetting ReadRegistry(string id, bool sound) => sound ? SoundRegistry : BannerRegistry;

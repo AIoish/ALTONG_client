@@ -38,24 +38,43 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
         EnsureSupported();
         using var root = Registry.CurrentUser.OpenSubKey(SettingsPath);
         var rows = new List<NotificationSender>();
-        foreach (string id in root?.GetSubKeyNames() ?? [])
+        // 이 COM 서버는 다른 프로세스(LOCAL_SERVER)라 만들 때마다 비용이 크다. 한 번 조회하는 동안에만 factory를 함께 쓰고,
+        // 끝나면 놓는다(오래 들고 있으면 서버가 다시 시작됐을 때 끊긴 프록시가 남는다). 실패한 앱은 새 factory로 한 번 더 시도한다.
+        IntPtr factory = IntPtr.Zero;
+        try
         {
-            try
+            foreach (string id in root?.GetSubKeyNames() ?? [])
             {
-                rows.Add(WithSender(id, p =>
+                NotificationSender ReadRow(IntPtr shared) => WithSender(id, shared, p =>
                 {
                     var state = ReadState(p);
                     string name = ReadString(p, 37);
                     int valid = ReadInt(p, 43);
                     return new NotificationSender(id, string.IsNullOrWhiteSpace(name) ? id : name,
                         NotificationSenderPolicy.ExclusionReason(id, valid != 0, state.Enabled, state.ShowInActionCenter));
-                }));
-            }
-            catch (Exception ex)
-            {
-                rows.Add(new(id, id, $"설정 접근 불가 ({ex.GetType().Name})"));
+                });
+                try
+                {
+                    if (factory == IntPtr.Zero) factory = CreateFactory();
+                    rows.Add(ReadRow(factory));
+                }
+                catch (Exception)
+                {
+                    ReleaseFactory(ref factory);
+                    try
+                    {
+                        factory = CreateFactory();
+                        rows.Add(ReadRow(factory));
+                    }
+                    catch (Exception ex)
+                    {
+                        ReleaseFactory(ref factory);
+                        rows.Add(new(id, id, $"설정 접근 불가 ({ex.GetType().Name})"));
+                    }
+                }
             }
         }
+        finally { ReleaseFactory(ref factory); }
         return rows.OrderBy(row => !row.IsEligible).ThenBy(row => row.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
     }
 
@@ -113,15 +132,21 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
     private T WithSender<T>(string id, Func<IntPtr, T> action)
     {
         EnsureSupported();
+        IntPtr factory = CreateFactory();
+        try { return WithSender(id, factory, action); }
+        finally { ReleaseFactory(ref factory); }
+    }
+
+    /// <summary>이미 만든 factory로 발신자 하나를 열어 <paramref name="action"/>을 실행한다. factory는 호출자가 놓는다.</summary>
+    private T WithSender<T>(string id, IntPtr factory, Func<IntPtr, T> action)
+    {
+        EnsureSupported();
         // GetSettingsForAumid may create settings. Only ever open an already registered sender.
         using var registered = Registry.CurrentUser.OpenSubKey(SettingsPath + "\\" + id);
         if (registered is null) throw new InvalidOperationException("등록되지 않은 알림 발신자입니다.");
-        IntPtr factory = IntPtr.Zero, sender = IntPtr.Zero, typed = IntPtr.Zero;
+        IntPtr sender = IntPtr.Zero, typed = IntPtr.Zero;
         try
         {
-            var clsid = ClassId;
-            var iid = FactoryId;
-            Marshal.ThrowExceptionForHR(CoCreateInstance(ref clsid, IntPtr.Zero, 4, ref iid, out factory));
             Marshal.ThrowExceptionForHR(Method<GetSender>(factory, 3)(factory, id, out sender));
             var senderIid = SenderId;
             Marshal.ThrowExceptionForHR(Marshal.QueryInterface(sender, in senderIid, out typed));
@@ -131,8 +156,21 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
         {
             if (typed != IntPtr.Zero) Marshal.Release(typed);
             if (sender != IntPtr.Zero) Marshal.Release(sender);
-            if (factory != IntPtr.Zero) Marshal.Release(factory);
         }
+    }
+
+    private static IntPtr CreateFactory()
+    {
+        var clsid = ClassId;
+        var iid = FactoryId;
+        Marshal.ThrowExceptionForHR(CoCreateInstance(ref clsid, IntPtr.Zero, 4, ref iid, out IntPtr factory));
+        return factory;
+    }
+
+    private static void ReleaseFactory(ref IntPtr factory)
+    {
+        if (factory != IntPtr.Zero) Marshal.Release(factory);
+        factory = IntPtr.Zero;
     }
 
     private void EnsureSupported()
