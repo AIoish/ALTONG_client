@@ -72,10 +72,7 @@ public partial class DebugConsoleWindow : Window
             _lastContext = context;
             _lastContextEnteredAt = now;
 
-            string combi = context.RecentProcesses is { Count: > 0 }
-                ? string.Join(", ", context.RecentProcesses)
-                : "없음";
-            AppendLog($"[{DateTime.Now:HH:mm:ss}] [CONFIRM] {context.ActiveProcess} ('{TruncateTitle(context.WindowTitle)}') | 콤비: [{combi}]");
+            AppendLog($"[{DateTime.Now:HH:mm:ss}] [CONFIRM] {context.ActiveProcess} ('{TruncateTitle(context.WindowTitle)}') | 직전 창: [{PreviousApps(context)}]");
         });
     }
 
@@ -86,19 +83,18 @@ public partial class DebugConsoleWindow : Window
             ProcessText.Text = "🎯 활성 프로세스: 대기 중...";
             TitleText.Text = "📝 창 제목: -";
             DurationText.Text = "⏱️ 0초 지속";
-            CombiText.Text = "👥 콤비 앱 큐: [없음]";
+            RecentWindowsText.Text = "👥 직전 창: [없음]";
             return;
         }
 
         ProcessText.Text = $"🎯 활성 프로세스: {context.ActiveProcess}";
         TitleText.Text = $"📝 창 제목: {context.WindowTitle}";
         DurationText.Text = $"⏱️ {context.DurationSeconds}초 지속";
-
-        string combi = context.RecentProcesses is { Count: > 0 }
-            ? string.Join(", ", context.RecentProcesses)
-            : "없음";
-        CombiText.Text = $"👥 콤비 앱 큐: [{combi}]";
+        RecentWindowsText.Text = $"👥 직전 창: [{PreviousApps(context)}]";
     }
+
+    private static string PreviousApps(CurrentContext context) =>
+        context.RecentWindows is { Count: > 0 } windows ? string.Join(", ", windows.Select(w => w.AppName)) : "없음";
 
     private void AppendLog(string message)
     {

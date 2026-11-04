@@ -104,8 +104,10 @@ IFilterEngine filterEngine = _klueFilterEngine;
   기본 2초다. 로딩 대기 최대 2초는 별도다. ONNX 취소 요청도 전달하지만 커널 종료까지의 지연을 완전히 없애지는 않는다.
 - Category는 학습 출력이 아니므로 `미분류`다. 이유 문자열은 점수·정책 설명 템플릿이며 생성형 설명이 아니다.
 
-현재 앱의 CurrentContext에는 최근 창 제목 목록이 없다. 어댑터는 최근 프로세스는 전달하고 recent_windows는
-빈 배열로 둔다. 라이브러리는 실제 recent_windows를 받을 수 있으므로 추후 관측 이력을 수집하면 확장할 수 있다.
+앱은 11/01부터 CurrentContext.RecentWindows로 실제 최근 창을 제공한다. 어댑터(`KlueFilterEngine.ToModelContext`)는
+학습 형식(ALTONG_ai `filtering_training/common/score_tasks.py`의 `HistoryContext`)에 맞춰 넣는다:
+`recent_windows`는 현재 창을 뺀 직전 창(최신순, 최대 3개), `recent_processes`는 그 창들의 앱 이름을 같은 순서로 나열한다.
+직전 창이 없으면 둘 다 빈 배열이다. 현재 창은 `current_window`에만 넣고 최근 목록에는 넣지 않는다.
 프로세스 이름에서 창 제목을 추정해 만들지 않는다. 현재 창 제목이 없는 경우도 그대로 빈 문자열을 사용한다.
 Timestamp는 Kind가 지정된 UTC/local DateTime을 받아 UTC 초 단위 `...Z`로 맞춘다.
 

@@ -186,7 +186,10 @@ ALTONG_client/
     "window_title": "auth_controller.py - AI Alarm - Visual Studio Code",
     "last_updated": "2026-09-13T18:04:55",
     "duration_seconds": 186,
-    "recent_processes": ["Code.exe", "chrome.exe", "explorer.exe"]
+    "recent_windows": [
+      {"app_name": "chrome.exe", "window_title": "OAuth 문서 - Chrome"},
+      {"app_name": "slack.exe", "window_title": "#backend"}
+    ]
   }
   ```
 * **C# Record (`CurrentContext.cs`):**
@@ -196,8 +199,11 @@ ALTONG_client/
       string WindowTitle,
       DateTime LastUpdated,
       int DurationSeconds = 0,
-      IReadOnlyList<string>? RecentProcesses = null);
+      IReadOnlyList<RecentWindowInfo>? RecentWindows = null);
   ```
+* `RecentWindows`는 현재 창을 뺀 직전 창(최신순, 최대 3개)이다. 현재 창은 `ActiveProcess`·`WindowTitle`에만 있고
+  최근 목록에는 넣지 않는다. KLUE 필터 모델에는 학습 형식에 맞춰 `recent_windows`=직전 창,
+  `recent_processes`=그 창들의 앱 이름으로 넣는다(`KlueFilterEngine.ToModelContext`).
 
 ### 7.3 실시간 필터 판단 결과 (`FilterResult`)
 ```json

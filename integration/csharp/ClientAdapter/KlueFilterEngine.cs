@@ -30,8 +30,7 @@ public sealed class KlueFilterEngine : IFilterEngine, IDisposable
         if (n.Timestamp.Kind==DateTimeKind.Unspecified)
             return ToResult(n.Id,KlueFilter.Failure("invalid_timestamp","Timestamp must carry UTC/local kind."));
         var input=new NotificationInput(n.AppName ?? "",n.Sender,n.Title ?? "",n.Body ?? "",n.Timestamp.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'",CultureInfo.InvariantCulture));
-        var recentWindows = c.RecentWindows?.Select(w => new RecentWindow(w.AppName, w.WindowTitle)).ToArray() ?? [];
-        var context = new ContextInput(c.ActiveProcess, c.WindowTitle, c.RecentProcesses, recentWindows);
+        var context = ToModelContext(c);
         FilterDecision decision;
         try
         {
@@ -42,6 +41,20 @@ public sealed class KlueFilterEngine : IFilterEngine, IDisposable
         catch (Exception ex) { decision=KlueFilter.Failure("model_unavailable", _loadError ?? ex.Message); }
         try { _observe?.Invoke(decision); } catch { /* Diagnostic observer cannot suppress notifications. */ }
         return ToResult(n.Id,decision);
+    }
+    /// <summary>
+    /// 학습 형식(ALTONG_ai filtering_training/common/score_tasks.py의 HistoryContext)에 맞춘 모델 맥락.
+    /// recent_windows는 현재 창을 뺀 직전 창이고, recent_processes는 그 창들의 앱 이름을 같은 순서로 나열한다.
+    /// 현재 창은 current_window에만 넣고 최근 목록에는 넣지 않는다.
+    /// </summary>
+    internal static ContextInput ToModelContext(CurrentContext c)
+    {
+        RecentWindow[] recentWindows = c.RecentWindows?
+            .Where(w => w.AppName != c.ActiveProcess || w.WindowTitle != c.WindowTitle)
+            .Take(3)
+            .Select(w => new RecentWindow(w.AppName, w.WindowTitle))
+            .ToArray() ?? [];
+        return new ContextInput(c.ActiveProcess, c.WindowTitle, [.. recentWindows.Select(w => w.AppName)], recentWindows);
     }
     private static FilterResult ToResult(string id,FilterDecision d) => new(id,d.IsPassed,
         d.UrgencyScore ?? 0,d.RelevanceScore ?? 0,d.UrgencyScore is null ? "판정 실패" : "미분류",

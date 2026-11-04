@@ -16,7 +16,6 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     public static readonly TimeSpan DefaultPollingInterval = TimeSpan.FromMilliseconds(500);
     public static readonly TimeSpan DefaultStabilizationThreshold = TimeSpan.FromSeconds(3);
     public static readonly TimeSpan MaximumObservedGap = TimeSpan.FromSeconds(10);
-    private const int MaxRecentProcesses = 3;
     private const int MaxRecentWindows = 3;
 
     private static readonly HashSet<string> IgnoredProcessNames = new(StringComparer.OrdinalIgnoreCase)
@@ -46,7 +45,6 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     private readonly TimeProvider _timeProvider;
 
     private readonly object _syncRoot = new();
-    private readonly List<string> _recentProcesses = [];
     private readonly List<RecentWindowInfo> _recentWindows = [];
 
     private WindowInfo? _stableWindow;
@@ -328,8 +326,8 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         _stableEnteredAt = enteredAt;
         _candidateWindow = null;
 
-        UpdateRecentProcesses(window.ProcessName);
         UpdateRecentWindows(window.ProcessName, window.WindowTitle);
+        RecentWindowInfo[] previousWindows = PreviousWindows(window);
 
         int durationSeconds = Math.Max(0, (int)(currentNow - _stableEnteredAt).TotalSeconds);
 
@@ -338,10 +336,9 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
             WindowTitle: window.WindowTitle,
             LastUpdated: currentNow.UtcDateTime,
             DurationSeconds: durationSeconds,
-            RecentProcesses: [.. _recentProcesses],
-            RecentWindows: [.. _recentWindows]);
+            RecentWindows: previousWindows);
 
-        AppLogger.Info($"[WindowTracker] [CONFIRM] {window.ProcessName} ('{TruncateTitle(window.WindowTitle)}') | 콤비: [{string.Join(", ", _recentProcesses)}]");
+        AppLogger.Info($"[WindowTracker] [CONFIRM] {window.ProcessName} ('{TruncateTitle(window.WindowTitle)}') | 직전 창: [{string.Join(", ", previousWindows.Select(w => w.AppName))}]");
 
         return _currentContext;
     }
@@ -364,6 +361,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         return _currentContext;
     }
 
+    // 현재 창을 포함해 최신순으로 기억한다. 현재 창 자리 하나를 더 둬야 현재 창을 빼고도 직전 창 3개가 남는다.
     private void UpdateRecentWindows(string processName, string windowTitle)
     {
         if (string.IsNullOrWhiteSpace(processName))
@@ -374,27 +372,17 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         _recentWindows.RemoveAll(w => w.AppName == processName && w.WindowTitle == windowTitle);
         _recentWindows.Insert(0, new RecentWindowInfo(processName, windowTitle));
 
-        if (_recentWindows.Count > MaxRecentWindows)
+        if (_recentWindows.Count > MaxRecentWindows + 1)
         {
-            _recentWindows.RemoveRange(MaxRecentWindows, _recentWindows.Count - MaxRecentWindows);
+            _recentWindows.RemoveRange(MaxRecentWindows + 1, _recentWindows.Count - MaxRecentWindows - 1);
         }
     }
 
-    private void UpdateRecentProcesses(string processName)
-    {
-        if (string.IsNullOrWhiteSpace(processName))
-        {
-            return;
-        }
-
-        _recentProcesses.Remove(processName);
-        _recentProcesses.Insert(0, processName);
-
-        if (_recentProcesses.Count > MaxRecentProcesses)
-        {
-            _recentProcesses.RemoveRange(MaxRecentProcesses, _recentProcesses.Count - MaxRecentProcesses);
-        }
-    }
+    // 필터 모델은 현재 창과 최근 창을 따로 받도록 학습됐다. 최근 창은 현재 창을 뺀 직전 창들이다 (ALTONG_ai HistoryContext).
+    private RecentWindowInfo[] PreviousWindows(WindowInfo current) =>
+        [.. _recentWindows
+            .Where(w => w.AppName != current.ProcessName || w.WindowTitle != current.WindowTitle)
+            .Take(MaxRecentWindows)];
 
     private static bool HasContextChangedSignificantly(CurrentContext previous, CurrentContext current)
     {
