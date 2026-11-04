@@ -40,8 +40,9 @@ public partial class App : System.Windows.Application
     public IWindowSessionRepository WindowSessionRepository { get; private set; } = null!;
     public IFocusSessionRepository FocusSessionRepository { get; private set; } = null!;
     public NotificationPipelineCoordinator NotificationPipeline { get; private set; } = null!;
-    public KakaoNotificationInterceptor KakaoInterceptor { get; private set; } = null!;
-    public IKakaoAudioOperator KakaoAudioOperator { get; private set; } = null!;
+    // 카카오톡 연동이 꺼져 있으면(KakaoIntegration) 둘 다 null이다.
+    public KakaoNotificationInterceptor? KakaoInterceptor { get; private set; }
+    public IKakaoAudioOperator? KakaoAudioOperator { get; private set; }
 
     internal bool IsShuttingDown { get; private set; }
 
@@ -140,18 +141,32 @@ public partial class App : System.Windows.Application
                 TaskContinuationOptions.OnlyOnFaulted);
         };
 
-        // 실시간 알림 수신 및 AI 필터링 파이프라인 가동 (OS 표준 토스트 + 카카오톡 전용 인터셉터 복합 구성)
-        KakaoAudioOperator = new LiveKakaoAudioOperator();
-        if (FocusModeService.IsEnabled)
+        // 실시간 알림 수신 및 AI 필터링 파이프라인 가동 (OS 표준 토스트 + 개발용 카카오톡 전용 인터셉터)
+        IWindowsNotificationListener notificationListener = new WinRtNotificationListener();
+        if (KakaoIntegration.IsEnabled)
         {
-            KakaoAudioOperator.Mute();
-        }
+            KakaoAudioOperator = new LiveKakaoAudioOperator();
+            // 집중이 아니면 Unmute가 직전 실행이 비정상 종료하며 남긴 카톡 음소거를 되돌린다.
+            if (FocusModeService.IsEnabled)
+                KakaoAudioOperator.Mute();
+            else
+                KakaoAudioOperator.Unmute();
 
-        var winRtListener = new WinRtNotificationListener();
-        KakaoInterceptor = new KakaoNotificationInterceptor(
-            () => FocusModeService.IsEnabled,
-            audioOperator: KakaoAudioOperator);
-        var compositeListener = new CompositeNotificationListener(winRtListener, KakaoInterceptor);
+            KakaoInterceptor = new KakaoNotificationInterceptor(
+                () => FocusModeService.IsEnabled,
+                audioOperator: KakaoAudioOperator);
+            notificationListener = new CompositeNotificationListener(notificationListener, KakaoInterceptor);
+        }
+        else
+        {
+            AppLogger.Info($"[Kakao] 카카오톡 연동이 꺼져 있습니다. ({KakaoIntegration.EnableVariable}=1로 켤 수 있습니다)");
+            // 개발 빌드가 카톡을 음소거한 채 비정상 종료했으면 연동이 꺼진 빌드에서도 되돌린다.
+            if (LiveKakaoAudioOperator.HasPendingRecovery())
+            {
+                using var leftover = new LiveKakaoAudioOperator();
+                leftover.Unmute();
+            }
+        }
 
         var modelDir = Path.Combine(AppContext.BaseDirectory,
             "models", "filtering", "klue-base-safety-v1");
@@ -171,7 +186,7 @@ public partial class App : System.Windows.Application
 
         IFilterEngine filterEngine = _klueFilterEngine;
         NotificationPipeline = new NotificationPipelineCoordinator(
-            compositeListener,
+            notificationListener,
             ActiveWindowTracker,
             NotificationRepository,
             filterEngine,
@@ -809,7 +824,7 @@ public partial class App : System.Windows.Application
     private void NotificationPipeline_NotificationProcessed(object? sender, NotificationRecord record)
     {
         // 수집 당시 숨긴 카톡 팝업 정리는 UI 표시와 독립적으로 수행한다.
-        KakaoInterceptor.OnNotificationProcessed(record);
+        KakaoInterceptor?.OnNotificationProcessed(record);
         if (IsShuttingDown || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
         _ = Dispatcher.BeginInvoke(new Action(() =>
         {
