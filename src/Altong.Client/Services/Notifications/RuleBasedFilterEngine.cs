@@ -97,8 +97,8 @@ public sealed class RuleBasedFilterEngine : IFilterEngine
         {
             score = 4;
         }
-        // 3) 콤비 앱(RecentProcesses)에 포함된 경우
-        else if (context.RecentProcesses is not null && context.RecentProcesses.Any(p => p.ToLowerInvariant().Contains(app)))
+        // 3) 직전에 쓴 창의 앱인 경우
+        else if (context.RecentWindows is not null && context.RecentWindows.Any(w => w.AppName.ToLowerInvariant().Contains(app)))
         {
             score = 3;
         }

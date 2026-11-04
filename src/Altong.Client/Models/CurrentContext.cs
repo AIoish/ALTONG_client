@@ -15,14 +15,12 @@ public record RecentWindowInfo(string AppName, string WindowTitle);
 /// <param name="WindowTitle">현재 활성 창 제목</param>
 /// <param name="LastUpdated">맥락이 캡처/갱신된 시각 (UTC)</param>
 /// <param name="DurationSeconds">현재 창에 머무른 지속 시간 (초 단위, 5초 룰 통과 기준)</param>
-/// <param name="RecentProcesses">최근 1~2분간 함께 교차 사용된 상위 프로세스 목록 (작업 세트 / 콤비 앱)</param>
-/// <param name="RecentWindows">현재 창을 뺀 직전 창 목록 (최신순, 최대 3개, 앱 이름 및 창 제목)</param>
+/// <param name="RecentWindows">현재 창을 뺀 직전 창 목록 (최신순, 최대 3개, 앱 이름 및 창 제목). 현재 창은 위 두 칸에만 있다.</param>
 public record CurrentContext(
     string ActiveProcess,
     string WindowTitle,
     DateTime LastUpdated,
     int DurationSeconds = 0,
-    IReadOnlyList<string>? RecentProcesses = null,
     IReadOnlyList<RecentWindowInfo>? RecentWindows = null)
 {
     /// <summary>

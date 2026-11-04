@@ -19,7 +19,7 @@
                     <TextBlock x:Name="DurationText" HorizontalAlignment="Right" FontSize="13" Foreground="#CE9178" Text="⏱️ 0초 지속" />
                 </DockPanel>
                 <TextBlock x:Name="TitleText" Margin="0,6,0,0" FontSize="12" Foreground="#DCDCDC" TextTrimming="CharacterEllipsis" Text="📝 창 제목: -" />
-                <TextBlock x:Name="CombiText" Margin="0,4,0,0" FontSize="12" Foreground="#9CDCFE" Text="👥 콤비 앱 큐: [없음]" />
+                <TextBlock x:Name="RecentWindowsText" Margin="0,4,0,0" FontSize="12" Foreground="#9CDCFE" Text="👥 직전 창: [없음]" />
             </StackPanel>
         </Border>
 

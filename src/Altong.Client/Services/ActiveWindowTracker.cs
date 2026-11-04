@@ -16,7 +16,6 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     public static readonly TimeSpan DefaultPollingInterval = TimeSpan.FromMilliseconds(500);
     public static readonly TimeSpan DefaultStabilizationThreshold = TimeSpan.FromSeconds(3);
     public static readonly TimeSpan MaximumObservedGap = TimeSpan.FromSeconds(10);
-    private const int MaxRecentProcesses = 3;
     private const int MaxRecentWindows = 3;
 
     private static readonly HashSet<string> IgnoredProcessNames = new(StringComparer.OrdinalIgnoreCase)
@@ -46,7 +45,6 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     private readonly TimeProvider _timeProvider;
 
     private readonly object _syncRoot = new();
-    private readonly List<string> _recentProcesses = [];
     private readonly List<RecentWindowInfo> _recentWindows = [];
 
     private WindowInfo? _stableWindow;
@@ -328,8 +326,8 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         _stableEnteredAt = enteredAt;
         _candidateWindow = null;
 
-        UpdateRecentProcesses(window.ProcessName);
         UpdateRecentWindows(window.ProcessName, window.WindowTitle);
+        RecentWindowInfo[] previousWindows = PreviousWindows(window);
 
         int durationSeconds = Math.Max(0, (int)(currentNow - _stableEnteredAt).TotalSeconds);
 
@@ -338,10 +336,9 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
             WindowTitle: window.WindowTitle,
             LastUpdated: currentNow.UtcDateTime,
             DurationSeconds: durationSeconds,
-            RecentProcesses: [.. _recentProcesses],
-            RecentWindows: PreviousWindows(window));
+            RecentWindows: previousWindows);
 
-        AppLogger.Info($"[WindowTracker] [CONFIRM] {window.ProcessName} ('{TruncateTitle(window.WindowTitle)}') | 콤비: [{string.Join(", ", _recentProcesses)}]");
+        AppLogger.Info($"[WindowTracker] [CONFIRM] {window.ProcessName} ('{TruncateTitle(window.WindowTitle)}') | 직전 창: [{string.Join(", ", previousWindows.Select(w => w.AppName))}]");
 
         return _currentContext;
     }
@@ -386,22 +383,6 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         [.. _recentWindows
             .Where(w => w.AppName != current.ProcessName || w.WindowTitle != current.WindowTitle)
             .Take(MaxRecentWindows)];
-
-    private void UpdateRecentProcesses(string processName)
-    {
-        if (string.IsNullOrWhiteSpace(processName))
-        {
-            return;
-        }
-
-        _recentProcesses.Remove(processName);
-        _recentProcesses.Insert(0, processName);
-
-        if (_recentProcesses.Count > MaxRecentProcesses)
-        {
-            _recentProcesses.RemoveRange(MaxRecentProcesses, _recentProcesses.Count - MaxRecentProcesses);
-        }
-    }
 
     private static bool HasContextChangedSignificantly(CurrentContext previous, CurrentContext current)
     {

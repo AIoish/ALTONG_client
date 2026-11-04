@@ -45,7 +45,7 @@ public sealed class KlueFilterEngine : IFilterEngine, IDisposable
     /// <summary>
     /// 학습 형식(ALTONG_ai filtering_training/common/score_tasks.py의 HistoryContext)에 맞춘 모델 맥락.
     /// recent_windows는 현재 창을 뺀 직전 창이고, recent_processes는 그 창들의 앱 이름을 같은 순서로 나열한다.
-    /// 앱의 RecentProcesses(최근 함께 쓴 앱, 현재 앱 포함)는 학습 형식과 달라 모델에 넣지 않는다.
+    /// 현재 창은 current_window에만 넣고 최근 목록에는 넣지 않는다.
     /// </summary>
     internal static ContextInput ToModelContext(CurrentContext c)
     {

@@ -20,7 +20,6 @@ public sealed class KlueFilterEngineTests
     {
         // ALTONG_ai HistoryContext: recent_windows는 현재 창을 뺀 직전 창, recent_processes는 그 창들의 앱 이름(같은 순서).
         var context = new CurrentContext("Code.exe", "auth.py - ALTONG", DateTime.UtcNow,
-            RecentProcesses: ["Code.exe", "chrome.exe"],
             RecentWindows:
             [
                 new("Code.exe", "auth.py - ALTONG"),
@@ -42,8 +41,9 @@ public sealed class KlueFilterEngineTests
     [TestMethod]
     public void ModelContext_WithoutPreviousWindows_SendsEmptyLists()
     {
+        // 다른 곳에서 현재 창이 섞여 들어와도 모델에는 넣지 않는다.
         var context = new CurrentContext("Code.exe", "main.cs", DateTime.UtcNow,
-            RecentProcesses: ["Code.exe"], RecentWindows: [new("Code.exe", "main.cs")]);
+            RecentWindows: [new("Code.exe", "main.cs")]);
 
         var model = KlueFilterEngine.ToModelContext(context);
 
@@ -339,7 +339,6 @@ public sealed class KlueFilterEngineTests
             "live-test-rw", "Slack", "동료", "코드 리뷰", "PR #39 리뷰 부탁드립니다", DateTime.UtcNow);
         var recentWindows = new List<RecentWindowInfo>
         {
-            new("Code.exe", "Controller.cs - Visual Studio Code"),
             new("chrome.exe", "GitHub Pull Requests")
         };
         var contextWithRecentWindows = new CurrentContext(
@@ -347,7 +346,6 @@ public sealed class KlueFilterEngineTests
             "Controller.cs - Visual Studio Code",
             DateTime.UtcNow,
             DurationSeconds: 120,
-            RecentProcesses: new[] { "Code.exe", "chrome.exe" },
             RecentWindows: recentWindows);
 
         var recentWindowsResult = await engine.EvaluateAsync(recentWindowsNotification, contextWithRecentWindows);

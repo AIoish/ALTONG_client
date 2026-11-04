@@ -28,8 +28,8 @@ public sealed class ActiveWindowTrackerTests
 
         Assert.AreEqual("Code.exe", tracker.CurrentContext.ActiveProcess);
         Assert.AreEqual("App.tsx - Visual Studio Code", tracker.CurrentContext.WindowTitle);
-        Assert.AreEqual(1, tracker.CurrentContext.RecentProcesses?.Count);
-        Assert.AreEqual("Code.exe", tracker.CurrentContext.RecentProcesses?[0]);
+        // 첫 창이라 직전 창이 없다. 현재 창은 최근 창 목록에 넣지 않는다.
+        Assert.AreEqual(0, tracker.CurrentContext.RecentWindows?.Count ?? 0);
     }
 
     [TestMethod]
@@ -102,10 +102,10 @@ public sealed class ActiveWindowTrackerTests
         Assert.AreEqual("KakaoTalk.exe", contextAfterThreshold.ActiveProcess);
         Assert.AreEqual("카카오톡", contextAfterThreshold.WindowTitle);
 
-        // 최근 프로세스 목록에 KakaoTalk 및 직전의 Code.exe가 포함되어야 함
+        // 최근 창 목록에는 직전 창(VS Code)만 있고 현재 창(카카오톡)은 없어야 함
         CollectionAssert.AreEqual(
-            new[] { "KakaoTalk.exe", "Code.exe" },
-            contextAfterThreshold.RecentProcesses?.ToArray());
+            new[] { "Code.exe|App.tsx - Visual Studio Code" },
+            contextAfterThreshold.RecentWindows?.Select(w => $"{w.AppName}|{w.WindowTitle}").ToArray());
     }
 
     [TestMethod]
@@ -134,49 +134,6 @@ public sealed class ActiveWindowTrackerTests
         // 알통 자체 창은 무시되고 이전의 VS Code 맥락이 유지되어야 함
         Assert.AreEqual("Code.exe", context.ActiveProcess);
         Assert.AreEqual("App.tsx - Visual Studio Code", context.WindowTitle);
-    }
-
-    [TestMethod]
-    public void WorkingSet_MaintainsUpTo3_UniqueRecentProcesses()
-    {
-        var timeProvider = new TestTimeProvider();
-        var windowProvider = new FakeWindowInfoProvider();
-
-        using var tracker = new ActiveWindowTracker(
-            windowProvider,
-            pollingInterval: TimeSpan.FromSeconds(2),
-            stabilizationThreshold: TimeSpan.FromSeconds(5),
-            selfProcessId: 9999,
-            timeProvider: timeProvider);
-
-        // 1. VS Code 진입
-        windowProvider.Current = new WindowInfo(1, 101, "Code.exe", "Editor");
-        tracker.Start();
-
-        // 2. Chrome 진입 후 6초
-        windowProvider.Current = new WindowInfo(2, 102, "chrome.exe", "Google");
-        timeProvider.Advance(TimeSpan.FromSeconds(1));
-        tracker.CaptureNow();
-        timeProvider.Advance(TimeSpan.FromSeconds(5));
-        tracker.CaptureNow();
-
-        // 3. Slack 진입 후 6초
-        windowProvider.Current = new WindowInfo(3, 103, "slack.exe", "Slack Channel");
-        timeProvider.Advance(TimeSpan.FromSeconds(1));
-        tracker.CaptureNow();
-        timeProvider.Advance(TimeSpan.FromSeconds(5));
-        tracker.CaptureNow();
-
-        // 4. Notion 진입 후 6초 (총 4개째 -> 최대 3개만 유지되어야 함)
-        windowProvider.Current = new WindowInfo(4, 104, "Notion.exe", "Project Notes");
-        timeProvider.Advance(TimeSpan.FromSeconds(1));
-        tracker.CaptureNow();
-        timeProvider.Advance(TimeSpan.FromSeconds(5));
-        CurrentContext finalContext = tracker.CaptureNow();
-
-        CollectionAssert.AreEqual(
-            new[] { "Notion.exe", "slack.exe", "chrome.exe" },
-            finalContext.RecentProcesses?.ToArray());
     }
 
     [TestMethod]
@@ -374,10 +331,8 @@ public sealed class ActiveWindowTrackerTests
         CurrentContext contextAfterClipping = tracker.CaptureNow();
 
         Assert.AreEqual("Antigravity IDE.exe", contextAfterClipping.ActiveProcess);
-        // RecentProcesses에 ScreenClippingHost가 오염되지 않아야 함
-        CollectionAssert.AreEqual(
-            new[] { "Antigravity IDE.exe" },
-            contextAfterClipping.RecentProcesses?.ToArray());
+        // 최근 창 목록에 ScreenClippingHost가 오염되지 않아야 함 (같은 창으로 돌아왔으니 직전 창도 없음)
+        Assert.AreEqual(0, contextAfterClipping.RecentWindows?.Count ?? 0);
     }
 
     [TestMethod]
