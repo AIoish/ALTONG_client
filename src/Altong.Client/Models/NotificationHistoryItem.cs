@@ -7,8 +7,7 @@ public sealed class NotificationHistoryItem(NotificationRecord record) : INotify
 {
     public NotificationRecord Record { get; } = record;
     public string AppName => Record.AppName;
-    public string Title => Record.Title;
-    public string SenderText => string.IsNullOrWhiteSpace(Record.Sender) ? "알림" : Record.Sender;
+    public string DisplayName => string.IsNullOrWhiteSpace(AppName) ? "알 수 없는 앱" : AppName;
     public string TimeText => Record.ReceivedAt.ToLocalTime().ToString("yyyy.MM.dd HH:mm");
     private bool _isSelected;
     public bool IsSelected

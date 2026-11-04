@@ -11,6 +11,7 @@ using Altong.Client.Services.Focus;
 using Altong.Client.Services.Win32;
 using Altong.Client.Services.Notifications;
 using Altong.Client.Services.NotificationControl;
+using Altong.Client.Services.Calendar;
 
 namespace Altong.Client;
 
@@ -68,6 +69,7 @@ public partial class App : System.Windows.Application
     private SingleInstanceService? _singleInstance;
     private KlueFilterEngine? _klueFilterEngine;
     private LlamaReportSummaryProvider? _reportSummaryProvider;
+    private readonly DashboardCalendarStore _calendar = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -226,7 +228,7 @@ public partial class App : System.Windows.Application
         // 더블클릭의 두 번째 이벤트가 첫 창 생성 도중에 끼어들지 않고 차례대로 실행된다.
         _trayIconService = new TrayIconService(() => PostToUiThread(ShowDashboard));
         _trayIconService.SetDashboardAction(() => PostToUiThread(ToggleDashboard));
-        _trayIconService.SetDashboardCloseAction(() => PostToUiThread(HideDashboard));
+        _trayIconService.SetExitAction(() => PostToUiThread(RequestShutdown));
 
         FocusModeService.StateChanged += FocusModeService_StateChanged;
         _focusModeCoordinator.StateChanged += FocusModeCoordinator_StateChanged;
@@ -378,9 +380,10 @@ public partial class App : System.Windows.Application
                 _focusModeCoordinator,
                 ShowCurrentRoutineReminder,
                 RequestShutdown,
-                summaryProvider: null,
+                summaryProvider: _reportSummaryProvider,
                 autoDndSettings: AutoDndSettings,
-                startupRegistration: StartupRegistration);
+                startupRegistration: StartupRegistration,
+                calendar: _calendar);
             _dashboardWindow.Closed += DashboardWindow_Closed;
             MainWindow = _dashboardWindow;
         }
@@ -492,15 +495,18 @@ public partial class App : System.Windows.Application
             if (result is null || IsShuttingDown) return;
             await Dispatcher.InvokeAsync(() => { });
             if (IsShuttingDown) return;
-            var report = new SessionReportWindow(result, SessionResults.Reports, isSaved: false, summaryProvider: _reportSummaryProvider);
+            var report = new SessionReportWindow(result, SessionResults.Reports, isSaved: false,
+                summaryProvider: _reportSummaryProvider, calendar: _calendar);
             // 대시보드가 지금 활성 창일 때만 딸린 창으로 연다. 뒤에 깔려 있거나 최소화된 대시보드에 딸리면
             // 리포트도 함께 뒤에 뜨거나 숨는다(자리비움 자동 종료·타이머 카드로 끝난 경우).
-            if (_dashboardWindow is { IsVisible: true, IsActive: true } dashboard
-                && dashboard.WindowState != WindowState.Minimized)
-                report.Owner = dashboard;
+            bool dashboardActive = _dashboardWindow is { IsVisible: true, IsActive: true, WindowState: not WindowState.Minimized };
+            report.ShowActivated = dashboardActive;
+            if (dashboardActive)
+                report.Owner = _dashboardWindow;
             else
                 report.WindowStartupLocation = WindowStartupLocation.CenterScreen;
             report.Show();
+            if (!report.IsActive) WindowAttention.FlashTaskbar(report);
             // 자리비움 자동 종료나 포커스를 가져가지 않는 타이머 카드로 끝나면 알통이 활성 앱이 아니어서
             // Windows가 새 창을 작업 중인 창 뒤에 둔다. 이때 WPF는 창을 "활성"(IsActive)으로 보고하기도 하므로
             // Windows의 실제 전경 창으로 판단한다. 포커스는 빼앗지 않고 맨 위 고정으로 보이게 한 뒤,
@@ -509,12 +515,19 @@ public partial class App : System.Windows.Application
                 && !new Win32FullscreenDetector().IsFullscreenActive())
             {
                 report.Topmost = true;
-                void ReleaseTopmost(object? sender, System.Windows.Input.MouseButtonEventArgs e)
+                void ReleaseAttention()
                 {
                     report.PreviewMouseDown -= ReleaseTopmost;
+                    report.Activated -= ReleaseOnActivation;
                     report.Topmost = false;
                 }
+                void ReleaseTopmost(object? sender, System.Windows.Input.MouseButtonEventArgs e)
+                {
+                    ReleaseAttention();
+                }
+                void ReleaseOnActivation(object? sender, EventArgs e) => ReleaseAttention();
                 report.PreviewMouseDown += ReleaseTopmost;
+                report.Activated += ReleaseOnActivation;
             }
         }
         catch (Exception ex)
@@ -675,7 +688,6 @@ public partial class App : System.Windows.Application
         }
     }
 
-    private void HideDashboard() => RunOnUiThread(() => _dashboardWindow?.Hide());
 
     private void ToggleDashboard()
     {

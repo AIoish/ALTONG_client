@@ -1,0 +1,97 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:services="clr-namespace:Altong.Client.Services">
+    <Color x:Key="BlackCanvasColor">#242528</Color>
+    <Color x:Key="BlackPaperColor">#1C1D20</Color>
+    <Color x:Key="BlackSurfaceColor">#303135</Color>
+    <Color x:Key="BlackRaisedColor">#3A3B3F</Color>
+    <Color x:Key="BlackInputColor">#17181B</Color>
+    <Color x:Key="BlackRuleColor">#4B4D54</Color>
+    <Color x:Key="BlackControlRuleColor">#8C8E97</Color>
+    <Color x:Key="BlackTextColor">#F3F3F2</Color>
+    <Color x:Key="BlackMutedColor">#B8B9C0</Color>
+    <Color x:Key="BlackSoftColor">#D6D6D9</Color>
+    <Color x:Key="BlackActionColor">#A8B9D8</Color>
+    <Color x:Key="BlackActionTextColor">#131314</Color>
+    <Color x:Key="BlackFocusColor">#CCD9EF</Color>
+    <Color x:Key="BlackAccentTextColor">#C5D2E8</Color>
+    <Color x:Key="BlackSelectionColor">#2C3544</Color>
+    <Color x:Key="BlackSelectionRuleColor">#798BA9</Color>
+    <Color x:Key="BlackSuccessColor">#B6D3C4</Color>
+    <Color x:Key="BlackSuccessSurfaceColor">#293A34</Color>
+    <Color x:Key="BlackSuccessRuleColor">#819E90</Color>
+    <Color x:Key="BlackSuccessMutedColor">#ACBFB4</Color>
+    <Color x:Key="BlackErrorColor">#E5AAA5</Color>
+    <Color x:Key="BlackShadowColor">#000000</Color>
+    <SolidColorBrush x:Key="BlackCanvas" Color="{StaticResource BlackCanvasColor}" />
+    <SolidColorBrush x:Key="BlackPaper" Color="{StaticResource BlackPaperColor}" />
+    <SolidColorBrush x:Key="BlackSurface" Color="{StaticResource BlackSurfaceColor}" />
+    <SolidColorBrush x:Key="BlackRaised" Color="{StaticResource BlackRaisedColor}" />
+    <SolidColorBrush x:Key="BlackInput" Color="{StaticResource BlackInputColor}" />
+    <SolidColorBrush x:Key="BlackRule" Color="{StaticResource BlackRuleColor}" />
+    <SolidColorBrush x:Key="BlackControlRule" Color="{StaticResource BlackControlRuleColor}" />
+    <SolidColorBrush x:Key="BlackText" Color="{StaticResource BlackTextColor}" />
+    <SolidColorBrush x:Key="BlackMuted" Color="{StaticResource BlackMutedColor}" />
+    <SolidColorBrush x:Key="BlackSoft" Color="{StaticResource BlackSoftColor}" />
+    <SolidColorBrush x:Key="BlackAction" Color="{StaticResource BlackActionColor}" />
+    <SolidColorBrush x:Key="BlackActionText" Color="{StaticResource BlackActionTextColor}" />
+    <SolidColorBrush x:Key="BlackFocus" Color="{StaticResource BlackFocusColor}" />
+    <SolidColorBrush x:Key="BlackAccentText" Color="{StaticResource BlackAccentTextColor}" />
+    <SolidColorBrush x:Key="BlackSelection" Color="{StaticResource BlackSelectionColor}" />
+    <SolidColorBrush x:Key="BlackSelectionRule" Color="{StaticResource BlackSelectionRuleColor}" />
+    <SolidColorBrush x:Key="BlackSuccess" Color="{StaticResource BlackSuccessColor}" />
+    <SolidColorBrush x:Key="BlackSuccessSurface" Color="{StaticResource BlackSuccessSurfaceColor}" />
+    <SolidColorBrush x:Key="BlackSuccessRule" Color="{StaticResource BlackSuccessRuleColor}" />
+    <SolidColorBrush x:Key="BlackSuccessMuted" Color="{StaticResource BlackSuccessMutedColor}" />
+    <SolidColorBrush x:Key="BlackError" Color="{StaticResource BlackErrorColor}" />
+    <SolidColorBrush x:Key="BlackShadow" Color="{StaticResource BlackShadowColor}" />
+    <Thickness x:Key="SectionGap">0,0,0,24</Thickness>
+    <Thickness x:Key="PanelPadding">16</Thickness>
+    <Style x:Key="QuietScrollViewer" TargetType="ScrollViewer">
+        <Setter Property="services:ScrollWheelBehavior.IsEnabled" Value="True" />
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="PanningMode" Value="VerticalOnly" />
+        <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style TargetType="ScrollViewer" BasedOn="{StaticResource QuietScrollViewer}" />
+
+    <Style x:Key="BlackDisclosureToggle" TargetType="ToggleButton">
+        <Setter Property="services:MotionBehavior.ButtonFeedback" Value="True" />
+        <Setter Property="Foreground" Value="{StaticResource BlackText}" />
+        <Setter Property="FontFamily" Value="{x:Static services:AppTypography.BodyFont}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
+            <Border x:Name="HeaderSurface" BorderBrush="Transparent" BorderThickness="1" Background="Transparent" CornerRadius="4" Padding="2,10">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="16" /></Grid.ColumnDefinitions>
+                    <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True" />
+                    <Path x:Name="Chevron" Grid.Column="1" Data="M 2,4 L 6,8 L 10,4" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.3"
+                          Width="12" Height="12" VerticalAlignment="Center" RenderTransformOrigin=".5,.5" services:MotionBehavior.RotateOnToggle="True" />
+                </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chevron" Property="RenderTransform"><Setter.Value><RotateTransform Angle="180" /></Setter.Value></Setter></Trigger>
+                <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="HeaderSurface" Property="Background" Value="{StaticResource BlackSurface}" /></Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="HeaderSurface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
+                <Trigger Property="IsEnabled" Value="False"><Setter TargetName="HeaderSurface" Property="Opacity" Value=".5" /></Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="BlackExpander" TargetType="Expander">
+        <Setter Property="FontFamily" Value="{x:Static services:AppTypography.BodyFont}" />
+        <Setter Property="Foreground" Value="{StaticResource BlackText}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Expander">
+            <StackPanel>
+                <ToggleButton x:Name="DisclosureHeader" Style="{StaticResource BlackDisclosureToggle}" Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                              IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                              AutomationProperties.Name="{Binding Header, RelativeSource={RelativeSource TemplatedParent}}" />
+                <ContentPresenter x:Name="ExpandedContent" Visibility="Collapsed" Margin="0,4,0,10" TextElement.FontWeight="Normal" services:MotionBehavior.FadeOnReveal="True" />
+            </StackPanel>
+            <ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="ExpandedContent" Property="Visibility" Value="Visible" /></Trigger></ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
+    </Style>
+</ResourceDictionary>

@@ -1,4 +1,5 @@
 using System.Windows;
+using System.IO;
 using Altong.Client.Services;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
@@ -16,27 +17,51 @@ public partial class SessionReportWindow : Window
     private readonly CancellationTokenSource _summaryLifetime = new();
     private readonly IReportSummaryProvider? _summaryProvider;
     private readonly bool _demoMode;
+    private readonly DashboardCalendarStore _calendar;
+    private readonly DashboardSummaryStateStore _summaryState;
+    private readonly NotificationSummaryCalendarView _summaryCards;
+    private int _notificationDisplayLimit = 50;
+    private int _appDisplayLimit = 50;
 
     public SessionReportWindow(SessionResult result, SqliteSessionReportRepository? reports = null, bool isSaved = false,
-        IReportSummaryProvider? summaryProvider = null)
+        IReportSummaryProvider? summaryProvider = null, DashboardCalendarStore? calendar = null,
+        string? summaryStatePath = null)
     {
         _result = result;
         _reports = reports;
         _demoMode = Environment.GetEnvironmentVariable("ALTONG_CALENDAR_DEMO") == "1";
         var summaryFolder = Environment.GetEnvironmentVariable("ALTONG_SUMMARY_DIR");
-        _summaryProvider = isSaved ? null : summaryProvider ?? (_demoMode ? new FakeReportSummaryProvider()
+        _summaryProvider = summaryProvider ?? (_demoMode ? new FakeReportSummaryProvider()
             : string.IsNullOrWhiteSpace(summaryFolder) ? null : new JsonReportSummaryProvider(summaryFolder));
+        _calendar = calendar ?? new DashboardCalendarStore();
+        _summaryState = new(summaryStatePath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Altong", "dashboard-summary-state.json"));
+        _summaryState.Load();
         InitializeComponent();
+        Title = isSaved ? "저장된 집중 리포트" : "집중 완료 · 집중 리포트";
+        ReportHeadingText.Text = "집중 리포트";
+        ReportBadgeText.Text = isSaved ? "보관됨" : "집중 완료";
+        _summaryCards = new([], _demoMode);
+        _summaryCards.ScheduleCorrected += SaveCorrection;
+        _summaryCards.ScheduleSaveRequested += SaveSchedule;
+        CalendarSummaryHost.Content = _summaryCards;
+        _calendar.Changed += Calendar_Changed;
+        ReloadSummaryButton.Visibility = _summaryProvider is null || result.SessionId is null ? Visibility.Collapsed : Visibility.Visible;
         Closing += (_, e) => e.Cancel = _saving;
-        Closed += (_, _) => { _closed = true; _summaryLifetime.Cancel(); };
+        Closed += (_, _) =>
+        {
+            _closed = true;
+            _summaryLifetime.Cancel();
+            _calendar.Changed -= Calendar_Changed;
+        };
         if (isSaved || reports is null || result.SessionId is null)
         {
             SaveReportButton.Visibility = Visibility.Collapsed;
             SkipSaveButton.Content = "확인";
-            SaveStatusText.Text = isSaved ? "캘린더에 저장된 리포트입니다." : "";
+            SaveStatusText.Text = isSaved ? "저장된 리포트" : "";
         }
         else
-            SaveStatusText.Text = "이 리포트를 캘린더에 저장하시겠습니까? 닫으면 새 리포트는 저장되지 않습니다.";
+            SaveStatusText.Text = "저장 전";
         SourceInitialized += (_, _) => FitToWorkArea();
         StateChanged += (_, _) =>
         {
@@ -52,40 +77,108 @@ public partial class SessionReportWindow : Window
         };
         if (result.SummaryItems.Count > 0) ShowSummaryItems(result.SummaryItems);
         else if (_summaryProvider is not null && result.SessionId is not null) _ = LoadSummaryItemsAsync();
+        UpdateDetailLists();
+    }
+
+    private void UpdateDetailLists()
+    {
+        NotificationItemsControl.ItemsSource = _result.Notifications.Take(_notificationDisplayLimit).ToArray();
+        AppItemsControl.ItemsSource = ((SessionResult)DataContext).Apps.Take(_appDisplayLimit).ToArray();
+        MoreNotificationsButton.Visibility = _result.Notifications.Count > _notificationDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
+        MoreAppsButton.Visibility = _result.Apps.Count > _appDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
+        MoreNotificationsButton.Content = $"알림 더 보기 · {Math.Min(_notificationDisplayLimit, _result.Notifications.Count)}/{_result.Notifications.Count}";
+        MoreAppsButton.Content = $"앱 더 보기 · {Math.Min(_appDisplayLimit, _result.Apps.Count)}/{_result.Apps.Count}";
+    }
+
+    private void MoreNotifications_Click(object sender, RoutedEventArgs e)
+    {
+        _notificationDisplayLimit += 50;
+        UpdateDetailLists();
+    }
+
+    private void MoreApps_Click(object sender, RoutedEventArgs e)
+    {
+        _appDisplayLimit += 50;
+        UpdateDetailLists();
     }
 
     private void ShowSummaryItems(IReadOnlyList<NotificationSummaryItem> items)
     {
-        ReportSummaryItemsControl.ItemsSource = items;
-        ReportSummaryItemsControl.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var existing = _summaryCards.Items.ToDictionary(row => row.Summary.SummaryId);
+        _summaryCards.SetItems(items.Select(item => existing.TryGetValue(item.SummaryId, out var row) && row.Summary == item
+            ? row : new CalendarSummaryItemViewModel(item, _result.SessionId, correction: _result.SessionId is { } session
+                ? _summaryState.Get(session, item.SummaryId)?.Correction ?? _calendar.Get(session, item.SummaryId)?.Schedule : null)).ToArray());
+        UpdateSavedStates();
+        CalendarSummaryHost.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         LegacySummaryPanel.Visibility = items.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
     }
+
+    private void Calendar_Changed(object? sender, EventArgs e) => UpdateSavedStates();
+
+    private void UpdateSavedStates()
+    {
+        foreach (var row in _summaryCards.Items)
+        {
+            var saved = row.SessionId is { } session ? _calendar.Get(session, row.Summary.SummaryId) : null;
+            if (row.IsSaved && saved is null) row.Status = "일정 삭제됨 · 다시 저장할 수 있어요.";
+            row.IsSaved = saved?.Schedule == row.Draft;
+        }
+    }
+
+    private void SaveCorrection(object? sender, CalendarSummaryItemViewModel row)
+    {
+        if (row.SessionId is null) return;
+        try { _summaryState.Save(new(row.SessionId, row.Summary.SummaryId, row.Draft)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { row.Status = "보완 내용 저장 실패 · 다시 적용하세요."; }
+    }
+
+    private void SaveSchedule(object? sender, CalendarSummaryItemViewModel row)
+    {
+        if (row.SessionId is null || row.IsBusy || row.IsSaved) return;
+        row.IsBusy = true;
+        try
+        {
+            _calendar.Save(new(row.SessionId, row.Summary.SummaryId, row.Summary.AppName, row.Draft));
+            row.IsSaved = true;
+            row.Status = "캘린더에 저장했어요.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        { row.Status = _calendar.LoadWarning ?? "일정 저장 실패 · 다시 시도하세요."; }
+        finally { row.IsBusy = false; }
+    }
+
+    private async void ReloadSummary_Click(object sender, RoutedEventArgs e) => await LoadSummaryItemsAsync();
 
     private async Task LoadSummaryItemsAsync()
     {
         if (_loadingSummaries || _saving || _closed || _summaryProvider is null || _result.SessionId is null) return;
         _loadingSummaries = true;
         SaveReportButton.IsEnabled = false;
+        ReloadSummaryButton.IsEnabled = false;
         SummaryLoadStatusText.Visibility = Visibility.Visible;
-        SummaryLoadStatusText.Text = "알림 요약을 불러오고 있습니다.";
+        SummaryLoadStatusText.Text = "요약 불러오는 중…";
         try
         {
             var supply = await _summaryProvider.ReadAsync(_result.SessionId, _summaryLifetime.Token);
             if (_closed) return;
-            if (!supply.IsDemo) _result = _result with { SummaryItems = supply.Items };
-            ShowSummaryItems(supply.Items);
-            SummaryLoadStatusText.Text = supply.Items.Count == 0 ? "아직 도착한 알림 요약이 없습니다. 대시보드의 알림 확인에서 확인해 주세요." : "";
+            if (supply.Items.Count > 0)
+            {
+                if (!supply.IsDemo) _result = _result with { SummaryItems = supply.Items };
+                ShowSummaryItems(supply.Items);
+            }
+            SummaryLoadStatusText.Text = supply.Items.Count == 0 ? "새 요약 없음 · 다시 불러올 수 있어요." : "";
             SummaryLoadStatusText.Visibility = supply.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         catch (OperationCanceledException) { }
         catch (Exception)
         {
-            if (!_closed) SummaryLoadStatusText.Text = "알림 요약을 불러오지 못했습니다. 기본 리포트를 저장하고 대시보드의 알림 확인에서 다시 확인할 수 있습니다.";
+            if (!_closed) SummaryLoadStatusText.Text = "요약 불러오기 실패 · 다시 시도하세요.";
         }
         finally
         {
             _loadingSummaries = false;
-            if (!_closed) SaveReportButton.IsEnabled = true;
+            if (!_closed) { SaveReportButton.IsEnabled = true; ReloadSummaryButton.IsEnabled = true; }
         }
     }
 
@@ -98,10 +191,10 @@ public partial class SessionReportWindow : Window
         var available = transform.Transform(new Vector(area.Width, area.Height));
         double width = Math.Max(1, available.X - 24);
         double height = Math.Max(1, available.Y - 24);
-        MinWidth = Math.Min(520, width);
-        MinHeight = Math.Min(420, height);
-        Width = Math.Min(760, width);
-        Height = Math.Min(780, height);
+        MinWidth = Math.Min(480, width);
+        MinHeight = Math.Min(380, height);
+        Width = Math.Min(600, width);
+        Height = Math.Min(660, height);
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
@@ -115,7 +208,7 @@ public partial class SessionReportWindow : Window
         _saving = true;
         SaveReportButton.IsEnabled = false;
         SkipSaveButton.IsEnabled = false;
-        SaveStatusText.Text = "리포트를 저장하고 있습니다.";
+        SaveStatusText.Text = "리포트 저장 중…";
         try
         {
             await Task.Run(() => _reports.SaveAsync(_result));
@@ -127,7 +220,7 @@ public partial class SessionReportWindow : Window
             _saving = false;
             SaveReportButton.IsEnabled = true;
             SkipSaveButton.IsEnabled = true;
-            SaveStatusText.Text = "저장하지 못했습니다. 다시 저장하거나 저장하지 않고 닫을 수 있습니다.";
+            SaveStatusText.Text = "저장 실패 · 다시 시도하세요.";
         }
     }
 
@@ -137,11 +230,11 @@ public partial class SessionReportWindow : Window
         try
         {
             System.Windows.Clipboard.SetText(draft);
-            CopyStatusText.Text = "문구를 복사했어요. 전송 전에 내용을 확인하세요.";
+            CopyStatusText.Text = "복사 완료";
         }
         catch (Exception)
         {
-            CopyStatusText.Text = "클립보드에 복사하지 못했어요. 잠시 후 다시 시도해 주세요.";
+            CopyStatusText.Text = "복사 실패 · 다시 시도하세요.";
         }
     }
 

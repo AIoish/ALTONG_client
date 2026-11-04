@@ -4,7 +4,7 @@ using Altong.Client.Models;
 
 namespace Altong.Client.Services.Calendar;
 
-// Dashboard decisions only. AI input and historical report snapshots remain untouched.
+// User corrections remain separate from AI input and historical report snapshots.
 public sealed record DashboardSummaryState(string SessionId, string SummaryId,
     CalendarSchedule? Correction = null, bool Dismissed = false);
 

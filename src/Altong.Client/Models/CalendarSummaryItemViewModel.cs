@@ -29,7 +29,7 @@ public sealed class CalendarSummaryItemViewModel : INotifyPropertyChanged
     public bool IsEditing { get => _editing; set { _editing = value; Changed(nameof(IsEditing)); } }
     public string Status { get => _status; set { _status = value; Changed(nameof(Status)); } }
     public string ButtonText => IsBusy ? "저장 중…" : IsSaved ? "캘린더에 저장됨" : "캘린더에 저장";
-    public string CardLabel => IsScheduleRelated ? "일정이 포함된 알림" : "알림 요약";
+    public string CardLabel => IsScheduleRelated ? "일정" : "AI 요약";
     public string ScheduleTitle => string.IsNullOrWhiteSpace(Draft.Title) ? "일정 제목 확인 필요" : Draft.Title;
     public string ScheduleWhen => Draft.Start is { } start && Draft.End is { } end
         ? (start.Date == end.Date ? $"{start:yyyy년 M월 d일} · {start:HH:mm}–{end:HH:mm}"
@@ -47,7 +47,7 @@ public sealed class CalendarSummaryItemViewModel : INotifyPropertyChanged
     {
         Summary = summary;
         SessionId = sessionId;
-        SourceText = receivedAt is { } at ? $"{at.ToLocalTime():M월 d일 HH:mm} 집중 종료 후 요약" : "";
+        SourceText = receivedAt is { } at ? $"{at.ToLocalTime():M월 d일 HH:mm} 집중 종료 후 요약" : summary.AppName?.Trim() ?? "";
         Draft = InScheduleTimeZone(correction ?? summary.Schedule ?? new("", null, null, null, null, null, null));
         Title = Draft.Title ?? "";
         StartDate = Draft.Start?.Date;
@@ -92,7 +92,7 @@ public sealed class CalendarSummaryItemViewModel : INotifyPropertyChanged
             // Corrections are stored separately from the immutable report snapshot.
             IsSaved = false;
             IsEditing = false;
-            Status = "일정 정보를 확인했습니다. 캘린더에 저장 버튼을 눌러 주세요.";
+            Status = "수정 완료 · 캘린더에 저장하세요.";
             Changed(nameof(ScheduleText));
             Changed(nameof(ScheduleTitle));
             Changed(nameof(ScheduleWhen));
