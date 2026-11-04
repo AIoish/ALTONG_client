@@ -15,6 +15,42 @@ namespace Altong.Client.Tests;
 [TestClass]
 public sealed class KlueFilterEngineTests
 {
+    [TestMethod]
+    public void ModelContext_MatchesTrainingHistoryShape()
+    {
+        // ALTONG_ai HistoryContext: recent_windows는 현재 창을 뺀 직전 창, recent_processes는 그 창들의 앱 이름(같은 순서).
+        var context = new CurrentContext("Code.exe", "auth.py - ALTONG", DateTime.UtcNow,
+            RecentProcesses: ["Code.exe", "chrome.exe"],
+            RecentWindows:
+            [
+                new("Code.exe", "auth.py - ALTONG"),
+                new("Notion.exe", "로그인 설계"),
+                new("slack.exe", "#backend"),
+                new("chrome.exe", "OAuth 문서"),
+            ]);
+
+        var model = KlueFilterEngine.ToModelContext(context);
+        string input = ModelInputBuilder.Build(new NotificationInput("Slack", "팀원A", "#backend", "로그인 오류 확인 부탁", "2026-11-04T03:00:00Z"), model, relevance: true);
+
+        StringAssert.EndsWith(input,
+            "\"current_window\":{\"active_process\":\"Code.exe\",\"window_title\":\"auth.py - ALTONG\"}," +
+            "\"recent_windows\":[{\"app_name\":\"Notion.exe\",\"window_title\":\"로그인 설계\"}," +
+            "{\"app_name\":\"slack.exe\",\"window_title\":\"#backend\"},{\"app_name\":\"chrome.exe\",\"window_title\":\"OAuth 문서\"}]," +
+            "\"recent_processes\":[\"Notion.exe\",\"slack.exe\",\"chrome.exe\"]}");
+    }
+
+    [TestMethod]
+    public void ModelContext_WithoutPreviousWindows_SendsEmptyLists()
+    {
+        var context = new CurrentContext("Code.exe", "main.cs", DateTime.UtcNow,
+            RecentProcesses: ["Code.exe"], RecentWindows: [new("Code.exe", "main.cs")]);
+
+        var model = KlueFilterEngine.ToModelContext(context);
+
+        Assert.AreEqual(0, model.RecentWindows!.Count);
+        Assert.AreEqual(0, model.RecentProcesses!.Count);
+    }
+
     private sealed class FakeWindowTracker : IActiveWindowTracker
     {
         public CurrentContext CurrentContext { get; set; } = CurrentContext.Empty;

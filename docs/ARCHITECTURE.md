@@ -196,8 +196,12 @@ ALTONG_client/
       string WindowTitle,
       DateTime LastUpdated,
       int DurationSeconds = 0,
-      IReadOnlyList<string>? RecentProcesses = null);
+      IReadOnlyList<string>? RecentProcesses = null,
+      IReadOnlyList<RecentWindowInfo>? RecentWindows = null);
   ```
+* `RecentProcesses`는 최근 1~2분간 함께 쓴 앱(현재 앱 포함)으로 규칙 기반 필터와 디버그 창이 쓴다.
+  `RecentWindows`는 현재 창을 뺀 직전 창(최신순, 최대 3개)이다. KLUE 필터 모델에는 학습 형식에 맞춰
+  `recent_windows`=직전 창, `recent_processes`=그 창들의 앱 이름으로 넣는다(`KlueFilterEngine.ToModelContext`).
 
 ### 7.3 실시간 필터 판단 결과 (`FilterResult`)
 ```json

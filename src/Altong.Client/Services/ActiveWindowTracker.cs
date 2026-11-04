@@ -339,7 +339,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
             LastUpdated: currentNow.UtcDateTime,
             DurationSeconds: durationSeconds,
             RecentProcesses: [.. _recentProcesses],
-            RecentWindows: [.. _recentWindows]);
+            RecentWindows: PreviousWindows(window));
 
         AppLogger.Info($"[WindowTracker] [CONFIRM] {window.ProcessName} ('{TruncateTitle(window.WindowTitle)}') | 콤비: [{string.Join(", ", _recentProcesses)}]");
 
@@ -364,6 +364,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         return _currentContext;
     }
 
+    // 현재 창을 포함해 최신순으로 기억한다. 현재 창 자리 하나를 더 둬야 현재 창을 빼고도 직전 창 3개가 남는다.
     private void UpdateRecentWindows(string processName, string windowTitle)
     {
         if (string.IsNullOrWhiteSpace(processName))
@@ -374,11 +375,17 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         _recentWindows.RemoveAll(w => w.AppName == processName && w.WindowTitle == windowTitle);
         _recentWindows.Insert(0, new RecentWindowInfo(processName, windowTitle));
 
-        if (_recentWindows.Count > MaxRecentWindows)
+        if (_recentWindows.Count > MaxRecentWindows + 1)
         {
-            _recentWindows.RemoveRange(MaxRecentWindows, _recentWindows.Count - MaxRecentWindows);
+            _recentWindows.RemoveRange(MaxRecentWindows + 1, _recentWindows.Count - MaxRecentWindows - 1);
         }
     }
+
+    // 필터 모델은 현재 창과 최근 창을 따로 받도록 학습됐다. 최근 창은 현재 창을 뺀 직전 창들이다 (ALTONG_ai HistoryContext).
+    private RecentWindowInfo[] PreviousWindows(WindowInfo current) =>
+        [.. _recentWindows
+            .Where(w => w.AppName != current.ProcessName || w.WindowTitle != current.WindowTitle)
+            .Take(MaxRecentWindows)];
 
     private void UpdateRecentProcesses(string processName)
     {

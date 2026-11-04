@@ -210,21 +210,60 @@ public sealed class ActiveWindowTrackerTests
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         tracker.CaptureNow();
 
-        // 4. Notion 진입 후 6초 (총 4개 -> 최대 3개 유지)
+        // 4. Notion 진입 후 6초
         windowProvider.Current = new WindowInfo(4, 104, "Notion.exe", "Docs");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        tracker.CaptureNow();
+
+        // 5. Excel 진입 후 6초 (직전 창 4개 -> 최대 3개 유지)
+        windowProvider.Current = new WindowInfo(5, 105, "EXCEL.EXE", "Budget");
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         tracker.CaptureNow();
         timeProvider.Advance(TimeSpan.FromSeconds(5));
         CurrentContext finalContext = tracker.CaptureNow();
 
+        // 최근 창은 현재 창(Excel)을 뺀 직전 창들이다 (필터 모델 학습 형식).
         Assert.IsNotNull(finalContext.RecentWindows);
-        Assert.AreEqual(3, finalContext.RecentWindows.Count);
-        Assert.AreEqual("Notion.exe", finalContext.RecentWindows[0].AppName);
-        Assert.AreEqual("Docs", finalContext.RecentWindows[0].WindowTitle);
-        Assert.AreEqual("slack.exe", finalContext.RecentWindows[1].AppName);
-        Assert.AreEqual("General", finalContext.RecentWindows[1].WindowTitle);
-        Assert.AreEqual("chrome.exe", finalContext.RecentWindows[2].AppName);
-        Assert.AreEqual("Google Search", finalContext.RecentWindows[2].WindowTitle);
+        CollectionAssert.AreEqual(
+            new[] { "Notion.exe|Docs", "slack.exe|General", "chrome.exe|Google Search" },
+            finalContext.RecentWindows.Select(w => $"{w.AppName}|{w.WindowTitle}").ToArray());
+    }
+
+    [TestMethod]
+    public void RecentWindows_ReturningToAWindow_DoesNotListItAsRecent()
+    {
+        var timeProvider = new TestTimeProvider();
+        var windowProvider = new FakeWindowInfoProvider();
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromSeconds(2),
+            stabilizationThreshold: TimeSpan.FromSeconds(5),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        windowProvider.Current = new WindowInfo(1, 101, "Code.exe", "main.cs");
+        tracker.Start();
+        timeProvider.Advance(TimeSpan.FromSeconds(6));
+        tracker.CaptureNow();
+
+        windowProvider.Current = new WindowInfo(2, 102, "chrome.exe", "Docs");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        tracker.CaptureNow();
+
+        windowProvider.Current = new WindowInfo(1, 101, "Code.exe", "main.cs");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        CurrentContext context = tracker.CaptureNow();
+
+        Assert.AreEqual("Code.exe", context.ActiveProcess);
+        CollectionAssert.AreEqual(new[] { "chrome.exe|Docs" },
+            context.RecentWindows!.Select(w => $"{w.AppName}|{w.WindowTitle}").ToArray());
     }
 
     [TestMethod]
