@@ -14,6 +14,8 @@ public sealed class FakeKakaoWindowOperator : IKakaoWindowOperator
     public List<nint> ClosedWindows { get; } = [];
 
     public Func<nint, KakaoNotificationText>? TextExtractor { get; set; }
+    public Func<nint, ulong>? ContentHashProvider { get; set; }
+    public int ExtractCallCount { get; private set; }
 
     public bool IsNotificationWindow(nint hWnd)
     {
@@ -38,8 +40,11 @@ public sealed class FakeKakaoWindowOperator : IKakaoWindowOperator
         return true;
     }
 
+    public ulong CaptureContentHash(nint hWnd) => ContentHashProvider?.Invoke(hWnd) ?? 0;
+
     public KakaoNotificationText ExtractNotificationText(nint hWnd)
     {
+        ExtractCallCount++;
         if (TextExtractor != null)
         {
             return TextExtractor(hWnd);

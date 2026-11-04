@@ -23,6 +23,7 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
 
     private static readonly TimeSpan PendingTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan PidCacheDuration = TimeSpan.FromSeconds(3);
+    private const int MaxRereadsBeforeClose = 2;
 
     private delegate void WinEventDelegate(
         nint hWinEventHook,
@@ -73,9 +74,6 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
     [DllImport("user32.dll")]
     private static extern bool IsWindow(nint hWnd);
 
-    [DllImport("user32.dll")]
-    private static extern bool IsWindowVisible(nint hWnd);
-
     [StructLayout(LayoutKind.Sequential)]
     private struct Msg
     {
@@ -93,7 +91,8 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
     private readonly Func<bool> _isFocusModeEnabled;
     private readonly ConcurrentDictionary<string, PendingWindowEntry> _pendingWindows = new();
 
-    // 이미 포착한 알림 창. 창이 사라지거나 숨겨질 때까지 다시 포착하지 않는다(스캐너가 정리).
+    // 이미 포착한 알림 창. 창이 파괴될 때까지 다시 포착하지 않는다(스캐너가 정리).
+    // 카카오톡은 메시지마다 새 팝업 창을 만들고 닫으면 파괴한다 (11/04 실측: 숨겨진 채 남은 팝업 없음, 창 핸들 매번 새것).
     private readonly ConcurrentDictionary<nint, byte> _capturedHwnds = new();
 
     private readonly object _syncRoot = new();
@@ -476,30 +475,34 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
     {
         try
         {
-
             // 팝업 UI로부터 발신자 및 메시지 본문 추출
-            KakaoNotificationText extracted = _windowOperator.ExtractNotificationText(capture.Hwnd);
+            var messages = new List<KakaoNotificationText> { _windowOperator.ExtractNotificationText(capture.Hwnd) };
 
             // 집중 모드인 경우: OCR 텍스트 추출 직후 원래 카카오톡 창을 즉시 닫습니다.
             // 카카오톡은 창이 열려있는 동안 연속 알림이 오면 기존 창 위에 덮어쓰기(재렌더링)하므로,
             // 텍스트 추출 직후 창을 닫아 후속 알림이 독립된 새 창(New hWnd)으로 뜨도록 보장합니다.
             if (capture.IsFocusMode)
             {
+                ReadMessagesDrawnDuringOcr(capture.Hwnd, messages);
                 _pendingWindows.TryRemove(capture.Id, out _);
                 _windowOperator.CloseWindow(capture.Hwnd);
                 AppLogger.Info($"[KakaoInterceptor] OCR 완료 직후 팝업 조기 닫기 완료 (hWnd=0x{capture.Hwnd:X8})");
             }
 
-            var rawNotification = new RawNotification(
-                Id: capture.Id,
-                AppName: "KakaoTalk.exe",
-                Sender: extracted.Sender ?? string.Empty,
-                Title: extracted.Title,
-                Body: extracted.Body,
-                Timestamp: DateTime.UtcNow);
+            for (int i = 0; i < messages.Count; i++)
+            {
+                // 첫 메시지는 보류 창 ID를 그대로 쓴다. 덮어 그려진 메시지는 이미 닫힌 창이라 새 ID를 쓴다.
+                var rawNotification = new RawNotification(
+                    Id: i == 0 ? capture.Id : $"kakao_{Guid.NewGuid():N}",
+                    AppName: "KakaoTalk.exe",
+                    Sender: messages[i].Sender ?? string.Empty,
+                    Title: messages[i].Title,
+                    Body: messages[i].Body,
+                    Timestamp: DateTime.UtcNow);
 
-            // 알림 파이프라인으로 이벤트 전달
-            NotificationReceived?.Invoke(this, rawNotification);
+                // 알림 파이프라인으로 이벤트 전달
+                NotificationReceived?.Invoke(this, rawNotification);
+            }
         }
         catch (Exception ex)
         {
@@ -509,6 +512,33 @@ public sealed class KakaoNotificationInterceptor : IWindowsNotificationListener
             {
                 _windowOperator.CloseWindow(entry.Hwnd);
             }
+        }
+    }
+
+    /// <summary>
+    /// OCR하는 동안(약 0.7~1.5초) 새 메시지가 오면 카카오톡이 같은 팝업에 덮어 그려, 닫는 순간 그 메시지가 사라진다.
+    /// 닫기 전에 팝업 내용이 OCR한 이미지와 달라졌으면 다시 읽어 새 메시지로 추가한다.
+    /// </summary>
+    private void ReadMessagesDrawnDuringOcr(nint hWnd, List<KakaoNotificationText> messages)
+    {
+        for (int reread = 0; reread < MaxRereadsBeforeClose; reread++)
+        {
+            ulong readHash = messages[^1].ContentHash;
+            ulong currentHash = _windowOperator.CaptureContentHash(hWnd);
+            if (readHash == 0 || currentHash == 0 || currentHash == readHash)
+            {
+                return;
+            }
+
+            var latest = _windowOperator.ExtractNotificationText(hWnd);
+            if (latest.Body == messages[^1].Body)
+            {
+                // 본문은 그대로이고 그림만 달라졌다. 방 이름 등의 OCR 흔들림으로 같은 메시지를 두 번 넣지 않는다.
+                return;
+            }
+
+            AppLogger.Info($"[KakaoInterceptor] OCR 중 팝업에 새 메시지가 덮어 그려져 다시 읽음 (hWnd=0x{hWnd:X8})");
+            messages.Add(latest);
         }
     }
 

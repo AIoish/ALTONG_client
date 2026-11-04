@@ -2,8 +2,12 @@ namespace Altong.Client.Services.Notifications;
 
 /// <summary>
 /// 카카오톡 알림 팝업 창에서 추출한 텍스트 데이터.
+/// ContentHash는 OCR에 쓴 팝업 이미지의 지문이고, 알 수 없으면 0이다.
 /// </summary>
-public record KakaoNotificationText(string? Sender, string Title, string Body);
+public record KakaoNotificationText(string? Sender, string Title, string Body)
+{
+    public ulong ContentHash { get; init; }
+}
 
 /// <summary>
 /// 카카오톡 윈도우 감지, 가로채기(숨김/표시/닫기), 텍스트 추출을 추상화한 인터페이스.
@@ -35,4 +39,9 @@ public interface IKakaoWindowOperator
     /// 알림 팝업 창의 UI 요소로부터 발신자 및 메시지 텍스트를 추출합니다.
     /// </summary>
     KakaoNotificationText ExtractNotificationText(nint hWnd);
+
+    /// <summary>
+    /// 지금 팝업에 그려진 내용의 지문을 구합니다. 확인할 수 없으면 0입니다.
+    /// </summary>
+    ulong CaptureContentHash(nint hWnd);
 }

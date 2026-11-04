@@ -1,3 +1,4 @@
+using System.IO;
 using Altong.Client.Data.Models;
 using Altong.Client.Models;
 using Altong.Client.Services;
@@ -10,6 +11,158 @@ namespace Altong.Client.Tests;
 [TestClass]
 public sealed class KakaoNotificationInterceptorTests
 {
+    private readonly List<string> _tempDirectories = [];
+
+    [TestCleanup]
+    public void Cleanup()
+    {
+        foreach (var directory in _tempDirectories)
+        {
+            try { Directory.Delete(directory, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    private string NewJournalPath()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "altong-kakao-tests", Guid.NewGuid().ToString("N"));
+        _tempDirectories.Add(directory);
+        return Path.Combine(directory, "kakao-mute-recovery.json");
+    }
+
+    // 실제 앱의 복구 기록 파일을 건드리지 않도록 임시 경로를 쓴다.
+    private LiveKakaoAudioOperator NewLiveAudio() => new(NewJournalPath());
+
+    private static List<RawNotification> CaptureInFocus(FakeKakaoWindowOperator windows, nint hwnd, bool focused = true)
+    {
+        windows.NotificationWindows.Add(hwnd);
+        using var interceptor = new KakaoNotificationInterceptor(() => focused, windows);
+        var received = new List<RawNotification>();
+        interceptor.NotificationReceived += (_, notification) => received.Add(notification);
+        interceptor.HandleWindowShowEvent(hwnd);
+        return received;
+    }
+
+    [TestMethod]
+    public void FocusCapture_MessageDrawnOverPopupDuringOcr_IsReadAgainBeforeClosing()
+    {
+        var windows = new FakeKakaoWindowOperator();
+        var reads = new Queue<KakaoNotificationText>(
+        [
+            new("팀원A", "알통 팀방", "첫 메시지") { ContentHash = 1 },
+            new("팀원B", "알통 팀방", "덮어 그려진 메시지") { ContentHash = 2 },
+        ]);
+        windows.TextExtractor = _ => reads.Dequeue();
+        windows.ContentHashProvider = _ => 2;
+
+        var received = CaptureInFocus(windows, 71001);
+
+        CollectionAssert.AreEqual(new[] { "첫 메시지", "덮어 그려진 메시지" }, received.Select(n => n.Body).ToArray());
+        Assert.AreEqual("팀원B", received[1].Sender);
+        Assert.AreNotEqual(received[0].Id, received[1].Id);
+        CollectionAssert.AreEqual(new nint[] { 71001 }, windows.ClosedWindows, "다시 읽은 뒤 한 번만 닫습니다.");
+    }
+
+    [TestMethod]
+    public void FocusCapture_PopupUnchangedAfterOcr_IsReadOnce()
+    {
+        var windows = new FakeKakaoWindowOperator
+        {
+            TextExtractor = _ => new("팀원A", "팀원A", "본문") { ContentHash = 7 },
+            ContentHashProvider = _ => 7,
+        };
+
+        var received = CaptureInFocus(windows, 71002);
+
+        Assert.AreEqual(1, received.Count);
+        Assert.AreEqual(1, windows.ExtractCallCount);
+    }
+
+    [TestMethod]
+    public void FocusCapture_PictureChangedButSameBody_DoesNotDuplicate()
+    {
+        int reads = 0;
+        var windows = new FakeKakaoWindowOperator
+        {
+            // 방 이름 OCR이 흔들려도 본문이 같으면 같은 메시지다.
+            TextExtractor = _ => new("팀원A", reads++ == 0 ? "Altong" : "Altond", "본문") { ContentHash = 1 },
+            ContentHashProvider = _ => 2,
+        };
+
+        var received = CaptureInFocus(windows, 71003);
+
+        Assert.AreEqual(1, received.Count);
+        Assert.AreEqual(2, windows.ExtractCallCount);
+    }
+
+    [TestMethod]
+    public void FocusCapture_UnknownContentHash_SkipsTheCheck()
+    {
+        var windows = new FakeKakaoWindowOperator
+        {
+            TextExtractor = _ => new("팀원A", "팀원A", "본문"),
+            ContentHashProvider = _ => 9,
+        };
+
+        var received = CaptureInFocus(windows, 71004);
+
+        Assert.AreEqual(1, received.Count);
+        Assert.AreEqual(1, windows.ExtractCallCount);
+    }
+
+    [TestMethod]
+    public void CaptureOutsideFocus_DoesNotReadAgain()
+    {
+        var windows = new FakeKakaoWindowOperator
+        {
+            TextExtractor = _ => new("팀원A", "팀원A", "본문") { ContentHash = 1 },
+            ContentHashProvider = _ => 2,
+        };
+
+        var received = CaptureInFocus(windows, 71005, focused: false);
+
+        Assert.AreEqual(1, received.Count);
+        Assert.AreEqual(1, windows.ExtractCallCount);
+        Assert.AreEqual(0, windows.ClosedWindows.Count);
+    }
+
+    [TestMethod]
+    public void MuteJournal_RoundTripsAndDeletesWhenEmpty()
+    {
+        string path = NewJournalPath();
+        Assert.IsFalse(LiveKakaoAudioOperator.HasPendingRecovery(path));
+
+        LiveKakaoAudioOperator.SaveJournal(path, ["장치1|카톡", "장치2|카톡"]);
+        Assert.IsTrue(LiveKakaoAudioOperator.HasPendingRecovery(path));
+        CollectionAssert.AreEquivalent(new[] { "장치1|카톡", "장치2|카톡" }, LiveKakaoAudioOperator.LoadJournal(path).ToArray());
+
+        LiveKakaoAudioOperator.SaveJournal(path, []);
+        Assert.IsFalse(LiveKakaoAudioOperator.HasPendingRecovery(path));
+    }
+
+    [TestMethod]
+    public void MuteJournal_CorruptFile_LoadsAsEmpty()
+    {
+        string path = NewJournalPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "{ not json");
+
+        Assert.AreEqual(0, LiveKakaoAudioOperator.LoadJournal(path).Count);
+    }
+
+    [TestMethod]
+    public void Unmute_SessionNotFound_KeepsRecoveryRecordForNextTime()
+    {
+        // 카카오톡이 꺼져 있어 되돌릴 세션을 못 찾으면 기록을 지우지 않는다.
+        string path = NewJournalPath();
+        LiveKakaoAudioOperator.SaveJournal(path, ["없는 장치|없는 세션"]);
+
+        using (var audio = new LiveKakaoAudioOperator(path))
+        {
+            audio.Unmute();
+        }
+
+        CollectionAssert.AreEqual(new[] { "없는 장치|없는 세션" }, LiveKakaoAudioOperator.LoadJournal(path).ToArray());
+    }
     [TestMethod]
     public void HandleWindowShowEvent_NotNotificationWindow_Ignored()
     {
@@ -241,7 +394,7 @@ public sealed class KakaoNotificationInterceptorTests
     [TestMethod]
     public void LiveKakaoAudioOperator_InitializesWithoutException()
     {
-        using var liveAudio = new LiveKakaoAudioOperator();
+        using var liveAudio = NewLiveAudio();
         Assert.IsFalse(liveAudio.IsMuted);
         liveAudio.Mute();
         Assert.IsTrue(liveAudio.IsMuted);
@@ -252,7 +405,7 @@ public sealed class KakaoNotificationInterceptorTests
     [TestMethod]
     public void LiveKakaoAudioOperator_MultipleMuteCalls_AreIdempotent()
     {
-        using var liveAudio = new LiveKakaoAudioOperator();
+        using var liveAudio = NewLiveAudio();
         liveAudio.Mute();
         liveAudio.Mute();
         liveAudio.Mute();
@@ -266,7 +419,7 @@ public sealed class KakaoNotificationInterceptorTests
     [TestMethod]
     public void LiveKakaoAudioOperator_FastOnOffCycles_SucceedWithoutException()
     {
-        using var liveAudio = new LiveKakaoAudioOperator();
+        using var liveAudio = NewLiveAudio();
         for (int i = 0; i < 5; i++)
         {
             liveAudio.Mute();
@@ -279,7 +432,7 @@ public sealed class KakaoNotificationInterceptorTests
     [TestMethod]
     public void LiveKakaoAudioOperator_Dispose_IsIdempotentAndUnmutes()
     {
-        var liveAudio = new LiveKakaoAudioOperator();
+        var liveAudio = NewLiveAudio();
         liveAudio.Mute();
         Assert.IsTrue(liveAudio.IsMuted);
 
