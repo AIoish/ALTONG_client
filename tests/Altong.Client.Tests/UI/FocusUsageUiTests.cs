@@ -67,7 +67,9 @@ public sealed class FocusUsageUiTests
                 scroll.ScrollToTop();
                 root.UpdateLayout();
                 Assert.IsTrue(scroll.ScrollableWidth <= 1);
-                Assert.IsTrue(scroll.ScrollableHeight <= 1, "홈 전체가 세로 스크롤 없이 보여야 합니다.");
+                if (scroll.ActualWidth >= 740) Assert.IsTrue(scroll.ScrollableHeight <= 1, "넓은 홈은 한 화면에 표시합니다.");
+                Assert.IsNull(((FrameworkElement)window.FindName("HomeLayout")).LayoutTransform as System.Windows.Media.ScaleTransform,
+                    "좁은 창에서 홈 글자를 축소하지 않습니다.");
                 var toggle = (Button)window.FindName("FocusModeToggleButton");
                 var toggleBounds = toggle.TransformToAncestor(scroll).TransformBounds(new Rect(toggle.RenderSize));
                 Assert.IsTrue(toggleBounds.Top >= 0 && toggleBounds.Bottom <= scroll.ViewportHeight + 1,

@@ -38,6 +38,8 @@ public sealed class LaunchAtStartupUiTests
                 {
                     var check = (CheckBox)window.FindName("LaunchAtStartupCheckBox");
                     var status = (TextBlock)window.FindName("LaunchAtStartupStatusText");
+                    var section = (Expander)window.FindName("SystemSettingsExpander");
+                    Assert.AreEqual("자동 실행 꺼짐", System.Windows.Automation.AutomationProperties.GetItemStatus(section));
                     Assert.AreEqual(Visibility.Visible, check.Visibility);
                     Assert.AreEqual(false, check.IsChecked, "기본은 꺼짐");
 
@@ -45,10 +47,12 @@ public sealed class LaunchAtStartupUiTests
                     check.IsChecked = true;
                     check.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                     Assert.IsTrue(registration.IsEnabled, status.Text);
+                    Assert.AreEqual("자동 실행 켜짐", System.Windows.Automation.AutomationProperties.GetItemStatus(section));
 
                     check.IsChecked = false;
                     check.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                     Assert.IsFalse(registration.IsEnabled, status.Text);
+                    Assert.AreEqual("자동 실행 꺼짐", System.Windows.Automation.AutomationProperties.GetItemStatus(section));
                 }
                 finally { window.Close(); }
             });

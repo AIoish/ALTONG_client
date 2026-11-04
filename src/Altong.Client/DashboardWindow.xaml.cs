@@ -11,7 +11,6 @@ using Altong.Client.Services.Calendar;
 using Altong.Client.Services.Focus;
 using Altong.Client.Services.NotificationControl;
 using Color = System.Windows.Media.Color;
-using ContentControl = System.Windows.Controls.ContentControl;
 
 namespace Altong.Client;
 
@@ -42,10 +41,8 @@ public partial class DashboardWindow : Window
     private DateTime _focusUsageDate;
     private bool _focusUsageLoading;
     private bool _focusUsageRefreshPending;
+    private bool? _lastDisplayedFocusState;
     private int _focusUsageRevision;
-    private readonly DashboardNotificationSummariesView _notificationSummaries;
-    private NotificationAppGroup? _summaryGroup;
-    private ContentControl? _summaryHost;
 
     public DashboardWindow(
         FocusSettingsStore focusSettings,
@@ -60,7 +57,8 @@ public partial class DashboardWindow : Window
         string? summaryStatePath = null,
         Action<string>? openCalendar = null,
         AutoDndSettingsStore? autoDndSettings = null,
-        StartupRegistration? startupRegistration = null)
+        StartupRegistration? startupRegistration = null,
+        DashboardCalendarStore? calendar = null)
     {
         Results = results;
         _autoDndSettings = autoDndSettings;
@@ -73,18 +71,13 @@ public partial class DashboardWindow : Window
         _showRoutineReminder = showRoutineReminder;
         _shutdownApplication = shutdownApplication;
         InitializeComponent();
-        var calendar = new DashboardCalendarStore(summaryStatePath is null ? null
+        calendar ??= new DashboardCalendarStore(summaryStatePath is null ? null
             : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(summaryStatePath))!, "dashboard-calendar-schedules.json"));
-        _notificationSummaries = new(results.Reports, summaryProvider, summaryStatePath, calendar);
-        NotificationSummariesHost.Content = _notificationSummaries;
-        _summaryHost = NotificationSummariesHost;
-        _notificationSummaries.GroupsChanged += SummaryGroups_Changed;
-        _notificationSummaries.BackRequested += SummaryBack_Requested;
         Results.PropertyChanged += Results_PropertyChanged;
         ShowHomeFocusUsage(SqliteFocusUsageRepository.Aggregate(DateTime.Today, DateTime.UtcNow, []));
         UpdateNotificationActions();
         UpdateNavigationSelection();
-        ReportCalendarHost.Content = new ReportCalendarView(results, calendar, openCalendar);
+        ReportCalendarHost.Content = new ReportCalendarView(results, calendar, openCalendar, summaryProvider, summaryStatePath);
         _activeWindowTracker.ContextChanged += ActiveWindowTracker_ContextChanged;
         if (_focusModeService is not null)
             _focusModeService.StateChanged += FocusMode_StateChanged;
@@ -121,9 +114,6 @@ public partial class DashboardWindow : Window
         Closed += (_, _) =>
         {
             _isClosed = true;
-            _notificationSummaries.Stop();
-            _notificationSummaries.GroupsChanged -= SummaryGroups_Changed;
-            _notificationSummaries.BackRequested -= SummaryBack_Requested;
             Results.PropertyChanged -= Results_PropertyChanged;
             _clockTimer.Stop();
             _activeWindowTracker.ContextChanged -= ActiveWindowTracker_ContextChanged;
@@ -159,6 +149,11 @@ public partial class DashboardWindow : Window
         UpdateFocusTimerView();
         var settings = _focusSettings.Current;
         HomeRoutineSettingsText.Text = DescribeTimerSettings(settings);
+        System.Windows.Automation.AutomationProperties.SetItemStatus(TimerSettingsExpander,
+            _focusSettings.LoadWarning is not null ? "설정 확인 필요"
+            : !settings.TimerEnabled ? "타이머 꺼짐" : settings.BreakMinutes == 0
+                ? $"집중 {settings.FocusMinutes}분 · 휴식 없음"
+                : $"집중 {settings.FocusMinutes}분 · 휴식 {settings.BreakMinutes}분");
         if (IsVisible && DashboardTabs.SelectedIndex == 0 &&
             (DateTime.UtcNow - _lastFocusUsageRefresh >= TimeSpan.FromSeconds(5) || _focusUsageDate != DateTime.Today))
             _ = RefreshHomeFocusUsageAsync();
@@ -202,7 +197,7 @@ public partial class DashboardWindow : Window
             case FocusRoutinePhase.Completed:
                 FocusTimerTitleText.Text = "집중 시간 완료";
                 FocusDurationText.Text = "00:00";
-                FocusTimerCaptionText.Text = "집중모드는 계속 켜져 있습니다.";
+                FocusTimerCaptionText.Text = "집중모드 유지 중";
                 break;
 
             default:
@@ -259,7 +254,7 @@ public partial class DashboardWindow : Window
         catch (Exception)
         {
             if (!_isClosed)
-                HomeFocusUsageStatusText.Text = "집중 기록을 불러오지 못했어요. 잠시 후 다시 시도합니다.";
+                HomeFocusUsageStatusText.Text = "집중 기록을 불러오지 못했어요. 자동 재시도 중…";
         }
         finally
         {
@@ -281,10 +276,10 @@ public partial class DashboardWindow : Window
         HomeFocusUsageScaleText.Text = usage.ScaleText;
         HomeFocusUsageMidScaleText.Text = usage.MidScaleText;
         HomeFocusUsageStatusText.Text = usage.Total == TimeSpan.Zero
-            ? "아직 집중 기록이 없어요. 집중모드를 켜면 여기에 표시됩니다."
+            ? "아직 집중 기록 없음"
             : usage.HasRecoveredSession
-                ? "종료가 누락된 세션은 마지막 확인 시간까지 반영 · 휴식 포함"
-            : "집중모드가 켜져 있던 시간 · 휴식 포함 · 가로축: 시";
+                ? "휴식 포함 · 종료 누락 시 마지막 기록 기준"
+            : "휴식 포함";
     }
 
     private async Task RefreshDashboardDataAsync()
@@ -297,6 +292,11 @@ public partial class DashboardWindow : Window
         }
         _dashboardDataLoading = true;
         UpdateNotificationActions();
+        if (DashboardTabs.SelectedIndex == 1 && _notificationRows.Length == 0)
+        {
+            NotificationsEmptyStateText.Text = "알림 불러오는 중…";
+            NotificationsEmptyStateText.Visibility = Visibility.Visible;
+        }
         _lastNotificationsRefresh = DateTime.UtcNow;
         try
         {
@@ -359,9 +359,9 @@ public partial class DashboardWindow : Window
                 BlockedNotificationCountText.Text = blocked.Length.ToString(CultureInfo.InvariantCulture) + (data.Notifications.HasMoreBlocked ? "+" : "");
                 PassedNotificationCountText.Text = passed.Length.ToString(CultureInfo.InvariantCulture) + (data.Notifications.HasMorePassed ? "+" : "");
                 LoadMoreNotificationsButton.Visibility = data.Notifications.HasMore ? Visibility.Visible : Visibility.Collapsed;
+                NotificationsEmptyStateText.Text = "알림 없음";
                 NotificationsEmptyStateText.Visibility = rows.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
                 UpdateNotificationActions();
-                if (page == 1) await _notificationSummaries.RefreshAsync();
             }
 
             if (loadActivity)
@@ -380,7 +380,10 @@ public partial class DashboardWindow : Window
         catch (Exception ex)
         {
             if (!_isClosed)
-                DataErrorText.Text = "기록을 불러오지 못했어요. 잠시 후 자동으로 다시 시도합니다.";
+            {
+                DataErrorText.Text = "기록 조회 실패 · 자동 재시도 중…";
+                if (_notificationRows.Length == 0) NotificationsEmptyStateText.Visibility = Visibility.Collapsed;
+            }
             Console.WriteLine($"[Dashboard] {ex.Message}");
         }
         finally
@@ -403,109 +406,6 @@ public partial class DashboardWindow : Window
         await RefreshDashboardDataAsync();
     }
 
-    private void SummaryGroups_Changed(object? sender, EventArgs e)
-    {
-        var counts = _notificationSummaries.AppCounts;
-        var groups = BlockedNotificationItemsControl.Items.Cast<NotificationAppGroup>()
-            .Concat(NotificationItemsControl.Items.Cast<NotificationAppGroup>()).ToArray();
-        foreach (var group in groups) group.SetSummaryCount(counts.GetValueOrDefault(group.AppName));
-        var existingApps = groups.Select(group => group.AppName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var old = SummaryAppItemsControl.Items.Cast<NotificationAppGroup>()
-            .ToDictionary(group => group.AppName, StringComparer.OrdinalIgnoreCase);
-        var extras = counts.Where(pair => !existingApps.Contains(pair.Key)).Select(pair =>
-        {
-            var group = old.GetValueOrDefault(pair.Key) ?? new NotificationAppGroup(pair.Key);
-            group.SetSummaryCount(pair.Value);
-            return group;
-        }).ToArray();
-        if (!SummaryAppItemsControl.Items.Cast<NotificationAppGroup>().SequenceEqual(extras))
-            SummaryAppItemsControl.ItemsSource = extras;
-        SummaryOnlyAppsPanel.Visibility = extras.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        UnassignedSummariesButton.Content = $"앱 미지정 요약 {_notificationSummaries.UnassignedCount}개 보기";
-        UnassignedSummariesButton.Visibility = _notificationSummaries.UnassignedCount == 0 ? Visibility.Collapsed : Visibility.Visible;
-        ReattachOpenSummary();
-    }
-
-    private void ReattachOpenSummary()
-    {
-        if (_summaryGroup is null) return;
-        var lists = new[] { NotificationItemsControl, BlockedNotificationItemsControl, SummaryAppItemsControl };
-        var available = lists.SelectMany(list => list.Items.Cast<NotificationAppGroup>()).ToArray();
-        if (!available.Contains(_summaryGroup))
-        {
-            var replacement = available.FirstOrDefault(group =>
-                string.Equals(group.AppName, _summaryGroup.AppName, StringComparison.OrdinalIgnoreCase));
-            if (replacement is null) { CloseSummary(); return; }
-            _summaryGroup.IsSummaryOpen = false;
-            _summaryGroup = replacement;
-            replacement.IsSummaryOpen = true;
-        }
-        ((FrameworkElement)Content).UpdateLayout();
-        foreach (var list in lists)
-        {
-            int index = list.Items.IndexOf(_summaryGroup);
-            if (index < 0) continue;
-            if (list.ItemContainerGenerator.ContainerFromIndex(index) is System.Windows.Controls.ContentPresenter presenter &&
-                list.ItemTemplate.FindName("InlineSummaryHost", presenter) is ContentControl host)
-                MoveSummaryTo(host);
-            return;
-        }
-    }
-
-    private void ShowAppSummary_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not System.Windows.Controls.Button { DataContext: NotificationAppGroup group, Tag: ContentControl host }) return;
-        if (ReferenceEquals(_summaryGroup, group) && group.IsSummaryOpen)
-            CloseSummary();
-        else
-            ShowSummary(group.AppName, host, group);
-    }
-
-    private void ShowUnassignedSummary_Click(object sender, RoutedEventArgs e)
-    {
-        if (_summaryGroup is null && NotificationSummariesHost.Visibility == Visibility.Visible) CloseSummary();
-        else ShowSummary(null, NotificationSummariesHost);
-    }
-
-    private void ShowSummary(string? appName, ContentControl host, NotificationAppGroup? group = null)
-    {
-        if (_summaryGroup is not null) _summaryGroup.IsSummaryOpen = false;
-        _summaryGroup = group;
-        if (group is not null) group.IsSummaryOpen = true;
-        MoveSummaryTo(host);
-        _notificationSummaries.SelectApp(appName);
-        NotificationSummariesHost.Visibility = ReferenceEquals(host, NotificationSummariesHost)
-            ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    // Item containers can be regenerated by an arrival/removal. Reattach the same
-    // summary view so pending edits survive without retaining a detached visual tree.
-    private void InlineSummaryHost_Loaded(object sender, RoutedEventArgs e) => AttachOpenSummary(sender);
-    private void InlineSummaryHost_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e) => AttachOpenSummary(sender);
-    private void AttachOpenSummary(object sender)
-    {
-        if (sender is ContentControl { DataContext: NotificationAppGroup group } host &&
-            ReferenceEquals(group, _summaryGroup) && group.IsSummaryOpen) MoveSummaryTo(host);
-    }
-
-    private void MoveSummaryTo(ContentControl host)
-    {
-        if (ReferenceEquals(_summaryHost, host)) return;
-        if (_summaryHost is not null) _summaryHost.Content = null;
-        _summaryHost = host;
-        host.Content = _notificationSummaries;
-    }
-
-    private void CloseSummary()
-    {
-        if (_summaryGroup is not null) _summaryGroup.IsSummaryOpen = false;
-        _summaryGroup = null;
-        NotificationSummariesHost.Visibility = Visibility.Collapsed;
-        MoveSummaryTo(NotificationSummariesHost);
-    }
-
-    private void SummaryBack_Requested(object? sender, EventArgs e) => CloseSummary();
-
     private void NotificationSelection_Changed(object? sender, PropertyChangedEventArgs e)
     {
         if (sender is not NotificationHistoryItem row || e.PropertyName != nameof(NotificationHistoryItem.IsSelected)) return;
@@ -526,6 +426,7 @@ public partial class DashboardWindow : Window
         UpdateNotificationGroupActions(SelectAllPassedNotificationsButton, DismissSelectedPassedNotificationsButton,
             SelectedPassedNotificationCountText, true);
         LoadMoreNotificationsButton.IsEnabled = !_removingNotifications && !_dashboardDataLoading;
+        LoadMoreNotificationsButton.Content = _dashboardDataLoading ? "불러오는 중…" : "이전 알림 더 보기";
     }
 
     private void UpdateNotificationGroupActions(System.Windows.Controls.Button button,
@@ -537,7 +438,7 @@ public partial class DashboardWindow : Window
         removeButton.IsEnabled = !_removingNotifications && selectedCount > 0;
         button.IsEnabled = !_removingNotifications && rows.Length > 0;
         button.Content = rows.Length > 0 && rows.All(row => row.IsSelected)
-            ? "선택 해제" : "표시된 항목 모두 선택";
+            ? "선택 해제" : "전체 선택";
     }
 
     private void SelectAllNotifications_Click(object sender, RoutedEventArgs e)
@@ -573,14 +474,14 @@ public partial class DashboardWindow : Window
             await Task.Run(() => Results.DashboardNotifications.DismissAsync(ids));
             if (_isClosed) return;
             _selectedNotificationIds.ExceptWith(ids);
-            NotificationHistoryStatusText.Text = $"알림 {ids.Length}개를 목록에서 제거했습니다.";
+            NotificationHistoryStatusText.Text = $"알림 {ids.Length}개 제거됨";
             NotificationHistoryStatusText.Visibility = Visibility.Visible;
         }
         catch (Exception ex)
         {
             if (!_isClosed)
             {
-                NotificationHistoryStatusText.Text = "목록에서 제거하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+                NotificationHistoryStatusText.Text = "제거 실패 · 다시 시도하세요.";
                 NotificationHistoryStatusText.Visibility = Visibility.Visible;
             }
             Console.WriteLine($"[Dashboard] 알림 목록 제거 실패: {ex.GetBaseException().Message}");
@@ -618,8 +519,25 @@ public partial class DashboardWindow : Window
     private void HomeScroll_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (HomeLayout is null || HomeSidePanel is null) return;
-        HomeLayout.Width = Math.Max(740, HomeScroll.ActualWidth - 8);
-        HomeMainPanel.Margin = HomeScroll.ActualWidth < 740 ? new Thickness(0) : new Thickness(0, 32, 0, 0);
+        bool compact = HomeScroll.ActualWidth < 740;
+        HomeLayout.Width = Math.Max(0, HomeScroll.ActualWidth - 20);
+        HomeLayout.ColumnDefinitions[1].Width = new GridLength(compact ? 0 : 20);
+        HomeLayout.ColumnDefinitions[2].Width = new GridLength(compact ? 0 : 212);
+        HomeMainPanel.Margin = compact ? new Thickness(0) : new Thickness(0, 32, 0, 0);
+        System.Windows.Controls.Grid.SetColumn(HomeSidePanel, compact ? 0 : 2);
+        System.Windows.Controls.Grid.SetRow(HomeSidePanel, compact ? 1 : 0);
+        HomeSidePanel.Margin = new Thickness(0, compact ? 16 : 0, 0, 0);
+        HomeSidePanel.ColumnDefinitions[1].Width = new GridLength(compact ? 16 : 0);
+        HomeSidePanel.ColumnDefinitions[2].Width = new GridLength(compact ? 1 : 0, GridUnitType.Star);
+        System.Windows.Controls.Grid.SetColumn(HomeSettingsShortcut, compact ? 2 : 0);
+        System.Windows.Controls.Grid.SetRow(HomeSettingsShortcut, compact ? 0 : 2);
+        HomeCalendarPanel.Height = compact ? 176 : 284;
+        HomeCalendarPanel.Margin = new Thickness(0, 0, 0, compact ? 0 : 12);
+        HomeCalendarShortcut.Height = compact ? 176 : 238;
+        HomeCalendarShortcut.Margin = new Thickness(0, compact ? 0 : 32, 0, 0);
+        HomeCalendarIcon.FontSize = compact ? 24 : 28;
+        HomeCalendarIcon.Margin = new Thickness(0, 0, 0, compact ? 12 : 24);
+        HomeCalendarTitle.FontSize = compact ? 18 : 23;
     }
 
     private void DashboardTabs_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -629,6 +547,7 @@ public partial class DashboardWindow : Window
         int index = DashboardTabs.SelectedIndex;
         string[] titles = ["대시보드", "알림 확인", "오늘의 집중 활동", "설정", "캘린더"];
         PageTitleText.Text = titles[index];
+        MotionBehavior.Acknowledge(PageTitleText);
         UpdateNavigationSelection();
         BackButton.Visibility = index == 0 ? Visibility.Collapsed : Visibility.Visible;
         if (_settingsReady && index is 1 or 2)
@@ -652,9 +571,9 @@ public partial class DashboardWindow : Window
     }
 
     private static string DescribeTimerSettings(FocusTimerSettings settings) => !settings.TimerEnabled
-        ? "타이머 사용 안 함 · 직접 켜고 끄기"
+        ? "타이머 꺼짐"
         : settings.BreakMinutes == 0
-            ? $"집중 {settings.FocusMinutes}분 · 휴식 타이머 없음"
+            ? $"집중 {settings.FocusMinutes}분 · 휴식 없음"
             : $"집중 {settings.FocusMinutes}분 · 휴식 {settings.BreakMinutes}분 반복";
 
     private void UpdateTimerOptionsVisibility() => TimerOptionsPanel.Visibility =
@@ -676,14 +595,14 @@ public partial class DashboardWindow : Window
     {
         bool valid = TryReadTimerSettings(out var settings);
         TimerRoutinePreviewText.Text = !valid
-            ? "시간을 입력하면 루틴을 미리 볼 수 있어요."
+            ? "집중·휴식 시간을 입력하세요."
             : settings.BreakMinutes == 0
                 ? $"집중 {settings.FocusMinutes}분 → 완료 알림"
                 : $"집중 {settings.FocusMinutes}분 → 휴식 {settings.BreakMinutes}분 → 반복";
         SetSettingsFeedback(valid
             ? settings == _focusSettings.Current
-                ? "다음 집중모드부터 적용됩니다."
-                : "변경한 루틴을 저장해 주세요. 다음 집중모드부터 적용됩니다."
+                ? "다음 집중부터 적용"
+                : "변경사항 저장 필요 · 다음 집중부터 적용"
             : "집중 1–180분, 휴식 0–60분으로 입력해 주세요.", !valid);
     }
 
@@ -698,12 +617,12 @@ public partial class DashboardWindow : Window
         try
         {
             _focusSettings.Save(settings);
-            SetSettingsFeedback("루틴을 저장했어요. 다음 집중모드부터 적용됩니다.", false);
+            SetSettingsFeedback("저장 완료 · 다음 집중부터 적용", false);
             UpdateClock();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            SetSettingsFeedback("설정을 저장하지 못했어요. 기존 시간은 유지됩니다. 잠시 후 다시 시도해 주세요.", true);
+            SetSettingsFeedback("설정 저장 실패 · 다시 시도하세요.", true);
         }
     }
 
@@ -711,7 +630,7 @@ public partial class DashboardWindow : Window
     {
         TimerSettingsFeedbackText.Text = message;
         TimerSettingsFeedbackText.Foreground = isError
-            ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 172, 172))
+            ? (System.Windows.Media.Brush)FindResource("BlackError")
             : (System.Windows.Media.Brush)FindResource("MutedText");
     }
 
@@ -751,19 +670,19 @@ public partial class DashboardWindow : Window
     {
         bool enabled = _focusModeService?.IsEnabled == true;
         HomeFocusHintText.Text = enabled ? "집중모드 켜짐" : "집중모드 꺼짐";
-        HomeFocusHintText.Foreground = enabled ? new SolidColorBrush(Color.FromRgb(164, 228, 218))
+        HomeFocusHintText.Foreground = enabled ? (System.Windows.Media.Brush)FindResource("BlackSuccess")
             : (System.Windows.Media.Brush)FindResource("MutedText");
-        HomeFocusStatusDot.Fill = enabled ? new SolidColorBrush(Color.FromRgb(126, 213, 203))
+        HomeFocusStatusDot.Fill = enabled ? (System.Windows.Media.Brush)FindResource("BlackSuccess")
             : (System.Windows.Media.Brush)FindResource("MutedText");
-        HomeFocusStatusBadge.Background = new SolidColorBrush(enabled
-            ? Color.FromRgb(36, 61, 57) : Color.FromRgb(40, 38, 46));
-        HomeFocusStatusBadge.BorderBrush = new SolidColorBrush(enabled
-            ? Color.FromRgb(59, 118, 105) : Color.FromRgb(72, 66, 79));
+        HomeFocusStatusBadge.Background = (System.Windows.Media.Brush)FindResource(enabled ? "BlackSuccessSurface" : "BlackInput");
+        HomeFocusStatusBadge.BorderBrush = (System.Windows.Media.Brush)FindResource(enabled ? "BlackSuccessRule" : "BlackRule");
+        if (_lastDisplayedFocusState is { } previous && previous != enabled) MotionBehavior.Acknowledge(HomeFocusStatusBadge);
+        _lastDisplayedFocusState = enabled;
         FocusModeToggleButton.Content = enabled ? "집중 모드 끄기" : "집중 모드 켜기";
         FocusModeToggleButton.IsEnabled = _focusModeCoordinator is not null;
         ShowRoutineReminderButton.IsEnabled = enabled && _showRoutineReminder is not null;
         WindowsDndStatusText.Text = _focusModeCoordinator is null
-            ? "Windows 방해 금지 상태를 확인할 수 없습니다."
+            ? "Windows 방해 금지: 확인 불가"
             : GetWindowsNotificationModeDescription(_focusModeCoordinator.WindowsState);
         UpdateNotificationControlView();
     }
@@ -771,7 +690,8 @@ public partial class DashboardWindow : Window
     private void UpdateNotificationControlView()
     {
         var control = _focusModeCoordinator?.NativeControl;
-        NotificationControlStatusText.Text = control is null ? "알통 자체 제어가 연결되지 않았습니다."
+        UpdateNotificationSettingsSummary(control);
+        NotificationControlStatusText.Text = control is null ? "알림 제어 연결 안 됨"
             : $"현재 방식: {(_focusModeCoordinator!.Backend == FocusControlBackend.Altong ? "알통 자체 제어" : "Windows 방해 금지")}\n{control.Status}";
         UseAltongControlButton.IsEnabled = control is not null && _focusModeCoordinator!.Backend != FocusControlBackend.Altong;
         UseWindowsControlButton.IsEnabled = control is not null && _focusModeCoordinator!.Backend != FocusControlBackend.Windows;
@@ -793,7 +713,11 @@ public partial class DashboardWindow : Window
             System.Windows.Automation.AutomationProperties.SetName(check, row.Name);
             check.Click += (_, _) =>
             {
-                try { control.SetSelected(row.Id, check.IsChecked == true); }
+                try
+                {
+                    control.SetSelected(row.Id, check.IsChecked == true);
+                    UpdateNotificationSettingsSummary(control);
+                }
                 catch (Exception ex)
                 {
                     check.IsChecked = control.IsSelected(row.Id);
@@ -806,11 +730,19 @@ public partial class DashboardWindow : Window
         {
             NotificationSenderList.Children.Add(new System.Windows.Controls.TextBlock
             {
-                Text = "표시할 제어 대상 앱이 없습니다.",
+                Text = "제어할 앱 없음",
                 Foreground = (System.Windows.Media.Brush)FindResource("MutedText"),
                 Margin = new Thickness(0, 4, 0, 4)
             });
         }
+    }
+
+    private void UpdateNotificationSettingsSummary(INativeFocusController? control)
+    {
+        string summary = control is null ? "연결 안 됨"
+            : control.Backend == FocusControlBackend.Windows ? "Windows 방식"
+            : $"자체 제어 · {control.Senders.Count(row => row.IsEligible && control.IsSelected(row.Id))}개 선택";
+        System.Windows.Automation.AutomationProperties.SetItemStatus(NotificationSettingsExpander, summary);
     }
 
     private void UpdateAutoDndView()
@@ -821,14 +753,15 @@ public partial class DashboardWindow : Window
             return;
         }
         bool enabled = _autoDndSettings.Current.Enabled;
+        System.Windows.Automation.AutomationProperties.SetItemStatus(AutoDndSettingsExpander, enabled ? "설정 켜짐" : "꺼짐");
         AutoDndEnabledCheckBox.IsChecked = enabled;
         AutoDndStatusText.Text = !enabled
-            ? "꺼져 있어요. 집중 모드는 직접 켜고 끕니다."
+            ? "꺼짐"
             : _focusModeCoordinator?.CanStartDirectly != true
-                ? "아래 '알통 자체 제어' 방식에서만 동작해요. 지금은 Windows 방해 금지 방식이라 제안하지 않아요."
+                ? "알통 자체 제어에서 사용 가능"
                 : _focusModeCoordinator.HasControllableApps != true
-                    ? "알통 자체 제어로 조절할 앱이 없어 제안하지 않아요. 아래 앱 목록을 확인해 주세요."
-                    : "켜져 있어요. [나중에]를 누르면 한동안 묻지 않아요. 집중 중 15분 동안 자리를 비우면 집중을 끝내고, 설정한 집중 시간이 끝나면 종료할지 물어요.";
+                    ? "제어할 앱 없음 · 앱 목록을 확인하세요."
+                    : "켜짐 · 작업 감지 시 제안 · 타이머 완료 시 종료 확인";
     }
 
     private void AutoDndEnabledCheckBox_Click(object sender, RoutedEventArgs e)
@@ -840,7 +773,7 @@ public partial class DashboardWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            AutoDndStatusText.Text = "설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.";
+            AutoDndStatusText.Text = "설정 저장 실패 · 다시 시도하세요.";
             AutoDndEnabledCheckBox.IsChecked = _autoDndSettings.Current.Enabled;
             return;
         }
@@ -851,15 +784,22 @@ public partial class DashboardWindow : Window
     {
         if (_startupRegistration is null)
         {
+            System.Windows.Automation.AutomationProperties.SetItemStatus(SystemSettingsExpander, "자동 실행 확인 불가");
             LaunchAtStartupCheckBox.Visibility = Visibility.Collapsed;
             LaunchAtStartupStatusText.Visibility = Visibility.Collapsed;
             return;
         }
-        try { LaunchAtStartupCheckBox.IsChecked = _startupRegistration.IsEnabled; }
+        try
+        {
+            LaunchAtStartupCheckBox.IsChecked = _startupRegistration.IsEnabled;
+            System.Windows.Automation.AutomationProperties.SetItemStatus(SystemSettingsExpander,
+                LaunchAtStartupCheckBox.IsChecked == true ? "자동 실행 켜짐" : "자동 실행 꺼짐");
+        }
         catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
         {
             LaunchAtStartupCheckBox.IsEnabled = false;
-            LaunchAtStartupStatusText.Text = "시작 프로그램 설정을 확인할 수 없어요.";
+            LaunchAtStartupStatusText.Text = "시작 프로그램 설정 확인 실패";
+            System.Windows.Automation.AutomationProperties.SetItemStatus(SystemSettingsExpander, "자동 실행 확인 실패");
         }
     }
 
@@ -870,14 +810,17 @@ public partial class DashboardWindow : Window
         try
         {
             _startupRegistration.SetEnabled(enabled);
+            System.Windows.Automation.AutomationProperties.SetItemStatus(SystemSettingsExpander,
+                enabled ? "자동 실행 켜짐" : "자동 실행 꺼짐");
             LaunchAtStartupStatusText.Text = enabled
-                ? "다음에 Windows에 로그인하면 알통이 트레이에서 조용히 시작해요."
-                : "Windows 시작 시 실행하지 않아요.";
+                ? "로그인 시 트레이에서 시작"
+                : "자동 실행 꺼짐";
         }
         catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
         {
             LaunchAtStartupCheckBox.IsChecked = !enabled;
-            LaunchAtStartupStatusText.Text = "시작 프로그램 설정을 바꾸지 못했어요. 잠시 후 다시 시도해 주세요.";
+            LaunchAtStartupStatusText.Text = "자동 실행 설정 실패 · 다시 시도하세요.";
+            System.Windows.Automation.AutomationProperties.SetItemStatus(SystemSettingsExpander, "자동 실행 확인 필요");
         }
     }
 
@@ -892,9 +835,9 @@ public partial class DashboardWindow : Window
         {
             WindowsNotificationModeKind.Unrestricted => "Windows 방해 금지: 꺼짐",
             WindowsNotificationModeKind.PriorityOnly or WindowsNotificationModeKind.AlarmsOnly => "Windows 방해 금지: 켜짐",
-            WindowsNotificationModeKind.Unsupported => "현재 Windows에서는 방해 금지 연동을 지원하지 않습니다.",
-            WindowsNotificationModeKind.Error => "Windows 방해 금지 상태를 확인할 수 없습니다.",
-            _ => "Windows 방해 금지 상태를 확인하는 중입니다.",
+            WindowsNotificationModeKind.Unsupported => "Windows 방해 금지 연동 미지원",
+            WindowsNotificationModeKind.Error => "Windows 방해 금지: 확인 불가",
+            _ => "Windows 방해 금지: 확인 중…",
         };
     }
 

@@ -4,20 +4,16 @@
         xmlns:services="clr-namespace:Altong.Client.Services"
         Title="ALTONG" Width="920" Height="780" MinWidth="640" MinHeight="520"
         WindowStartupLocation="CenterScreen" WindowStyle="None"
-        Background="#242424" Foreground="#F3F4F6" FontFamily="./Fonts/#Pretendard, Segoe UI Variable, Segoe UI, Malgun Gothic"
+        Background="{DynamicResource BlackCanvas}" Foreground="{DynamicResource BlackText}" FontFamily="{x:Static services:AppTypography.BodyFont}"
         FontSize="14" UseLayoutRounding="True" SnapsToDevicePixels="True">
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="44" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="24" UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
-    <Window.Resources>
-        <SolidColorBrush x:Key="PrimaryText" Color="#F3F4F6" />
-        <SolidColorBrush x:Key="MutedText" Color="#A6A4AF" />
-        <LinearGradientBrush x:Key="WindowSurface" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#293737" Offset="0" /><GradientStop Color="#262525" Offset=".28" /><GradientStop Color="#27242B" Offset="1" />
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="CardSurface" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#1D1D1D" Offset="0" /><GradientStop Color="#1D1D1D" Offset="1" />
-        </LinearGradientBrush>
+    <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/Altong.Client;component/Themes/BlackTheme.xaml" /></ResourceDictionary.MergedDictionaries>
+        <SolidColorBrush x:Key="PrimaryText" Color="{StaticResource BlackTextColor}" />
+        <SolidColorBrush x:Key="MutedText" Color="{StaticResource BlackMutedColor}" />
+        <SolidColorBrush x:Key="WindowSurface" Color="{StaticResource BlackCanvasColor}" />
+        <SolidColorBrush x:Key="CardSurface" Color="{StaticResource BlackSurfaceColor}" />
         <services:AppIconConverter x:Key="AppIcon" />
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource PrimaryText}" />
@@ -31,35 +27,84 @@
             <Setter Property="Margin" Value="0,0,0,16" />
         </Style>
         <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource CardSurface}" /><Setter Property="BorderBrush" Value="#303033" />
-            <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="20" />
-            <Setter Property="Padding" Value="20" /><Setter Property="Margin" Value="0,0,0,16" />
-            <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#000000" BlurRadius="8" ShadowDepth="4" Opacity=".25" /></Setter.Value></Setter>
+            <Setter Property="Background" Value="{StaticResource CardSurface}" /><Setter Property="BorderBrush" Value="{StaticResource BlackRule}" />
+            <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="20" /><Setter Property="Margin" Value="{StaticResource SectionGap}" />
+
         </Style>
+        <Style x:Key="SettingsCard" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource BlackRaised}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource BlackControlRule}" />
+                </Trigger>
+                <DataTrigger Binding="{Binding Tag.IsExpanded, RelativeSource={RelativeSource Self}}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource BlackSelection}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource BlackSelectionRule}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <DataTemplate x:Key="SettingsAccordionHeader">
+            <Grid Margin="0,0,10,0">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="40" /><ColumnDefinition Width="*" /><ColumnDefinition Width="128" /></Grid.ColumnDefinitions>
+                <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource BlackInput}" VerticalAlignment="Center" HorizontalAlignment="Left">
+                    <Grid>
+                        <TextBlock x:Name="SettingsIcon" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="{StaticResource BlackAccentText}" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock.Style><Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="&#xE916;" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding}" Value="자동 집중 관리"><Setter Property="Text" Value="&#xEB44;" /></DataTrigger>
+                                    <DataTrigger Binding="{Binding}" Value="알림과 시스템"><Setter Property="Text" Value="&#xEA8F;" /></DataTrigger>
+                                    <DataTrigger Binding="{Binding}" Value="앱별 알림 제어"><Setter Property="Text" Value="&#xED35;" /></DataTrigger>
+                                </Style.Triggers>
+                            </Style></TextBlock.Style>
+                        </TextBlock>
+                        <Border x:Name="AppBlockedMark" Width="14" Height="14" Background="{StaticResource BlackInput}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Visibility="Collapsed">
+                            <Grid>
+                                <Ellipse Width="11" Height="11" Stroke="{StaticResource BlackAccentText}" StrokeThickness="1.1" />
+                                <Path Data="M 3,10 L 10,3" Stroke="{StaticResource BlackAccentText}" StrokeThickness="1.1" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
+                <StackPanel Grid.Column="1" Margin="0,0,8,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding}" FontSize="15" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Tag, RelativeSource={RelativeSource AncestorType=Expander}}"
+                               Style="{StaticResource Muted}" FontSize="12" Margin="0,3,0,0" />
+                </StackPanel>
+                <TextBlock x:Name="SettingsSummary" Grid.Column="2" Text="{Binding Path=(AutomationProperties.ItemStatus), RelativeSource={RelativeSource AncestorType=Expander}}"
+                           Foreground="{StaticResource BlackAccentText}" FontSize="11" TextWrapping="NoWrap" TextAlignment="Right" VerticalAlignment="Center" />
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding}" Value="앱별 알림 제어"><Setter TargetName="AppBlockedMark" Property="Visibility" Value="Visible" /></DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
         <Style TargetType="Button">
-            <Setter Property="Background" Value="#2D2A33" /><Setter Property="Foreground" Value="#F3F4F6" />
-            <Setter Property="BorderBrush" Value="#48424F" /><Setter Property="BorderThickness" Value="1" />
+            <Setter Property="services:MotionBehavior.ButtonFeedback" Value="True" />
+            <Setter Property="Background" Value="{StaticResource BlackRaised}" /><Setter Property="Foreground" Value="{StaticResource BlackText}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BlackRule}" /><Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="14,9" /><Setter Property="Cursor" Value="Hand" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="Template"><Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#A679F3" /><Setter TargetName="Surface" Property="Opacity" Value=".9" /></Trigger>
-                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="Surface" Property="Opacity" Value=".6" /></Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#C9ABFF" /></Trigger>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
                         <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Opacity" Value=".4" /></Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value></Setter>
         </Style>
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="#823DE0" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="BorderBrush" Value="#C9ABFF" /><Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Background" Value="{StaticResource BlackAction}" />
+            <Setter Property="Foreground" Value="{StaticResource BlackActionText}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BlackAction}" /><Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style x:Key="Tile" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="1" />
@@ -69,17 +114,16 @@
             <Setter Property="Padding" Value="16,20" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Background" Value="{StaticResource CardSurface}" />
-            <Setter Property="BorderBrush" Value="#303033" />
+            <Setter Property="BorderBrush" Value="{StaticResource BlackRule}" />
             <Setter Property="Template"><Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="TileSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="20" Padding="{TemplateBinding Padding}">
-                        <Border.Effect><DropShadowEffect Color="#000000" BlurRadius="8" ShadowDepth="4" Opacity=".25" /></Border.Effect>
+                    <Border x:Name="TileSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="{TemplateBinding Padding}">
+
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="TileSurface" Property="BorderBrush" Value="#A679F3" /></Trigger>
-                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="TileSurface" Property="Opacity" Value=".7" /></Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="TileSurface" Property="BorderBrush" Value="#823DE0" /></Trigger>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="TileSurface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="TileSurface" Property="BorderBrush" Value="{StaticResource BlackAction}" /></Trigger>
                         <Trigger Property="IsEnabled" Value="False"><Setter TargetName="TileSurface" Property="Opacity" Value=".4" /></Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -91,8 +135,8 @@
             <Setter Property="HorizontalAlignment" Value="Center" />
         </Style>
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="#222426" /><Setter Property="Foreground" Value="#F3F4F6" />
-            <Setter Property="CaretBrush" Value="#C9ABFF" /><Setter Property="BorderBrush" Value="#636A78" />
+            <Setter Property="Background" Value="{StaticResource BlackInput}" /><Setter Property="Foreground" Value="{StaticResource BlackText}" />
+            <Setter Property="CaretBrush" Value="{StaticResource BlackText}" /><Setter Property="BorderBrush" Value="{StaticResource BlackControlRule}" />
             <Setter Property="Padding" Value="10,8" /><Setter Property="FontSize" Value="16" />
         </Style>
         <Style TargetType="CheckBox">
@@ -102,22 +146,22 @@
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
                 <Grid Background="Transparent">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <Border x:Name="CheckSurface" Width="20" Height="20" CornerRadius="6" Background="#25232A"
-                            BorderBrush="#71687F" BorderThickness="1.5" VerticalAlignment="Center">
-                        <Path x:Name="CheckMark" Data="M 4,9 L 8,13 L 15,5" Stroke="White" StrokeThickness="2"
+                    <Border x:Name="CheckSurface" Width="20" Height="20" CornerRadius="6" Background="{StaticResource BlackSurface}"
+                            BorderBrush="{StaticResource BlackControlRule}" BorderThickness="1.5" VerticalAlignment="Center">
+                        <Path x:Name="CheckMark" Data="M 4,9 L 8,13 L 15,5" Stroke="{StaticResource BlackActionText}" StrokeThickness="2"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed" />
                     </Border>
                     <ContentPresenter x:Name="CheckContent" Grid.Column="1" ContentSource="Content" RecognizesAccessKey="True"
                                       Margin="8,0,0,0" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                 </Grid>
                 <ControlTemplate.Triggers>
-                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CheckSurface" Property="BorderBrush" Value="#C9ABFF" /></Trigger>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CheckSurface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
                     <Trigger Property="IsChecked" Value="True">
-                        <Setter TargetName="CheckSurface" Property="Background" Value="#823DE0" />
-                        <Setter TargetName="CheckSurface" Property="BorderBrush" Value="#C9ABFF" />
+                        <Setter TargetName="CheckSurface" Property="Background" Value="{StaticResource BlackAction}" />
+                        <Setter TargetName="CheckSurface" Property="BorderBrush" Value="{StaticResource BlackFocus}" />
                         <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
                     </Trigger>
-                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CheckSurface" Property="BorderBrush" Value="#7DD4CB" /><Setter TargetName="CheckSurface" Property="BorderThickness" Value="2" /></Trigger>
+                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CheckSurface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /><Setter TargetName="CheckSurface" Property="BorderThickness" Value="2" /></Trigger>
                     <Trigger Property="HasContent" Value="False"><Setter TargetName="CheckContent" Property="Visibility" Value="Collapsed" /></Trigger>
                     <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value=".4" /></Trigger>
                 </ControlTemplate.Triggers>
@@ -127,13 +171,14 @@
             <Setter Property="Width" Value="48" /><Setter Property="Height" Value="48" />
             <Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,0,14" />
             <Setter Property="Background" Value="Transparent" /><Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="Foreground" Value="#A8A5AF" /><Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="Foreground" Value="{StaticResource BlackMuted}" /><Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
             <Setter Property="FontSize" Value="23" />
             <Style.Triggers><DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=(AutomationProperties.ItemStatus)}" Value="선택됨">
-                <Setter Property="Background" Value="#34303F" /><Setter Property="Foreground" Value="#B787FF" />
+                <Setter Property="Background" Value="{StaticResource BlackSelection}" /><Setter Property="Foreground" Value="{StaticResource BlackAccentText}" />
+                <Setter Property="BorderBrush" Value="{StaticResource BlackSelectionRule}" />
             </DataTrigger></Style.Triggers>
         </Style>
-        <Style TargetType="ScrollViewer"><Setter Property="VerticalScrollBarVisibility" Value="Auto" /><Setter Property="HorizontalScrollBarVisibility" Value="Disabled" /></Style>
+        <Style TargetType="ScrollViewer" BasedOn="{StaticResource QuietScrollViewer}" />
         <Style TargetType="ScrollBar">
             <Setter Property="Width" Value="10" />
             <Setter Property="Background" Value="Transparent" />
@@ -143,7 +188,7 @@
                         <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></RepeatButton.Template>
                     </RepeatButton></Track.DecreaseRepeatButton>
                     <Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb">
-                        <Border Background="#69707D" CornerRadius="3" Margin="3,0,1,0" />
+                        <Border Background="{StaticResource BlackControlRule}" CornerRadius="3" Margin="3,0,1,0" />
                     </ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
                     <Track.IncreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False">
                         <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></RepeatButton.Template>
@@ -164,31 +209,30 @@
                 <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="28" Height="28" />
                 <StackPanel Grid.Column="1" Margin="4,0,16,0">
                     <TextBlock Text="{Binding AppName}" Foreground="{StaticResource PrimaryText}" />
-                    <ProgressBar Value="{Binding Percentage}" Maximum="100" Height="4" Margin="0,6,0,0" Foreground="#C9ABFF" Background="#424650" BorderThickness="0" />
+                    <ProgressBar Value="{Binding Percentage}" Maximum="100" Height="4" Margin="0,6,0,0" Foreground="{StaticResource BlackText}" Background="{StaticResource BlackRule}" BorderThickness="0" />
                 </StackPanel>
                 <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource Muted}" HorizontalAlignment="Right" />
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="NotificationRow">
-            <Border BorderBrush="#3B3742" BorderThickness="0,1,0,0" Padding="0,14">
+            <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,0" Padding="0,14">
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="32" /><ColumnDefinition Width="36" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Top" Margin="0,2,8,0" AutomationProperties.Name="{Binding Title, StringFormat='알림 선택: {0}'}" />
-                    <Image x:Name="NotificationAppIcon" Grid.Column="1" Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="26" Height="26" VerticalAlignment="Top" Margin="0,0,10,0" />
+                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,8,0" AutomationProperties.Name="{Binding DisplayName, StringFormat='알림 선택: {0}'}" />
+                    <Image x:Name="NotificationAppIcon" Grid.Column="1" Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="26" Height="26" VerticalAlignment="Center" Margin="0,0,10,0" />
                     <StackPanel Grid.Column="2">
                         <DockPanel>
                             <TextBlock Text="{Binding TimeText}" DockPanel.Dock="Right" Style="{StaticResource Muted}" FontSize="11" Margin="12,0,0,0" />
-                            <TextBlock Text="{Binding SenderText}" Style="{StaticResource Muted}" FontSize="12" />
+                            <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}" Foreground="{StaticResource PrimaryText}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap" />
                         </DockPanel>
-                        <TextBlock Text="{Binding Title}" Foreground="{StaticResource PrimaryText}" FontWeight="SemiBold" FontSize="14" Margin="0,6,0,4" LineHeight="22" />
-                        <TextBlock Text="{Binding Record.Body}" Style="{StaticResource Muted}" FontSize="12" LineHeight="20" />
-                        <Button Content="목록에서 제거" Click="DismissNotification_Click" HorizontalAlignment="Right" FontSize="11" Padding="10,6" Margin="0,8,0,0" ToolTip="이 목록에서 제거합니다. 리포트의 알림은 유지됩니다." />
+                        <Button Content="제거" Click="DismissNotification_Click" HorizontalAlignment="Right" FontSize="11" Padding="10,6" Margin="0,6,0,0" ToolTip="목록에서 제거" />
                     </StackPanel>
                 </Grid>
             </Border>
         </DataTemplate>
         <Style x:Key="NotificationHeaderToggle" TargetType="ToggleButton">
-            <Setter Property="Foreground" Value="#F3F4F6" />
+            <Setter Property="services:MotionBehavior.ButtonFeedback" Value="True" />
+            <Setter Property="Foreground" Value="{StaticResource BlackText}" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
@@ -196,61 +240,50 @@
                     <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
                 </Border>
                 <ControlTemplate.Triggers>
-                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="#2D2934" /></Trigger>
-                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#C9ABFF" /></Trigger>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource BlackRaised}" /></Trigger>
+                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
                 </ControlTemplate.Triggers>
             </ControlTemplate></Setter.Value></Setter>
         </Style>
         <BooleanToVisibilityConverter x:Key="NotificationGroupVisibility" />
         <DataTemplate x:Key="NotificationAppCard">
-            <Border Background="#25232A" BorderBrush="#3B3742" BorderThickness="1" CornerRadius="16" Padding="14" Margin="0,0,0,10">
+            <Border Background="{StaticResource BlackSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="16" Padding="14" Margin="0,0,0,10">
                 <StackPanel>
                     <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <ToggleButton x:Name="NotificationHeaderButton" Style="{StaticResource NotificationHeaderToggle}" IsChecked="{Binding IsExpanded, Mode=TwoWay}" Margin="0,0,12,0"
-                                      ToolTip="카드를 눌러 원본 알림을 펼치거나 접으세요." AutomationProperties.Name="{Binding DisplayName, StringFormat='알림 펼치기 또는 접기: {0}'}">
+                        <ToggleButton x:Name="NotificationHeaderButton" Style="{StaticResource NotificationHeaderToggle}" IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                      ToolTip="알림 목록" AutomationProperties.Name="{Binding DisplayName, StringFormat='알림 펼치기 또는 접기: {0}'}">
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <Border Width="38" Height="38" CornerRadius="10" Background="#302B39" Margin="0,0,10,0" VerticalAlignment="Top">
+                                <Border Width="38" Height="38" CornerRadius="10" Background="{StaticResource BlackSurface}" Margin="0,0,10,0" VerticalAlignment="Top">
                                     <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="26" Height="26" />
                                 </Border>
                                 <StackPanel Grid.Column="1">
-                                    <WrapPanel>
-                                        <TextBlock Text="{Binding DisplayName}" FontSize="16" FontWeight="SemiBold" Margin="0,0,10,6" />
-                                        <Border Background="#383045" CornerRadius="7" Padding="7,3" Margin="0,0,0,6">
-                                            <TextBlock Text="{Binding CountText}" Foreground="#D7BEFF" FontSize="11" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding DisplayName}" FontSize="16" FontWeight="SemiBold" Margin="0,0,10,6" TextWrapping="Wrap" />
+                                        <Border Grid.Column="1" Background="{StaticResource BlackRaised}" CornerRadius="7" Padding="7,3" Margin="0,0,0,6" VerticalAlignment="Top">
+                                            <TextBlock Text="{Binding CountText}" Foreground="{StaticResource BlackSoft}" FontSize="11" />
                                         </Border>
-                                    </WrapPanel>
-                                    <TextBlock Text="{Binding LatestTitle}" FontSize="12" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding LatestTitle}" />
+                                    </Grid>
                                     <WrapPanel Margin="0,6,0,0">
                                         <TextBlock Text="{Binding LatestTimeText}" Style="{StaticResource Muted}" FontSize="11" Margin="0,0,10,0" />
-                                        <TextBlock Text="{Binding ExpandText}" Foreground="#C9ABFF" FontSize="11" Visibility="{Binding HasNotifications, Converter={StaticResource NotificationGroupVisibility}}" />
+                                        <TextBlock x:Name="NotificationExpandLabel" Text="{Binding ExpandText}" Foreground="{StaticResource BlackText}" FontSize="11" services:MotionBehavior.TextFeedback="True" />
                                     </WrapPanel>
                                 </StackPanel>
                             </Grid>
                         </ToggleButton>
-                        <Button x:Name="AppSummaryButton" Grid.Column="1" Content="{Binding SummaryButtonText}" Click="ShowAppSummary_Click"
-                                Tag="{Binding ElementName=InlineSummaryHost}" FontSize="12" Padding="12,8" VerticalAlignment="Top"
-                                AutomationProperties.Name="{Binding DisplayName, StringFormat='AI 요약 보기 또는 닫기: {0}'}" ToolTip="이 카드 안에서 요약과 일정을 확인합니다." />
                     </Grid>
-                    <Border Background="#211E27" BorderBrush="#625077" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,14,0,0"
-                            Visibility="{Binding IsSummaryOpen, Converter={StaticResource NotificationGroupVisibility}}">
-                        <ContentControl x:Name="InlineSummaryHost" Loaded="InlineSummaryHost_Loaded" DataContextChanged="InlineSummaryHost_DataContextChanged" />
-                    </Border>
                     <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource NotificationRow}" Margin="0,12,0,0"
-                                  Visibility="{Binding IsExpanded, Converter={StaticResource NotificationGroupVisibility}}" />
+                                  Visibility="{Binding IsExpanded, Converter={StaticResource NotificationGroupVisibility}}" services:MotionBehavior.FadeOnReveal="True" />
                 </StackPanel>
             </Border>
         </DataTemplate>
-    </Window.Resources>
-    <Border Background="{StaticResource WindowSurface}" BorderBrush="#3A363F" BorderThickness="1" CornerRadius="24">
+    </ResourceDictionary></Window.Resources>
+    <Border Background="{StaticResource WindowSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="24">
         <Grid>
-            <Grid.RowDefinitions><RowDefinition Height="44" /><RowDefinition Height="*" /><RowDefinition Height="48" /></Grid.RowDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="44" /><RowDefinition Height="*" /></Grid.RowDefinitions>
             <Grid Margin="20,0,8,0">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Width="7" Height="7" CornerRadius="3.5" Background="#B787FF" Margin="0,0,10,0" />
-                    <TextBlock Text="ALTONG" FontSize="12" FontWeight="SemiBold" Foreground="#CAD7E9" />
-                </StackPanel>
+                <TextBlock x:Name="DashboardBrandText" Text="Altong" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource BlackSoft}" VerticalAlignment="Center" HorizontalAlignment="Left" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" WindowChrome.IsHitTestVisibleInChrome="True">
                     <Button Content="&#xE921;" FontFamily="Segoe MDL2 Assets" Padding="16,10" Background="Transparent" BorderThickness="0" Click="MinimizeButton_Click" AutomationProperties.Name="최소화" />
                     <Button x:Name="MaximizeButton" Content="□" Padding="16,10" Background="Transparent" BorderThickness="0" Click="MaximizeButton_Click" AutomationProperties.Name="최대화 또는 복원" />
@@ -259,6 +292,7 @@
             </Grid>
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <Border Background="{StaticResource BlackInput}" BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,1,0" CornerRadius="0,0,0,22" IsHitTestVisible="False" />
                 <StackPanel x:Name="NavigationRail" Margin="12,8,12,0">
                     <Button x:Name="NavHomeButton" Tag="0" Click="Navigate_Click" Content="&#xE80F;" Style="{StaticResource NavigationButton}" AutomationProperties.Name="홈" AutomationProperties.ItemStatus="선택됨" ToolTip="홈" />
                     <Button x:Name="NavNotificationsButton" Tag="1" Click="Navigate_Click" Content="&#xEA8F;" Style="{StaticResource NavigationButton}" AutomationProperties.Name="알림 확인" ToolTip="알림 확인" />
@@ -274,26 +308,25 @@
                         <TextBlock x:Name="DashboardClockText" HorizontalAlignment="Right" FontSize="18" />
                         <TextBlock x:Name="DashboardDateText" Style="{StaticResource Muted}" FontSize="12" />
                     </StackPanel>
-                    <StackPanel VerticalAlignment="Center"><TextBlock Text="나의 집중 공간" Style="{StaticResource Muted}" FontSize="11" Margin="0,0,0,3" /><TextBlock x:Name="PageTitleText" Text="대시보드" FontSize="22" FontWeight="SemiBold" /></StackPanel>
+                    <TextBlock x:Name="PageTitleText" Text="대시보드" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" />
                 </DockPanel>
                 <TabControl x:Name="DashboardTabs" Grid.Row="1" SelectedIndex="0" Background="Transparent" BorderThickness="0" SelectionChanged="DashboardTabs_SelectionChanged">
                     <TabControl.Template><ControlTemplate TargetType="TabControl">
                         <ContentPresenter ContentSource="SelectedContent" />
                     </ControlTemplate></TabControl.Template>
                     <TabItem Header="홈">
-                        <ScrollViewer x:Name="HomeScroll" SizeChanged="HomeScroll_SizeChanged" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled">
-                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" VerticalAlignment="Top">
+                        <ScrollViewer x:Name="HomeScroll" SizeChanged="HomeScroll_SizeChanged" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <Grid x:Name="HomeLayout" Margin="0,6,8,12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="20" /><ColumnDefinition Width="212" /></Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                 <StackPanel x:Name="HomeMainPanel" VerticalAlignment="Bottom">
-                                    <Border x:Name="HomeFocusCard" Style="{StaticResource Card}" Padding="22" Margin="0,0,0,12" MinHeight="360">
+                                    <Border x:Name="HomeFocusCard" Style="{StaticResource Card}" Padding="22" Margin="0,0,0,20" MinHeight="360">
                                         <StackPanel>
                                         <Grid MinHeight="132">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                             <StackPanel VerticalAlignment="Center">
-                                                <TextBlock x:Name="FocusTimerTitleText" FontSize="15" Foreground="#BCA9D9" FontWeight="SemiBold" />
-                                                <TextBlock x:Name="FocusDurationText" FontSize="52" FontWeight="Light" Foreground="#F5F5F5" Margin="0,6" />
+                                                <TextBlock x:Name="FocusTimerTitleText" FontSize="15" Foreground="{StaticResource BlackSoft}" FontWeight="SemiBold" />
+                                                <TextBlock x:Name="FocusDurationText" FontSize="52" FontWeight="Light" Foreground="{StaticResource BlackText}" Margin="0,6" />
                                                 <TextBlock x:Name="FocusTimerCaptionText" Style="{StaticResource Muted}" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0">
@@ -306,11 +339,11 @@
                                                 <Button x:Name="FocusModeToggleButton" Style="{StaticResource PrimaryButton}" MinWidth="148" Click="FocusModeToggleButton_Click" />
                                             </StackPanel>
                                         </Grid>
-                                        <Border BorderBrush="#39353E" BorderThickness="0,1,0,0" Margin="0,18,0,0" Padding="0,16,0,0">
+                                        <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,0" Margin="0,18,0,0" Padding="0,16,0,0">
                                             <StackPanel>
                                                 <WrapPanel>
-                                                    <TextBlock Text="오늘의 집중모드 사용시간" FontSize="14" FontWeight="SemiBold" Margin="0,0,12,4" />
-                                                    <TextBlock x:Name="HomeFocusUsageTotalText" Foreground="#C9ABFF" FontSize="13" Margin="0,0,0,4" />
+                                                    <TextBlock Text="오늘의 집중 시간" FontSize="14" FontWeight="SemiBold" Margin="0,0,12,4" />
+                                                    <TextBlock x:Name="HomeFocusUsageTotalText" Foreground="{StaticResource BlackText}" FontSize="13" Margin="0,0,0,4" />
                                                 </WrapPanel>
                                                 <Grid x:Name="HomeFocusUsageChart" Height="110" Margin="0,10,0,0" AutomationProperties.Name="오늘 시간대별 집중모드 사용시간">
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="32" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -320,18 +353,18 @@
                                                         <TextBlock Text="0" Style="{StaticResource Muted}" FontSize="10" VerticalAlignment="Bottom" />
                                                     </Grid>
                                                     <Grid Grid.Column="1">
-                                                        <Border BorderBrush="#39353E" BorderThickness="0,1,0,1" Height="88" VerticalAlignment="Top" IsHitTestVisible="False" />
-                                                        <Border Background="#302D34" Height="1" VerticalAlignment="Top" Margin="0,44,0,0" IsHitTestVisible="False" />
+                                                        <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,1" Height="88" VerticalAlignment="Top" IsHitTestVisible="False" />
+                                                        <Border Background="{StaticResource BlackRaised}" Height="1" VerticalAlignment="Top" Margin="0,44,0,0" IsHitTestVisible="False" />
                                                         <ItemsControl x:Name="HomeFocusUsageItems">
                                                             <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1" Columns="24" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                                             <ItemsControl.ItemTemplate><DataTemplate>
                                                                 <Grid Background="Transparent" ToolTipService.InitialShowDelay="0" Focusable="True" AutomationProperties.Name="{Binding TooltipText}">
-                                                                    <Grid.ToolTip><ToolTip Background="#2D2A33" Foreground="#F3F4F6" BorderBrush="#494150" Padding="10,6" FontFamily="./Fonts/#Pretendard, Segoe UI, Malgun Gothic"><TextBlock Text="{Binding TooltipText}" /></ToolTip></Grid.ToolTip>
+                                                                    <Grid.ToolTip><ToolTip Background="{StaticResource BlackRaised}" Foreground="{StaticResource BlackText}" BorderBrush="{StaticResource BlackRule}" Padding="10,6" FontFamily="./Fonts/#Pretendard, Segoe UI, Malgun Gothic"><TextBlock Text="{Binding TooltipText}" /></ToolTip></Grid.ToolTip>
                                                                     <Grid.RowDefinitions><RowDefinition Height="88" /><RowDefinition Height="22" /></Grid.RowDefinitions>
                                                                     <Border Height="{Binding BarHeight}" VerticalAlignment="Bottom" Margin="2,0" CornerRadius="3,3,0,0">
                                                                         <Border.Style><Style TargetType="Border">
-                                                                            <Setter Property="Background" Value="#B787FF" />
-                                                                            <Style.Triggers><DataTrigger Binding="{Binding IsCurrentHour}" Value="True"><Setter Property="Background" Value="#7ED5CB" /></DataTrigger></Style.Triggers>
+                                                                            <Setter Property="Background" Value="{StaticResource BlackMuted}" />
+                                                                            <Style.Triggers><DataTrigger Binding="{Binding IsCurrentHour}" Value="True"><Setter Property="Background" Value="{StaticResource BlackAction}" /></DataTrigger></Style.Triggers>
                                                                         </Style></Border.Style>
                                                                     </Border>
                                                                     <TextBlock Grid.Row="1" Text="{Binding AxisLabel}" FontSize="10" Style="{StaticResource Muted}" TextWrapping="NoWrap" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -340,7 +373,7 @@
                                                         </ItemsControl>
                                                     </Grid>
                                                 </Grid>
-                                                <TextBlock x:Name="HomeFocusUsageStatusText" Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" Text="집중 기록을 불러오는 중입니다." />
+                                                <TextBlock x:Name="HomeFocusUsageStatusText" Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" Text="불러오는 중…" />
                                             </StackPanel>
                                         </Border>
                                         </StackPanel>
@@ -348,87 +381,74 @@
                                     <UniformGrid Columns="2" Margin="-4,0,-4,0">
                                         <Button x:Name="HomeNotificationsShortcut" Tag="1" Click="Navigate_Click" Style="{StaticResource Shortcut}" MinHeight="132" Margin="4,4,4,0" AutomationProperties.Name="알림 확인" ToolTip="차단·통과 알림 확인">
                                             <StackPanel>
-                                                <Border Style="{StaticResource ShortcutIcon}" Background="#263E3D" HorizontalAlignment="Left">
-                                                    <TextBlock Text="&#xEA8F;" FontFamily="Segoe MDL2 Assets" FontSize="23" Foreground="#7ED5CB" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                <Border Style="{StaticResource ShortcutIcon}" Background="{StaticResource BlackSurface}" HorizontalAlignment="Left">
+                                                    <TextBlock Text="&#xEA8F;" FontFamily="Segoe MDL2 Assets" FontSize="23" Foreground="{StaticResource BlackText}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                 </Border>
                                                 <TextBlock Text="알림 확인" FontSize="17" FontWeight="SemiBold" />
-                                                <TextBlock Text="차단·통과한 알림을 한곳에서" Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
+                                                <TextBlock Text="통과·차단 알림" Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
                                             </StackPanel>
                                         </Button>
                                         <Button x:Name="HomeJournalShortcut" Tag="2" Click="Navigate_Click" Style="{StaticResource Shortcut}" MinHeight="132" Margin="4,4,4,0" AutomationProperties.Name="활동 일지" ToolTip="집중모드 중 앱 사용시간">
                                             <StackPanel>
-                                                <Border Style="{StaticResource ShortcutIcon}" Background="#392A4E" HorizontalAlignment="Left">
-                                                    <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="23" Foreground="#C7A3FF" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                <Border Style="{StaticResource ShortcutIcon}" Background="{StaticResource BlackSurface}" HorizontalAlignment="Left">
+                                                    <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="23" Foreground="{StaticResource BlackText}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                 </Border>
                                                 <TextBlock Text="활동 일지" FontSize="17" FontWeight="SemiBold" />
-                                                <TextBlock Text="오늘의 앱 사용 흐름 살펴보기" Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
+                                                <TextBlock Text="앱별 사용 기록" Style="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" />
                                             </StackPanel>
                                         </Button>
                                     </UniformGrid>
                                 </StackPanel>
                                 <Grid x:Name="HomeSidePanel" Grid.Column="2">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="0" /><ColumnDefinition Width="0" /></Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                                    <Grid Height="284" Margin="0,0,0,12" MaxWidth="280" HorizontalAlignment="Stretch">
-                                        <Border Width="154" Height="208" CornerRadius="28" Background="#477C80" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="20,16,0,0" RenderTransformOrigin=".5,.5" IsHitTestVisible="False">
-                                            <Border.RenderTransform><RotateTransform Angle="31" /></Border.RenderTransform>
-                                        </Border>
-                                        <Border Width="166" Height="216" CornerRadius="28" Background="#BE945C" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" RenderTransformOrigin=".5,.5" IsHitTestVisible="False">
-                                            <Border.RenderTransform><RotateTransform Angle="16" /></Border.RenderTransform>
-                                        </Border>
-                                        <Button x:Name="HomeCalendarShortcut" Tag="4" Click="Navigate_Click" Style="{StaticResource Shortcut}" AutomationProperties.Name="캘린더" ToolTip="저장한 일정과 집중 리포트 조회·삭제" Margin="0,48,0,0" Padding="22" VerticalAlignment="Top" Height="222" BorderBrush="#7135AE">
-                                            <Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#7835C4" Offset="0" /><GradientStop Color="#502287" Offset=".55" /><GradientStop Color="#231431" Offset="1" /></LinearGradientBrush></Button.Background>
+                                    <Grid x:Name="HomeCalendarPanel" Height="284" Margin="0,0,0,12" MaxWidth="280" HorizontalAlignment="Stretch">
+                                        <Button x:Name="HomeCalendarShortcut" Tag="4" Click="Navigate_Click" Style="{StaticResource Shortcut}" AutomationProperties.Name="캘린더" ToolTip="저장한 일정과 집중 리포트 조회·삭제" Margin="0,32,0,0" Padding="22" VerticalAlignment="Top" Height="238" Background="{StaticResource BlackSuccessSurface}" BorderBrush="{StaticResource BlackSuccessRule}">
                                             <StackPanel>
-                                                <TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" FontSize="34" Foreground="White" Margin="0,0,0,28" />
-                                                <TextBlock Text="캘린더" FontSize="25" FontWeight="SemiBold" />
-                                                <TextBlock Text="저장한 일정과 집중 리포트를&#x0a;날짜별로 확인하세요" Foreground="#E1D1F5" FontSize="12" Margin="0,10,0,0" />
-                                                <TextBlock Text="캘린더 열기  →" Foreground="#F1E8FF" FontSize="12" Margin="0,16,0,0" />
+                                                <TextBlock x:Name="HomeCalendarIcon" Text="&#xE787;" FontFamily="Segoe MDL2 Assets" FontSize="28" Foreground="{StaticResource BlackSuccess}" Margin="0,0,0,24" />
+                                                <TextBlock x:Name="HomeCalendarTitle" Text="캘린더" FontSize="23" FontWeight="SemiBold" />
+                                                <TextBlock Text="일정 · 집중 리포트" Foreground="{StaticResource BlackSuccessMuted}" FontSize="12" Margin="0,10,0,0" />
+                                                <TextBlock Text="캘린더 열기  →" Foreground="{StaticResource BlackSuccess}" FontSize="12" Margin="0,16,0,0" />
                                             </StackPanel>
                                         </Button>
                                     </Grid>
                                     <Button x:Name="HomeSettingsShortcut" Grid.Row="2" Tag="3" Click="Navigate_Click" Style="{StaticResource Shortcut}" Margin="0" MinHeight="176" AutomationProperties.Name="설정" ToolTip="집중·휴식 시간 및 앱 설정">
                                         <StackPanel>
-                                            <Border Style="{StaticResource ShortcutIcon}" Background="#443728" HorizontalAlignment="Left">
-                                                <TextBlock x:Name="HomeRoutineIconText" Text="&#xE916;" FontFamily="Segoe MDL2 Assets" FontSize="23" Foreground="#DEBC84" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            <Border Style="{StaticResource ShortcutIcon}" Background="{StaticResource BlackSurface}" HorizontalAlignment="Left">
+                                                <TextBlock x:Name="HomeRoutineIconText" Text="&#xE916;" FontFamily="Segoe MDL2 Assets" FontSize="23" Foreground="{StaticResource BlackSoft}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                             </Border>
-                                            <TextBlock x:Name="HomeRoutineTitleText" Text="나만의 집중 루틴 설정" FontSize="17" FontWeight="SemiBold" />
+                                            <TextBlock x:Name="HomeRoutineTitleText" Text="집중 루틴" FontSize="17" FontWeight="SemiBold" />
                                             <TextBlock x:Name="HomeRoutineSettingsText" Style="{StaticResource Muted}" FontSize="12" Margin="0,8,0,14" />
-                                            <TextBlock Text="설정 열기  →" Foreground="#C7A3FF" FontSize="12" />
+                                            <TextBlock Text="설정 열기  →" Foreground="{StaticResource BlackText}" FontSize="12" />
                                         </StackPanel>
                                     </Button>
                                 </Grid>
                             </Grid>
-                            </Viewbox>
                         </ScrollViewer>
                     </TabItem>
                     <TabItem Header="알림 확인">
                         <ScrollViewer x:Name="NotificationScroll"><StackPanel>
                             <StackPanel x:Name="NotificationGroupsPanel">
-                            <TextBlock Text="앱 카드를 누르면 알림이 펼쳐집니다. AI 요약은 카드 안에서 확인하세요." Style="{StaticResource Muted}" FontSize="12" Margin="0,0,0,14" />
-                            <Button x:Name="UnassignedSummariesButton" Content="앱 미지정 요약 보기" Click="ShowUnassignedSummary_Click" HorizontalAlignment="Left" FontSize="12" Padding="12,7" Margin="0,0,0,14" Visibility="Collapsed" />
-                            <ContentControl x:Name="NotificationSummariesHost" Margin="0,0,0,12" Visibility="Collapsed" />
-                            <StackPanel x:Name="SummaryOnlyAppsPanel" Visibility="Collapsed" Margin="0,0,0,8">
-                                <ItemsControl x:Name="SummaryAppItemsControl" ItemTemplate="{StaticResource NotificationAppCard}" />
-                            </StackPanel>
-                            <TextBlock x:Name="NotificationsEmptyStateText" Text="보관 중인 원본 알림이 없습니다." Style="{StaticResource Muted}" Margin="0,0,0,12" Visibility="Collapsed" />
+                            <TextBlock x:Name="NotificationsEmptyStateText" Text="알림 없음" Style="{StaticResource Muted}" Margin="0,0,0,12" Visibility="Collapsed" />
                             <Border x:Name="PassedNotificationsCard" Style="{StaticResource Card}"><StackPanel>
                                 <DockPanel Margin="0,0,0,8">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="통과한 알림" Style="{StaticResource Heading}" Margin="0" /><TextBlock x:Name="PassedNotificationCountText" Margin="8,2,0,0" Foreground="#C9ABFF" /></StackPanel>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="통과 알림" Style="{StaticResource Heading}" Margin="0" /><TextBlock x:Name="PassedNotificationCountText" Margin="8,2,0,0" Foreground="{StaticResource BlackSuccess}" /></StackPanel>
                                 </DockPanel>
                                 <WrapPanel Margin="0,0,0,4">
-                                    <Button x:Name="SelectAllPassedNotificationsButton" Content="표시된 항목 모두 선택" Click="SelectAllNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" />
-                                    <Button x:Name="DismissSelectedPassedNotificationsButton" Content="선택한 항목 제거" Click="DismissSelectedNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" IsEnabled="False" ToolTip="선택한 통과 알림을 목록에서 제거합니다. 리포트의 알림은 유지됩니다." />
-                                    <TextBlock x:Name="SelectedPassedNotificationCountText" Text="선택 0개" Foreground="#C9ABFF" FontSize="12" VerticalAlignment="Center" Margin="0,0,0,8" />
+                                    <Button x:Name="SelectAllPassedNotificationsButton" Content="전체 선택" Click="SelectAllNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" />
+                                    <Button x:Name="DismissSelectedPassedNotificationsButton" Content="선택 제거" Click="DismissSelectedNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" IsEnabled="False" ToolTip="선택한 통과 알림 제거" />
+                                    <TextBlock x:Name="SelectedPassedNotificationCountText" Text="선택 0개" Foreground="{StaticResource BlackText}" FontSize="12" VerticalAlignment="Center" Margin="0,0,0,8" />
                                 </WrapPanel>
                                 <ItemsControl x:Name="NotificationItemsControl" ItemTemplate="{StaticResource NotificationAppCard}" />
                             </StackPanel></Border>
                             <Border x:Name="BlockedNotificationsCard" Style="{StaticResource Card}"><StackPanel>
                                 <DockPanel Margin="0,0,0,8">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="차단한 알림" Style="{StaticResource Heading}" Margin="0" /><TextBlock x:Name="BlockedNotificationCountText" Margin="8,2,0,0" Foreground="#C9ABFF" /></StackPanel>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="차단 알림" Style="{StaticResource Heading}" Margin="0" /><TextBlock x:Name="BlockedNotificationCountText" Margin="8,2,0,0" Foreground="{StaticResource BlackText}" /></StackPanel>
                                 </DockPanel>
                                 <WrapPanel Margin="0,0,0,4">
-                                    <Button x:Name="SelectAllBlockedNotificationsButton" Content="표시된 항목 모두 선택" Click="SelectAllNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" />
-                                    <Button x:Name="DismissSelectedBlockedNotificationsButton" Content="선택한 항목 제거" Click="DismissSelectedNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" IsEnabled="False" ToolTip="선택한 차단 알림을 목록에서 제거합니다. 리포트의 알림은 유지됩니다." />
-                                    <TextBlock x:Name="SelectedBlockedNotificationCountText" Text="선택 0개" Foreground="#C9ABFF" FontSize="12" VerticalAlignment="Center" Margin="0,0,0,8" />
+                                    <Button x:Name="SelectAllBlockedNotificationsButton" Content="전체 선택" Click="SelectAllNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" />
+                                    <Button x:Name="DismissSelectedBlockedNotificationsButton" Content="선택 제거" Click="DismissSelectedNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" IsEnabled="False" ToolTip="선택한 차단 알림 제거" />
+                                    <TextBlock x:Name="SelectedBlockedNotificationCountText" Text="선택 0개" Foreground="{StaticResource BlackText}" FontSize="12" VerticalAlignment="Center" Margin="0,0,0,8" />
                                 </WrapPanel>
                                 <ItemsControl x:Name="BlockedNotificationItemsControl" ItemTemplate="{StaticResource NotificationAppCard}" />
                             </StackPanel></Border>
@@ -439,16 +459,16 @@
                     </TabItem>
                     <TabItem Header="활동 일지">
                         <ScrollViewer><StackPanel>
-                            <TextBlock x:Name="DataPeriodText" Text="오늘 집중모드가 켜져 있던 동안의 앱 사용 기록입니다." Style="{StaticResource Muted}" Margin="0,0,0,4" />
-                            <TextBlock x:Name="ActivityJournalEmptyText" Text="오늘의 집중 활동이 없습니다. 집중모드를 켜면 앱 사용 기록이 표시됩니다." Style="{StaticResource Muted}" Margin="0,0,0,4" />
-                            <TextBlock Text="PC 로컬 시간 기준 · 같은 시간대의 같은 앱은 합쳐서 표시합니다." Style="{StaticResource Muted}" FontSize="12" Margin="0,0,0,12" />
+                            <TextBlock x:Name="DataPeriodText" Text="오늘 · 집중 중 앱 사용 기록" Style="{StaticResource Muted}" Margin="0,0,0,4" />
+                            <TextBlock x:Name="ActivityJournalEmptyText" Text="오늘의 집중 기록 없음" Style="{StaticResource Muted}" Margin="0,0,0,4" />
+
                             <Border Style="{StaticResource Card}">
                                 <ItemsControl x:Name="JournalItemsControl"><ItemsControl.ItemTemplate><DataTemplate>
-                                    <Border BorderBrush="#353139" BorderThickness="0,0,0,1" Padding="0,12,0,16" Margin="0,0,0,8">
+                                    <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,0,1" Padding="0,12,0,16" Margin="0,0,0,8">
                                         <StackPanel>
                                             <DockPanel Margin="0,0,0,10">
                                                 <TextBlock Text="{Binding SummaryText}" DockPanel.Dock="Right" Style="{StaticResource Muted}" FontSize="12" Margin="12,3,0,0" />
-                                                <TextBlock Text="{Binding HourText}" FontSize="18" FontWeight="SemiBold" Foreground="#C9ABFF" />
+                                                <TextBlock Text="{Binding HourText}" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource BlackText}" />
                                             </DockPanel>
                                             <ItemsControl ItemsSource="{Binding Apps}"><ItemsControl.ItemTemplate><DataTemplate>
                                                 <Grid Margin="0,6">
@@ -474,12 +494,13 @@
                         </StackPanel></ScrollViewer>
                     </TabItem>
                     <TabItem Header="설정">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
-                            <Border Style="{StaticResource Card}"><StackPanel>
-                                <TextBlock Text="집중·휴식 루틴" Style="{StaticResource Heading}" Margin="0,0,0,8" />
-                                <TextBlock Text="집중할 시간과 쉴 시간을 정하고, 시간이 되면 알림을 받으세요." Style="{StaticResource Muted}" Margin="0,0,0,16" />
+                        <ScrollViewer x:Name="SettingsScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
+                            <Border Style="{StaticResource SettingsCard}" Tag="{Binding ElementName=TimerSettingsExpander}">
+                              <Expander x:Name="TimerSettingsExpander" Header="집중·휴식 루틴" Tag="집중·휴식 시간 설정" Style="{StaticResource BlackExpander}" HeaderTemplate="{StaticResource SettingsAccordionHeader}">
+                               <StackPanel Margin="40,0,0,10">
+                                <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,0,1" Margin="0,0,0,12" />
                                 <CheckBox x:Name="TimerEnabledCheckBox" Content="집중·휴식 타이머 사용" Checked="TimerOption_Changed" Unchecked="TimerOption_Changed" />
-                                <TextBlock Text="타이머 없이 집중모드를 직접 켜고 끕니다." Margin="0,10,0,0">
+                                <TextBlock Text="타이머 없이 직접 켜고 끄기" Margin="0,10,0,0">
                                     <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource Muted}">
                                         <Style.Triggers><DataTrigger Binding="{Binding IsChecked, ElementName=TimerEnabledCheckBox}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>
                                     </Style></TextBlock.Style>
@@ -497,69 +518,69 @@
                                             <TextBlock Text="0–60분 · 비우면 휴식 없음" Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,0" />
                                         </StackPanel>
                                     </Grid>
-                                    <Border Background="#302B38" BorderBrush="#494150" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,16,0,0">
+                                    <Border Background="{StaticResource BlackSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,16,0,0">
                                         <StackPanel>
                                             <TextBlock Text="루틴 미리보기" Style="{StaticResource Muted}" FontSize="12" Margin="0,0,0,6" />
-                                            <TextBlock x:Name="TimerRoutinePreviewText" Foreground="#C9ABFF" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
+                                            <TextBlock x:Name="TimerRoutinePreviewText" Foreground="{StaticResource BlackText}" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
                                         </StackPanel>
                                     </Border>
-                                    <TextBlock Text="집중모드를 켜면 타이머가 시작됩니다. 시간이 끝나도 집중모드는 직접 꺼야 합니다." Style="{StaticResource Muted}" FontSize="12" Margin="0,10,0,0" />
+                                    <TextBlock Text="타이머 종료 후에도 집중모드는 유지됩니다." Style="{StaticResource Muted}" FontSize="12" Margin="0,10,0,0" />
                                 </StackPanel>
-                                <TextBlock x:Name="TimerSettingsFeedbackText" Text="다음 집중모드부터 적용됩니다." Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0" AutomationProperties.LiveSetting="Polite" />
+                                <TextBlock x:Name="TimerSettingsFeedbackText" Text="다음 집중부터 적용" Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0" AutomationProperties.LiveSetting="Polite" />
                                 <Button x:Name="SaveTimerSettingsButton" Content="루틴 저장" Click="SaveSettingsButton_Click" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,12,0,0" />
-                            </StackPanel></Border>
-                            <Border x:Name="AutoDndSettingsCard" Style="{StaticResource Card}" AutomationProperties.Name="자동 집중 관리"><StackPanel>
-                                <TextBlock Text="자동 집중 관리" Style="{StaticResource Heading}" Margin="0,0,0,8" />
-                                <TextBlock Text="작업 앱을 2분쯤 쓰고 있으면 화면 위에 집중 모드를 켤지 물어봐요. 직접 켜지는 않아요. 자리를 오래 비우면 집중을 대신 끝내 드려요." Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,16" />
-                                <CheckBox x:Name="AutoDndEnabledCheckBox" Content="작업을 감지해 집중 모드 제안·자리비움 시 자동 종료" Click="AutoDndEnabledCheckBox_Click" />
+                               </StackPanel>
+                              </Expander>
+                            </Border>
+                            <Border x:Name="AutoDndSettingsCard" Style="{StaticResource SettingsCard}" Tag="{Binding ElementName=AutoDndSettingsExpander}" AutomationProperties.Name="자동 집중 관리">
+                              <Expander x:Name="AutoDndSettingsExpander" Header="자동 집중 관리" Tag="작업 감지 시 집중 제안 · 15분 자리비움 시 자동 종료" Style="{StaticResource BlackExpander}" HeaderTemplate="{StaticResource SettingsAccordionHeader}">
+                               <StackPanel Margin="40,0,0,10">
+                                <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,0,1" Margin="0,0,0,12" />
+                                <CheckBox x:Name="AutoDndEnabledCheckBox" Content="자동 집중 관리 사용" Click="AutoDndEnabledCheckBox_Click" />
                                 <TextBlock x:Name="AutoDndStatusText" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.LiveSetting="Polite" />
-                            </StackPanel></Border>
-                            <Border Style="{StaticResource Card}"><StackPanel>
-                                <TextBlock Text="알림과 시스템" Style="{StaticResource Heading}" />
+                               </StackPanel>
+                              </Expander>
+                            </Border>
+                            <Border Style="{StaticResource SettingsCard}" Tag="{Binding ElementName=SystemSettingsExpander}">
+                              <Expander x:Name="SystemSettingsExpander" Header="알림과 시스템" Tag="루틴 알림 · 시작 프로그램 · 앱 정보" Style="{StaticResource BlackExpander}" HeaderTemplate="{StaticResource SettingsAccordionHeader}">
+                               <StackPanel Margin="40,0,0,10">
+                                <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,0,1" Margin="0,0,0,12" />
                                 <TextBlock x:Name="WindowsDndStatusText" Style="{StaticResource Muted}" Margin="0,0,0,8" />
                                 <WrapPanel>
                                     <Button x:Name="ShowRoutineReminderButton" Content="현재 루틴 알림 보기" Click="ShowRoutineReminderButton_Click" Margin="0,0,8,8" />
                                     <Button Content="알림 확인" Tag="1" Click="Navigate_Click" Margin="0,0,0,8" />
                                 </WrapPanel>
                                 <CheckBox x:Name="LaunchAtStartupCheckBox" Content="Windows 시작 시 알통 실행" Click="LaunchAtStartupCheckBox_Click" Margin="0,4,0,0"
-                                          AutomationProperties.HelpText="켜면 Windows에 로그인할 때 알통이 트레이에서 조용히 시작됩니다." />
-                                <TextBlock x:Name="LaunchAtStartupStatusText" Text="켜면 로그인할 때 대시보드 없이 트레이에서 조용히 시작해요." Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,8" AutomationProperties.LiveSetting="Polite" />
+                                          AutomationProperties.HelpText="로그인 시 트레이에서 시작" />
+                                <TextBlock x:Name="LaunchAtStartupStatusText" Text="로그인 시 트레이에서 시작" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,8" AutomationProperties.LiveSetting="Polite" />
                                 <TextBlock x:Name="AppVersionText" Style="{StaticResource Muted}" Margin="0,4" />
                                 <Button Content="ALTONG 종료" Click="ExitApplicationButton_Click" HorizontalAlignment="Left" Margin="0,12,0,0" />
-                            </StackPanel></Border>
-                            <Border x:Name="NativeNotificationControlCard" Style="{StaticResource Card}" AutomationProperties.Name="알통 자체 방해금지 프로토타입"><StackPanel>
-                                <TextBlock Text="알통 자체 방해금지 · 프로토타입" Style="{StaticResource Heading}" TextWrapping="Wrap" Margin="0,0,0,8" />
-                                <TextBlock Text="선택한 앱의 알림 배너와 소리를 집중 중 제어하는 프로토타입입니다." Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,16" />
+                               </StackPanel>
+                              </Expander>
+                            </Border>
+                            <Border x:Name="NativeNotificationControlCard" Style="{StaticResource SettingsCard}" Tag="{Binding ElementName=NotificationSettingsExpander}" AutomationProperties.Name="앱별 알림 제어">
+                              <Expander x:Name="NotificationSettingsExpander" Header="앱별 알림 제어" Tag="집중 중 선택한 앱의 배너·알림음 차단" Style="{StaticResource BlackExpander}" HeaderTemplate="{StaticResource SettingsAccordionHeader}">
+                               <StackPanel Margin="40,0,0,10">
+                                <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,0,1" Margin="0,0,0,12" />
                                 <TextBlock x:Name="NotificationControlStatusText" TextWrapping="Wrap" Margin="0,0,0,8" AutomationProperties.LiveSetting="Polite" />
-                                <TextBlock Text="비교 테스트용 전환 · 전환하면 현재 집중이 종료되고 알림 설정이 복구됩니다." Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" />
+                                <TextBlock Text="방식 변경 시 집중 종료 · 알림 설정 복구" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" />
                                 <WrapPanel Margin="0,8,0,8">
                                     <Button x:Name="UseAltongControlButton" Content="알통 자체 제어" Click="UseAltongControl_Click" Margin="0,0,8,8" />
                                     <Button x:Name="UseWindowsControlButton" Content="기존 Windows 방식" Click="UseWindowsControl_Click" Margin="0,0,8,8" />
-                                    <Button x:Name="RefreshNotificationAppsButton" Content="앱 목록 새로 조회" Click="RefreshNotificationApps_Click" Margin="0,0,8,8" />
-                                    <Button x:Name="RestoreNotificationAppsButton" Content="문제 발생 시 알림 설정 복구" Click="RestoreNotificationApps_Click" ToolTip="알통이 변경한 배너·알림음 설정의 복구를 다시 시도합니다. 자체 집중 중 실행하면 집중이 종료됩니다." Margin="0,0,8,8" />
+                                    <Button x:Name="RefreshNotificationAppsButton" Content="앱 새로고침" Click="RefreshNotificationApps_Click" Margin="0,0,8,8" />
+                                    <Button x:Name="RestoreNotificationAppsButton" Content="알림 설정 복구" Click="RestoreNotificationApps_Click" ToolTip="집중 종료 후 배너·알림음 설정 복구" Margin="0,0,8,8" />
                                 </WrapPanel>
-                                <TextBlock Text="선택 앱은 다음 집중부터 배너와 Windows 알림음만 숨깁니다. 알림센터 보관과 기존 알림 수집·미니바 연결은 유지합니다. 새 앱은 다시 조회하면 기본 선택됩니다. 보호된 시스템 항목은 제어하지 않습니다. 카카오톡은 기존 전용 팝업 제어·음소거 기능을 두 방식 모두에서 유지합니다." Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12" />
+                                <TextBlock Text="다음 집중부터 적용 · 새 앱은 기본 선택" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12" />
                                 <StackPanel x:Name="NotificationSenderList" />
-                            </StackPanel></Border>
+                               </StackPanel>
+                              </Expander>
+                            </Border>
                         </StackPanel></ScrollViewer>
                     </TabItem>
                     <TabItem Header="캘린더"><ContentControl x:Name="ReportCalendarHost" /></TabItem>
                 </TabControl>
-                <TextBlock x:Name="DataErrorText" Grid.Row="2" Foreground="#FFACAC" FontSize="12" />
+                <TextBlock x:Name="DataErrorText" Grid.Row="2" Foreground="{StaticResource BlackError}" FontSize="12" />
             </Grid>
             </Grid>
-            <Border x:Name="FooterBar" Grid.Row="2" Background="#212123" BorderBrush="#333136" BorderThickness="0,1,0,0" CornerRadius="0,0,24,24" Padding="24,0">
-                <DockPanel>
-                    <Button x:Name="FooterHomeButton" Tag="0" Click="Navigate_Click" Style="{StaticResource Tile}" Margin="0" Padding="8,4" HorizontalAlignment="Left" VerticalAlignment="Center" AutomationProperties.Name="User 홈으로 이동">
-                        <StackPanel Orientation="Horizontal">
-                            <Border x:Name="FooterUserIcon" Width="28" Height="28" CornerRadius="14" Background="#E4E4E4" Margin="0,0,10,0">
-                                <TextBlock Text="&#xE77B;" FontFamily="Segoe MDL2 Assets" FontSize="19" Foreground="#6B6B6B" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock Text="User" FontSize="13" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-                </DockPanel>
-            </Border>
         </Grid>
     </Border>
 </Window>

@@ -144,11 +144,18 @@ public sealed class ReportCalendarUiTests
             var list = (ListBox)view.FindName("ReportList");
             Assert.AreEqual(30, list.Items.Count);
             var scheduleList = (ListBox)view.FindName("ScheduleList");
+            Assert.AreEqual(30, scheduleList.Items.Count);
+            var moreSchedules = (Button)view.FindName("LoadMoreSchedulesButton");
+            moreSchedules.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.AreEqual(60, scheduleList.Items.Count);
+            moreSchedules.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.AreEqual(65, scheduleList.Items.Count);
+            Assert.AreEqual(Visibility.Collapsed, moreSchedules.Visibility);
             Assert.IsTrue(((TextBlock)view.FindName("ReportCountText")).Text.Contains("65개"));
             Assert.IsTrue(((System.Windows.Controls.Primitives.UniformGrid)view.FindName("DaysPanel")).Children
                 .OfType<Button>().Any(button => button.ToolTip.ToString()!.Contains("65개")));
-            Await(view.LoadMoreAsync());
+            Await(Task.WhenAll(view.LoadMoreAsync(), view.LoadMoreAsync()));
+            Assert.AreEqual(60, list.Items.Count, "중복 요청으로 같은 리포트를 두 번 추가하지 않아야 합니다.");
             Await(view.LoadMoreAsync());
             Assert.AreEqual(65, list.Items.Count);
             Assert.AreEqual(Visibility.Collapsed, ((Button)view.FindName("LoadMoreButton")).Visibility);
@@ -160,22 +167,21 @@ public sealed class ReportCalendarUiTests
                 Pump();
                 var pageScroll = (ScrollViewer)view.FindName("PageScroll");
                 Assert.IsTrue(pageScroll.ScrollableWidth < 1, "캘린더 페이지에 가로 잘림이 없어야 합니다.");
-                var listScroll = Descendants(list).OfType<ScrollViewer>().First();
-                Assert.IsTrue(listScroll.ViewportHeight > 0);
-                Assert.IsTrue(listScroll.ScrollableHeight > 0, "많은 리포트에 스크롤로 접근할 수 있어야 합니다.");
-                Assert.IsTrue(listScroll.ScrollableWidth < 1);
-                var scheduleScroll = Descendants(scheduleList).OfType<ScrollViewer>().First();
-                Assert.IsTrue(scheduleScroll.ViewportHeight > 0 && scheduleScroll.ScrollableHeight > 0,
-                    "저장한 일정이 많아도 작은 창에서 목록을 스크롤할 수 있어야 합니다.");
-                Assert.IsTrue(scheduleScroll.ScrollableWidth < 1);
+                Assert.AreEqual(1, Descendants(view).OfType<ScrollViewer>().Count(),
+                    "일정·리포트가 많아도 페이지 스크롤 하나만 사용해야 합니다.");
+                Assert.IsTrue(pageScroll.ViewportHeight > 0 && pageScroll.ScrollableHeight > 0);
                 SavePreview(view, $"calendar-{size.Width}.png", size);
                 pageScroll.ScrollToBottom();
-                listScroll.ScrollToEnd();
                 view.UpdateLayout();
                 Pump();
-                Assert.IsTrue(Math.Abs(listScroll.VerticalOffset - listScroll.ScrollableHeight) < 1);
+                Assert.IsTrue(Math.Abs(pageScroll.VerticalOffset - pageScroll.ScrollableHeight) < 1);
+                var lastItem = (FrameworkElement)list.ItemContainerGenerator.ContainerFromIndex(list.Items.Count - 1);
+                var lastAction = Descendants(lastItem).OfType<Button>().Last();
+                lastAction.BringIntoView();
+                view.UpdateLayout();
+                var actionBounds = lastAction.TransformToAncestor(pageScroll).TransformBounds(new Rect(lastAction.RenderSize));
+                Assert.IsTrue(actionBounds.Top >= -1 && actionBounds.Bottom <= pageScroll.ViewportHeight + 1);
                 SavePreview(view, $"calendar-bottom-{size.Width}.png", size);
-                listScroll.ScrollToTop();
                 pageScroll.ScrollToTop();
             }
             var lastId = ((ReportListEntry)list.Items[0]).SessionId;
@@ -198,7 +204,7 @@ public sealed class ReportCalendarUiTests
             Assert.AreEqual(0, list.Items.Count);
             Await(view.SelectDateAsync(localDay));
             Assert.AreEqual(30, list.Items.Count);
-            Assert.AreEqual(65, scheduleList.Items.Count);
+            Assert.AreEqual(30, scheduleList.Items.Count);
         }
         finally { if (File.Exists(calendarPath)) File.Delete(calendarPath); }
     });
@@ -228,6 +234,8 @@ public sealed class ReportCalendarUiTests
         {
             Assert.AreEqual(Visibility.Collapsed, ((Button)saved.FindName("SaveReportButton")).Visibility);
             Assert.AreEqual("확인", ((Button)saved.FindName("SkipSaveButton")).Content);
+            Assert.AreEqual("저장된 집중 리포트", saved.Title);
+            Assert.AreEqual("보관됨", ((TextBlock)saved.FindName("ReportBadgeText")).Text);
         }
         finally { saved.Close(); }
     });
@@ -245,6 +253,15 @@ public sealed class ReportCalendarUiTests
         Await(view.RefreshAsync());
         Assert.AreEqual(Visibility.Visible, ((Button)view.FindName("RetryButton")).Visibility);
         Assert.AreEqual(Visibility.Collapsed, ((TextBlock)view.FindName("EmptyStateText")).Visibility);
+        var size = new Size(568, 330);
+        view.Measure(size);
+        view.Arrange(new Rect(size));
+        view.UpdateLayout();
+        var retry = (Button)view.FindName("RetryButton");
+        var bounds = retry.TransformToAncestor(view).TransformBounds(new Rect(retry.RenderSize));
+        Assert.IsTrue(bounds.Bottom <= size.Height && bounds.Top >= 0);
+        Assert.IsTrue(((ScrollViewer)view.FindName("PageScroll")).ViewportHeight > 0);
+        SavePreview(view, "calendar-error-568.png", size);
         db.Initialize();
         Await(view.RefreshAsync());
         Assert.AreEqual(Visibility.Collapsed, ((Button)view.FindName("RetryButton")).Visibility);

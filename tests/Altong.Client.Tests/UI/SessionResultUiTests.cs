@@ -8,6 +8,7 @@ using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
 using Altong.Client.Services;
+using Altong.Client.Services.Focus;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Altong.Client.Tests;
@@ -42,7 +43,7 @@ public sealed class SessionResultUiTests
                 try
                 {
                     RefreshDashboardData(window);
-                    Assert.AreEqual("오늘 집중모드가 켜져 있던 동안의 앱 사용 기록입니다.", ((TextBlock)window.FindName("DataPeriodText")).Text);
+                    Assert.AreEqual("오늘 · 집중 중 앱 사용 기록", ((TextBlock)window.FindName("DataPeriodText")).Text);
                     Assert.AreEqual(0, ((ItemsControl)window.FindName("JournalItemsControl")).Items.Count);
                     Assert.AreEqual(0, ((ItemsControl)window.FindName("AppUsageItemsControl")).Items.Count);
                     Assert.AreEqual(1, windows.GetSessionsByDateRangeAsync(now.AddHours(-1), now)
@@ -122,8 +123,10 @@ public sealed class SessionResultUiTests
                 var focusMode = new FocusModeService();
                 var routine = new FocusRoutineService(focusMode, settings);
                 using var tracker = new StubActiveWindowTracker();
+                string autoDndFile = Path.Combine(Path.GetTempPath(), "altong-accordion-" + Guid.NewGuid() + ".json");
+                var autoDndSettings = new AutoDndSettingsStore(autoDndFile);
                 var window = new DashboardWindow(settings, routine, results, tracker,
-                    focusModeService: focusMode);
+                    focusModeService: focusMode, autoDndSettings: autoDndSettings);
                 try
                 {
                     Assert.IsTrue(System.Windows.Media.Fonts.GetFontFamilies(
@@ -189,11 +192,85 @@ public sealed class SessionResultUiTests
                     }
                     Assert.AreSame(home, tabs.SelectedContent);
                     tabs.SelectedIndex = 3;
+                    var sections = new[] { "TimerSettingsExpander", "AutoDndSettingsExpander", "SystemSettingsExpander", "NotificationSettingsExpander" }
+                        .Select(name => (Expander)window.FindName(name)).ToArray();
+                    Assert.IsTrue(sections.All(section => !section.IsExpanded), "설정은 처음에 제목과 설명만 표시합니다.");
+                    Assert.AreEqual("타이머 꺼짐", AutomationProperties.GetItemStatus(sections[0]));
+                    Assert.AreEqual("설정 켜짐", AutomationProperties.GetItemStatus(sections[1]));
+                    Assert.AreEqual("자동 실행 확인 불가", AutomationProperties.GetItemStatus(sections[2]));
+                    Assert.AreEqual("연결 안 됨", AutomationProperties.GetItemStatus(sections[3]));
+                    root.Measure(new Size(640, 520));
+                    root.Arrange(new Rect(0, 0, 640, 520));
+                    root.UpdateLayout();
+                    PumpBindings();
+                    var settingsViewport = (ScrollViewer)tabs.SelectedContent;
+                    foreach (var section in sections)
+                    {
+                        var bounds = section.TransformToAncestor(settingsViewport).TransformBounds(new Rect(section.RenderSize));
+                        Assert.IsTrue(bounds.Top >= 0 && bounds.Bottom <= settingsViewport.ViewportHeight,
+                            "최소 창에서 접힌 네 개 설정의 제목을 모두 볼 수 있어야 합니다.");
+                        var icon = Descendants(section).OfType<TextBlock>().Single(text => text.Name == "SettingsIcon");
+                        var summary = Descendants(section).OfType<TextBlock>().Single(text => text.Name == "SettingsSummary");
+                        Assert.AreEqual("Segoe MDL2 Assets", icon.FontFamily.Source);
+                        Assert.IsFalse(string.IsNullOrWhiteSpace(icon.Text));
+                        Assert.AreEqual(AutomationProperties.GetItemStatus(section), summary.Text,
+                            "표시된 요약은 실제 설정 상태와 일치해야 합니다.");
+                        var peer = new System.Windows.Automation.Peers.ExpanderAutomationPeer(section);
+                        Assert.AreEqual(section.Header, peer.GetName());
+                        var provider = (System.Windows.Automation.Provider.IExpandCollapseProvider)peer
+                            .GetPattern(System.Windows.Automation.Peers.PatternInterface.ExpandCollapse);
+                        provider.Expand();
+                        root.UpdateLayout();
+                        Assert.AreEqual(window.FindResource("BlackSelection"), ((Border)section.Parent).Background,
+                            "펼친 설정은 배경으로 구분해야 합니다.");
+                        Assert.AreEqual(ExpandCollapseState.Expanded, provider.ExpandCollapseState);
+                        var content = (FrameworkElement)section.Template.FindName("ExpandedContent", section);
+                        Assert.AreEqual(Visibility.Visible, content.Visibility);
+                        provider.Collapse();
+                        root.UpdateLayout();
+                        Assert.AreEqual(ExpandCollapseState.Collapsed, provider.ExpandCollapseState);
+                        Assert.AreEqual(Visibility.Collapsed, content.Visibility);
+                    }
+                    SavePreview(root, "settings-collapsed-640.png", new Size(640, 520));
+                    var timerSection = sections[0];
+                    var timerPeer = new System.Windows.Automation.Peers.ExpanderAutomationPeer(timerSection);
+                    Assert.AreEqual("집중·휴식 루틴", timerPeer.GetName());
+                    var timerProvider = (System.Windows.Automation.Provider.IExpandCollapseProvider)timerPeer
+                        .GetPattern(System.Windows.Automation.Peers.PatternInterface.ExpandCollapse);
+                    Assert.AreEqual(ExpandCollapseState.Collapsed, timerProvider.ExpandCollapseState);
+                    timerProvider.Expand();
+                    Assert.IsTrue(timerSection.IsExpanded);
+                    sections[1].IsExpanded = true;
+                    Assert.IsTrue(timerSection.IsExpanded && sections[1].IsExpanded, "관련 설정은 각각 독립적으로 펼칠 수 있습니다.");
+                    var autoDndCheck = (CheckBox)window.FindName("AutoDndEnabledCheckBox");
+                    autoDndCheck.IsChecked = false;
+                    autoDndCheck.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                    Assert.IsFalse(autoDndSettings.Current.Enabled, "자동 집중 설정은 펼친 화면에서도 즉시 저장해야 합니다.");
+                    Assert.AreEqual("꺼짐", AutomationProperties.GetItemStatus(sections[1]));
+                    sections[1].IsExpanded = false;
+                    sections[1].IsExpanded = true;
+                    Assert.AreEqual(false, autoDndCheck.IsChecked);
+                    autoDndCheck.IsChecked = true;
+                    autoDndCheck.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                    Assert.IsTrue(autoDndSettings.Current.Enabled);
+                    Assert.AreEqual("설정 켜짐", AutomationProperties.GetItemStatus(sections[1]));
+                    sections[1].IsExpanded = false;
+                    root.UpdateLayout();
                     var timerOption = (CheckBox)window.FindName("TimerEnabledCheckBox");
                     var timerOptions = (StackPanel)window.FindName("TimerOptionsPanel");
                     var focusInput = (TextBox)window.FindName("FocusSessionDurationSetting");
                     var restInput = (TextBox)window.FindName("BreakDurationSetting");
                     var saveTimer = (Button)window.FindName("SaveTimerSettingsButton");
+                    string originalInput = focusInput.Text;
+                    var originalSaved = settings.Current;
+                    focusInput.Text = "37";
+                    timerProvider.Collapse();
+                    Assert.AreEqual(ExpandCollapseState.Collapsed, timerProvider.ExpandCollapseState);
+                    timerProvider.Expand();
+                    root.UpdateLayout();
+                    Assert.AreEqual("37", focusInput.Text, "접었다 다시 열어도 편집 중인 입력은 유지합니다.");
+                    Assert.AreEqual(originalSaved, settings.Current, "펼침·접힘은 설정을 저장하지 않습니다.");
+                    focusInput.Text = originalInput;
                     void PreviewTimerSettings(string state)
                     {
                         foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
@@ -207,6 +284,16 @@ public sealed class SessionResultUiTests
                             root.UpdateLayout();
                             Assert.IsTrue(viewport.ScrollableWidth <= 1,
                                 "타이머 설정은 기본·최소 창 크기에서 가로로 잘리지 않아야 합니다.");
+                            var badge = Descendants(timerSection).OfType<TextBlock>().Single(text => text.Name == "SettingsSummary");
+                            Assert.AreEqual(AutomationProperties.GetItemStatus(timerSection), badge.Text, "저장 후 헤더 요약도 갱신해야 합니다.");
+                            var badgeBounds = badge.TransformToAncestor(timerSection).TransformBounds(new Rect(badge.RenderSize));
+                            Assert.IsTrue(badgeBounds.Right <= timerSection.ActualWidth + 1,
+                                $"설정 요약이 머리글 밖으로 넘어가면 안 됩니다: {badgeBounds.Right:F1}/{timerSection.ActualWidth:F1}");
+                            var measured = new System.Windows.Media.FormattedText(badge.Text, System.Globalization.CultureInfo.CurrentCulture,
+                                FlowDirection.LeftToRight, new System.Windows.Media.Typeface(badge.FontFamily, badge.FontStyle, badge.FontWeight, badge.FontStretch),
+                                badge.FontSize, System.Windows.Media.Brushes.White, 1);
+                            Assert.IsTrue(badge.ActualWidth + 1 >= measured.WidthIncludingTrailingWhitespace,
+                                $"설정 요약이 잘리지 않아야 합니다: {badge.Text} ({badge.ActualWidth:F1}/{measured.WidthIncludingTrailingWhitespace:F1})");
                             SavePreview(root, $"settings-{state}-{size.Width}.png", size);
                             saveTimer.BringIntoView();
                             PumpBindings();
@@ -221,21 +308,25 @@ public sealed class SessionResultUiTests
                     Assert.AreEqual(Visibility.Collapsed, timerOptions.Visibility);
                     PreviewTimerSettings("disabled");
                     timerOption.IsChecked = true;
+                    Assert.AreEqual("타이머 꺼짐", AutomationProperties.GetItemStatus(timerSection), "저장 전 입력을 저장된 상태로 표시하지 않습니다.");
                     Assert.AreEqual(Visibility.Visible, timerOptions.Visibility);
                     focusInput.Text = "30";
                     restInput.Text = "";
                     saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     Assert.AreEqual(new FocusTimerSettings(30, 0, true), settings.Current,
                         "휴식시간을 비워두어도 집중 타이머 설정을 저장할 수 있어야 합니다.");
+                    Assert.AreEqual("집중 30분 · 휴식 없음", AutomationProperties.GetItemStatus(timerSection));
                     PreviewTimerSettings("focus-only");
                     restInput.Text = "5";
                     saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     Assert.AreEqual(new FocusTimerSettings(30, 5, true), settings.Current);
+                    Assert.AreEqual("집중 30분 · 휴식 5분", AutomationProperties.GetItemStatus(timerSection));
                     PreviewTimerSettings("routine");
                     restInput.Text = "99";
                     saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     Assert.AreEqual(new FocusTimerSettings(30, 5, true), settings.Current,
                         "잘못된 시간 입력은 저장한 설정을 덮어쓰지 않아야 합니다.");
+                    Assert.AreEqual("집중 30분 · 휴식 5분", AutomationProperties.GetItemStatus(timerSection));
                     PreviewTimerSettings("invalid");
                     timerOption.IsChecked = false;
                     focusInput.Text = "";
@@ -253,7 +344,7 @@ public sealed class SessionResultUiTests
                     var focusStatusDot = (System.Windows.Shapes.Ellipse)window.FindName("HomeFocusStatusDot");
                     Assert.AreEqual("집중모드 꺼짐", focusStatus.Text);
                     var offIndicatorColor = ((System.Windows.Media.SolidColorBrush)focusStatusDot.Fill).Color;
-                    Assert.AreEqual("나만의 집중 루틴 설정", ((TextBlock)window.FindName("HomeRoutineTitleText")).Text);
+                    Assert.AreEqual("집중 루틴", ((TextBlock)window.FindName("HomeRoutineTitleText")).Text);
                     Assert.AreEqual("\uE916", ((TextBlock)window.FindName("HomeRoutineIconText")).Text);
                     foreach (var size in new[] { new Size(1100, 780), new Size(920, 780), new Size(640, 520) })
                     {
@@ -261,24 +352,22 @@ public sealed class SessionResultUiTests
                         root.Arrange(new Rect(size));
                         root.UpdateLayout();
                         Assert.IsNull(window.FindName("ActivityToggleButton"));
-                        var footer = (Border)window.FindName("FooterBar");
+                        Assert.IsNull(window.FindName("FooterBar"));
                         Assert.IsNull(window.FindName("FooterExitButton"));
                         Assert.IsFalse(((StackPanel)window.FindName("NavigationRail")).Children.OfType<TextBlock>()
                             .Any(text => text.Text == "\uE700"));
                         foreach (var name in new[] { "FooterHomeButton", "FooterUserIcon" })
-                        {
-                            var element = (FrameworkElement)window.FindName(name);
-                            var bounds = element.TransformToAncestor(footer)
-                                .TransformBounds(new Rect(element.RenderSize));
-                            Assert.IsTrue(bounds.Top >= 0 && bounds.Bottom <= footer.ActualHeight,
-                                $"{name}: 하단 버튼과 사용자 아이콘이 풋터 밖으로 잘리지 않아야 합니다.");
-                        }
+                            Assert.IsNull(window.FindName(name));
+                        Assert.IsFalse(Descendants(root).OfType<TextBlock>().Any(text => text.Text == "User"));
+                        var brand = (TextBlock)window.FindName("DashboardBrandText");
+                        Assert.AreEqual("Altong", brand.Text);
+                        Assert.IsTrue(brand.ActualWidth > 0 && brand.ActualHeight > 0);
                         SavePreview(root, $"home-{size.Width}.png", size);
                         var homeViewport = (ScrollViewer)home;
                         Assert.IsTrue(homeViewport.ScrollableWidth <= 1);
                         var sidePanel = (Grid)window.FindName("HomeSidePanel");
-                        Assert.AreEqual(0, Grid.GetRow(sidePanel));
-                        Assert.IsTrue(homeViewport.ScrollableHeight <= 1, "홈 전체가 세로 스크롤 없이 보여야 합니다.");
+                        Assert.AreEqual(homeViewport.ActualWidth < 740 ? 1 : 0, Grid.GetRow(sidePanel));
+                        if (homeViewport.ActualWidth >= 740) Assert.IsTrue(homeViewport.ScrollableHeight <= 1, "넓은 홈은 한 화면에 표시합니다.");
                         var homeLayout = (Grid)window.FindName("HomeLayout");
                         var mainPanel = (StackPanel)window.FindName("HomeMainPanel");
                         var mainBounds = mainPanel.TransformToAncestor(homeLayout)
@@ -454,10 +543,26 @@ public sealed class SessionResultUiTests
                     {
                         report.ApplyTemplate();
                         Assert.AreEqual(WindowStyle.None, report.WindowStyle);
-                        Assert.IsTrue(report.FontFamily.Source.Contains("#Pretendard"));
+                        Assert.AreSame(window.FontFamily, report.FontFamily);
+                        Assert.IsTrue(new System.Windows.Media.Typeface(report.FontFamily, FontStyles.Normal,
+                            FontWeights.Normal, FontStretches.Normal).TryGetGlyphTypeface(out var reportFont));
+                        StringAssert.Contains(reportFont.FontUri.ToString().ToLowerInvariant(), "pretendard-regular.otf");
+                        Assert.AreEqual(600, report.Width);
+                        Assert.AreEqual(660, report.Height);
+                        Assert.AreEqual("집중 완료 · 집중 리포트", report.Title);
+                        Assert.AreEqual("집중 리포트", ((TextBlock)report.FindName("ReportHeadingText")).Text);
+                        Assert.AreEqual("집중 완료", ((TextBlock)report.FindName("ReportBadgeText")).Text);
+                        Assert.IsFalse(((Expander)report.FindName("QuickRepliesExpander")).IsExpanded);
+                        Assert.IsFalse(((Expander)report.FindName("AppUsageExpander")).IsExpanded);
+                        Assert.IsFalse(((Expander)report.FindName("NotificationsExpander")).IsExpanded);
+                        var surface = (System.Windows.Media.SolidColorBrush)((Border)report.Content).Background;
+                        var dashboardSurface = (System.Windows.Media.SolidColorBrush)((Border)window.Content).Background;
+                        Assert.IsTrue(surface.Color.R < dashboardSurface.Color.R,
+                            "리포트는 더 깊은 블랙 문서형 바탕으로 대시보드와 구별합니다.");
+                        Assert.IsTrue(Math.Abs(surface.Color.R - surface.Color.B) <= 5);
                         var reportRoot = (Border)report.Content;
                         var reportGrid = (Grid)reportRoot.Child;
-                        foreach (var size in new[] { new Size(520, 420), new Size(760, 780) })
+                        foreach (var size in new[] { new Size(480, 380), new Size(600, 660) })
                         {
                             reportRoot.Measure(size);
                             reportRoot.Arrange(new Rect(size));
@@ -475,11 +580,11 @@ public sealed class SessionResultUiTests
                                     bounds.Top >= 0 && bounds.Bottom <= size.Height,
                                     "긴 리포트와 최소 창 크기에서도 저장·닫기 버튼은 화면 안에 보여야 합니다.");
                             }
-                            var closeButton = reportGrid.Children.OfType<Grid>().Single().Children
-                                .OfType<StackPanel>().Single(panel => panel.HorizontalAlignment == HorizontalAlignment.Right)
-                                .Children.OfType<Button>().Last();
+                            var closeButton = (Button)report.FindName("ReportCloseButton");
                             Assert.AreEqual("창 닫기", AutomationProperties.GetName(closeButton));
                             SavePreview(reportRoot, $"report-{size.Width}.png", size);
+                            ((Expander)report.FindName("QuickRepliesExpander")).IsExpanded = true;
+                            reportRoot.UpdateLayout();
                             var replies = (ItemsControl)report.FindName("QuickReplyItemsControl");
                             var lastReply = replies.ItemContainerGenerator.ContainerFromIndex(replies.Items.Count - 1);
                             var copy = Descendants(lastReply).OfType<Button>().Single();
@@ -495,12 +600,13 @@ public sealed class SessionResultUiTests
                             Assert.IsTrue(Math.Abs(scroll.VerticalOffset - scroll.ScrollableHeight) <= 1,
                                 "알림이 많아도 리포트 끝까지 스크롤할 수 있어야 합니다.");
                             SavePreview(reportRoot, $"report-bottom-{size.Width}.png", size);
+                            ((Expander)report.FindName("QuickRepliesExpander")).IsExpanded = false;
                             scroll.ScrollToTop();
                         }
                     }
                     finally { report.Close(); }
                 }
-                finally { window.Close(); }
+                finally { window.Close(); if (File.Exists(autoDndFile)) File.Delete(autoDndFile); }
             }
             catch (Exception ex) { failure = ex; }
             finally { Dispatcher.CurrentDispatcher.InvokeShutdown(); }

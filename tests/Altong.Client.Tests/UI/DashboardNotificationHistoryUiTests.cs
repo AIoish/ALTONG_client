@@ -55,7 +55,7 @@ public sealed class DashboardNotificationHistoryUiTests
             var blocked = ExpandedRows(window, "BlockedNotificationItemsControl");
             var first = (FrameworkElement)blocked.ItemContainerGenerator.ContainerFromIndex(0);
             string removedId = ((NotificationHistoryItem)first.DataContext).Record.Id;
-            Descendants<Button>(first).Single(button => Equals(button.Content, "목록에서 제거"))
+            Descendants<Button>(first).Single(button => Equals(button.Content, "제거"))
                 .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             WaitReady(window);
             Assert.AreEqual(2, Rows(window, "BlockedNotificationItemsControl").Length);
@@ -89,7 +89,7 @@ public sealed class DashboardNotificationHistoryUiTests
             AssertSelected(window, 2, 0);
             Assert.IsTrue(Rows(window, "NotificationItemsControl").All(row => !row.IsSelected));
             Assert.AreEqual("선택 해제", selectBlocked.Content);
-            Assert.AreEqual("표시된 항목 모두 선택", selectPassed.Content);
+            Assert.AreEqual("전체 선택", selectPassed.Content);
             selectPassed.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             AssertSelected(window, 2, 1);
             selectBlocked.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -189,7 +189,7 @@ public sealed class DashboardNotificationHistoryUiTests
             Assert.IsTrue(((Button)window.FindName("DismissSelectedPassedNotificationsButton")).IsEnabled);
             Assert.IsTrue(((Button)window.FindName("SelectAllBlockedNotificationsButton")).IsEnabled);
             Assert.IsTrue(((Button)window.FindName("SelectAllPassedNotificationsButton")).IsEnabled);
-            Assert.IsTrue(((TextBlock)window.FindName("NotificationHistoryStatusText")).Text.Contains("제거하지 못했습니다"));
+            Assert.IsTrue(((TextBlock)window.FindName("NotificationHistoryStatusText")).Text.Contains("제거 실패"));
             using (var connection = db.CreateOpenConnection())
             using (var command = connection.CreateCommand())
             {
@@ -244,7 +244,7 @@ public sealed class DashboardNotificationHistoryUiTests
             root.UpdateLayout();
             var items = expandedRows;
             var last = (FrameworkElement)items.ItemContainerGenerator.ContainerFromIndex(59);
-            var remove = Descendants<Button>(last).Single(button => Equals(button.Content, "목록에서 제거"));
+            var remove = Descendants<Button>(last).Single(button => Equals(button.Content, "제거"));
             remove.BringIntoView();
             root.UpdateLayout();
             var bounds = remove.TransformToAncestor(scroll).TransformBounds(new Rect(remove.RenderSize));
@@ -268,6 +268,42 @@ public sealed class DashboardNotificationHistoryUiTests
         ((NotificationAppGroup)groups.Items[0]).IsExpanded = true;
         ((FrameworkElement)window.Content).UpdateLayout();
         return Descendants<ItemsControl>((FrameworkElement)groups.ItemContainerGenerator.ContainerFromIndex(0)).Single();
+    }
+
+    [TestMethod]
+    public void History_ExpansionAndCollapse_AcknowledgeWithoutDelayingContent()
+    {
+        OnDashboard((db, window, _, root) =>
+        {
+            try
+            {
+                MotionBehavior.AnimationOverride = true;
+                var raw = new SqliteNotificationRepository(db);
+                Insert(raw, "motion", DateTime.UtcNow, false);
+                window.Show();
+                ((TabControl)window.FindName("DashboardTabs")).SelectedIndex = 1;
+                Refresh(window);
+                var groups = (ItemsControl)window.FindName("BlockedNotificationItemsControl");
+                var group = (NotificationAppGroup)groups.Items[0];
+                var container = (FrameworkElement)groups.ItemContainerGenerator.ContainerFromIndex(0);
+                var label = Descendants<TextBlock>(container).Single(text => text.Name == "NotificationExpandLabel");
+                var rows = Descendants<ItemsControl>(container).Single();
+                group.IsExpanded = true;
+                root.UpdateLayout();
+                Assert.AreEqual(Visibility.Visible, rows.Visibility);
+                Assert.IsTrue(label.HasAnimatedProperties, "알림 펼침 상태에 전환 피드백이 필요합니다.");
+                group.IsExpanded = false;
+                root.UpdateLayout();
+                Assert.AreEqual(Visibility.Collapsed, rows.Visibility, "닫기는 전환을 기다리지 않아야 합니다.");
+                Assert.IsTrue(label.HasAnimatedProperties, "알림 접힘 상태에도 피드백이 필요합니다.");
+                MotionBehavior.AnimationOverride = false;
+                group.IsExpanded = true;
+                root.UpdateLayout();
+                Assert.AreEqual(Visibility.Visible, rows.Visibility);
+                Assert.IsFalse(label.HasAnimatedProperties, "동작 줄이기에서는 즉시 표시해야 합니다.");
+            }
+            finally { MotionBehavior.AnimationOverride = null; }
+        });
     }
 
     [TestMethod]
@@ -309,28 +345,58 @@ public sealed class DashboardNotificationHistoryUiTests
             checkbox.BringIntoView();
             root.UpdateLayout();
             SavePreview(root, "notification-checkbox-selected.png");
-            var summaryButton = Descendants<Button>(container).Single(button => button.Name == "AppSummaryButton");
-            summaryButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            root.UpdateLayout();
-            Assert.IsTrue(messenger.IsSummaryOpen);
-            Assert.IsInstanceOfType<DashboardNotificationSummariesView>(((ContentControl)summaryButton.Tag).Content);
-            Assert.AreEqual(Visibility.Visible, ((StackPanel)window.FindName("NotificationGroupsPanel")).Visibility);
-            SavePreview(root, "notification-inline-summary-empty.png");
+            Assert.IsFalse(Descendants<Button>(container).Any(button => button.Name == "AppSummaryButton"));
+            Assert.IsNull(window.FindName("NotificationSummariesHost"));
+            Assert.IsNull(window.FindName("UnassignedSummariesButton"));
             raw.InsertAsync(new NotificationRecord("new", "MESSENGER", "다른 발신자", "새 가상 알림", "본문", at.AddMinutes(1), false)).GetAwaiter().GetResult();
             Refresh(window);
             Assert.AreSame(messenger, list.Items.Cast<NotificationAppGroup>().Single(group => group.Rows.Length == 3));
             Assert.IsTrue(messenger.IsExpanded);
-            Assert.IsTrue(messenger.IsSummaryOpen, "목록 갱신 후에도 카드 안의 요약을 유지합니다.");
             root.UpdateLayout();
-            container = (FrameworkElement)list.ItemContainerGenerator.ContainerFromIndex(list.Items.IndexOf(messenger));
-            summaryButton = Descendants<Button>(container).Single(button => button.Name == "AppSummaryButton");
-            Assert.IsInstanceOfType<DashboardNotificationSummariesView>(((ContentControl)summaryButton.Tag).Content);
             Assert.AreEqual(1, messenger.Rows.Count(row => row.IsSelected));
             AssertSelected(window, 1, 0);
             SavePreview(root, "notification-groups-expanded.png");
-            summaryButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert.IsFalse(messenger.IsSummaryOpen);
-            Assert.IsTrue(messenger.IsExpanded, "요약을 닫아도 펼쳐 둔 원본 알림은 유지합니다.");
+        });
+    }
+
+    [TestMethod]
+    public void History_BothSections_ShowOnlyAppMetadata_EvenWhenExpanded()
+    {
+        OnDashboard((db, window, _, root) =>
+        {
+            var raw = new SqliteNotificationRepository(db);
+            foreach (bool passed in new[] { false, true })
+                raw.InsertAsync(new NotificationRecord(passed ? "passed" : "blocked", "Messenger",
+                    "PRIVATE_SENDER", "PRIVATE_TITLE", "PRIVATE_BODY", DateTime.UtcNow, passed)).GetAwaiter().GetResult();
+            ((TabControl)window.FindName("DashboardTabs")).SelectedIndex = 1;
+            Refresh(window);
+            AssertNoDetails();
+            ExpandedRows(window, "BlockedNotificationItemsControl");
+            ExpandedRows(window, "NotificationItemsControl");
+            root.UpdateLayout();
+            AssertNoDetails();
+            Assert.IsTrue(Descendants<TextBlock>((StackPanel)window.FindName("NotificationGroupsPanel"))
+                .Where(text => text.Text == "Messenger")
+                .All(text => text.Foreground is SolidColorBrush brush && brush.Color.R > 200),
+                "앱 이름은 어두운 카드 위에서도 읽을 수 있어야 합니다.");
+            Assert.AreEqual(2, Descendants<CheckBox>((StackPanel)window.FindName("NotificationGroupsPanel")).Count());
+            Assert.AreEqual("PRIVATE_BODY", raw.GetByIdAsync("blocked").GetAwaiter().GetResult()!.Body,
+                "리포트에서 사용할 원본 알림은 보존합니다.");
+            SavePreview(root, "notification-app-only.png");
+
+            void AssertNoDetails()
+            {
+                var panel = (StackPanel)window.FindName("NotificationGroupsPanel");
+                Assert.IsTrue(Descendants<TextBlock>(panel).Any(text => text.Text == "Messenger"));
+                foreach (var element in Descendants<FrameworkElement>(panel))
+                {
+                    var label = (element as TextBlock)?.Text ?? "";
+                    label += System.Windows.Automation.AutomationProperties.GetName(element);
+                    label += element.ToolTip?.ToString();
+                    Assert.IsFalse(label.Contains("PRIVATE_"), "내용·발신자는 본문, 툴팁, 접근성 이름에 표시하지 않습니다.");
+                }
+                Assert.IsFalse(Descendants<Button>(panel).Any(button => button.Name == "AppSummaryButton"));
+            }
         });
     }
 
