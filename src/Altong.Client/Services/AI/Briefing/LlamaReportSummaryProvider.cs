@@ -7,6 +7,7 @@ using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
 using Altong.Client.Services.Calendar;
+using Altong.Client.Services.Notifications;
 
 namespace Altong.Client.Services.AI.Briefing;
 
@@ -118,7 +119,7 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
 
             var first = groupNotifications[0];
             var appName = NormalizeDisplayAppName(first.AppName);
-            var sender = first.Sender?.Trim() ?? "";
+            var sender = NotificationSenderResolver.Resolve(first.AppName, first.Sender, first.Title) ?? "";
             var room = BriefingGrouping.KakaoRoom(first)?.Trim();
             var groupKey = $"{BriefingGrouping.AppIdentity(first.AppName)}|{BriefingGrouping.NormalizeIdentity(BriefingGrouping.ModelSender(first))}|{room}";
 

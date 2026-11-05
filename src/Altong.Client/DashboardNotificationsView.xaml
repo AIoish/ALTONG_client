@@ -1,0 +1,214 @@
+<UserControl x:Class="Altong.Client.DashboardNotificationsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="clr-namespace:Altong.Client.Services"
+             FontFamily="{x:Static services:AppTypography.BodyFont}" Foreground="{DynamicResource BlackText}" Background="{DynamicResource BlackCanvas}"
+             UseLayoutRounding="True">
+    <UserControl.Resources><ResourceDictionary>
+        <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/Altong.Client;component/Themes/BlackTheme.xaml" /></ResourceDictionary.MergedDictionaries>
+        <services:AppIconConverter x:Key="AppIcon" />
+        <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource BlackText}" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+        <Style x:Key="Muted" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}"><Setter Property="Foreground" Value="{StaticResource BlackMuted}" /></Style>
+        <Style TargetType="Button">
+            <Setter Property="services:MotionBehavior.ButtonFeedback" Value="True" />
+            <Setter Property="Background" Value="{StaticResource BlackRaised}" /><Setter Property="Foreground" Value="{StaticResource BlackText}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BlackRule}" /><Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,7" /><Setter Property="Cursor" Value="Hand" /><Setter Property="FontSize" Value="12" />
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+                <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackControlRule}" /></Trigger>
+                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
+                    <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Opacity" Value=".4" /></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="FilterTab" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource BlackMuted}" /><Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="13" /><Setter Property="Padding" Value="12,7" /><Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton">
+                <Border x:Name="Surface" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter VerticalAlignment="Center" />
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource BlackRaised}" /></Trigger>
+                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource BlackSelection}" /><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackSelectionRule}" /><Setter Property="Foreground" Value="{StaticResource BlackAccentText}" /></Trigger>
+                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="HistoryCheckBox" TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand" /><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
+                <Border x:Name="Box" Width="18" Height="18" Background="{StaticResource BlackInput}" BorderBrush="{StaticResource BlackControlRule}" BorderThickness="1" CornerRadius="4">
+                    <Path x:Name="Mark" Data="M 3,8 L 7,12 L 13,4" Stroke="{StaticResource BlackActionText}" StrokeThickness="1.8" Visibility="Collapsed" />
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Box" Property="Background" Value="{StaticResource BlackAction}" /><Setter TargetName="Mark" Property="Visibility" Value="Visible" /></Trigger>
+                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="10" /><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
+                <Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True">
+                    <Track.DecreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
+                    <Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="{StaticResource BlackControlRule}" CornerRadius="3" Margin="3,0,1,0" /></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+                    <Track.IncreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
+                </Track>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
+            <Setter Property="Padding" Value="10,8" /><Setter Property="Foreground" Value="{StaticResource BlackText}" />
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem">
+                <Border x:Name="Surface" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter /></Border>
+                <ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource BlackSelection}" /></Trigger></ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Foreground" Value="{StaticResource BlackText}" /><Setter Property="FontSize" Value="12" />
+            <Setter Property="BorderBrush" Value="{StaticResource BlackControlRule}" />
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
+                <Grid>
+                    <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                        <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
+                            <Border x:Name="Surface" Background="{StaticResource BlackInput}" BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderThickness="1" CornerRadius="8">
+                                <Path Data="M 0,0 L 4,4 L 8,0" Stroke="{StaticResource BlackMuted}" StrokeThickness="1.2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            </Border>
+                            <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger></ControlTemplate.Triggers>
+                        </ControlTemplate></ToggleButton.Template>
+                    </ToggleButton>
+                    <TextBlock x:Name="AppFilterLabel" Text="{Binding SelectedItem.Label, RelativeSource={RelativeSource TemplatedParent}}" Margin="10,6,28,6" VerticalAlignment="Center" IsHitTestVisible="False" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                    <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" IsOpen="{TemplateBinding IsDropDownOpen}" Focusable="False">
+                        <Border Background="{StaticResource BlackInput}" BorderBrush="{StaticResource BlackControlRule}" BorderThickness="1" CornerRadius="8" Width="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="240">
+                            <ScrollViewer><ItemsPresenter /></ScrollViewer>
+                        </Border>
+                    </Popup>
+                </Grid>
+                <ControlTemplate.Triggers><Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger></ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+    </ResourceDictionary></UserControl.Resources>
+    <Grid x:Name="PageRoot">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,10">
+            <Grid Margin="0,0,0,8">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="AllTab" GroupName="HistoryStatus" Tag="all" Content="전체" IsChecked="True" Checked="StatusFilter_Changed" Style="{StaticResource FilterTab}" />
+                    <RadioButton x:Name="PassedTab" GroupName="HistoryStatus" Tag="passed" Content="통과" Checked="StatusFilter_Changed" Style="{StaticResource FilterTab}" />
+                    <RadioButton x:Name="BlockedTab" GroupName="HistoryStatus" Tag="blocked" Content="차단" Checked="StatusFilter_Changed" Style="{StaticResource FilterTab}" />
+                </StackPanel>
+                <Button x:Name="RefreshButton" Content="새로고침" Click="Refresh_Click" HorizontalAlignment="Right" Background="Transparent" />
+            </Grid>
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
+                <Border Background="{StaticResource BlackInput}" BorderBrush="{StaticResource BlackControlRule}" BorderThickness="1" CornerRadius="8">
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="30" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{StaticResource BlackMuted}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <TextBox x:Name="SearchBox" Grid.Column="1" Background="Transparent" Foreground="{StaticResource BlackText}" CaretBrush="{StaticResource BlackText}" BorderThickness="0" Padding="0,7,8,7" FontSize="13" MaxLength="200" TextChanged="Search_TextChanged" AutomationProperties.Name="알림 검색 · 발신자, 제목, 본문" ToolTip="발신자·제목·본문 검색" />
+                        <TextBlock Grid.Column="1" Text="발신자·제목·본문 검색" Foreground="{StaticResource BlackMuted}" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" IsHitTestVisible="False">
+                            <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value=""><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+                <ComboBox x:Name="AppFilter" Grid.Column="2" DisplayMemberPath="Label" SelectionChanged="AppFilter_Changed" AutomationProperties.Name="알림 앱 필터" />
+            </Grid>
+            <Grid Height="30">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Button x:Name="SelectPageButton" Content="페이지 전체 선택" Click="SelectPage_Click" FontSize="11" Padding="8,5" Background="Transparent" />
+                <Button x:Name="DismissSelectedButton" Grid.Column="1" Content="선택 제거" Click="DismissSelected_Click" FontSize="11" Padding="8,5" Margin="6,0" />
+                <TextBlock x:Name="SelectedCountText" Grid.Column="2" FontSize="11" Style="{StaticResource Muted}" VerticalAlignment="Center" />
+                <Button x:Name="NewArrivalsButton" Grid.Column="3" Click="Refresh_Click" Foreground="{StaticResource BlackAccentText}" Background="{StaticResource BlackSelection}" BorderBrush="{StaticResource BlackSelectionRule}" Padding="8,5" FontSize="11" Visibility="Collapsed" />
+            </Grid>
+        </StackPanel>
+        <Grid x:Name="ReadingLayout" Grid.Row="1" SizeChanged="ReadingLayout_SizeChanged">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="0" /><ColumnDefinition Width="0" /></Grid.ColumnDefinitions>
+            <Border x:Name="ListPane" Background="{StaticResource BlackSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+                <Grid>
+                    <ListBox x:Name="NotificationsList" Background="Transparent" Foreground="{StaticResource BlackText}" BorderThickness="0" Padding="4" SelectionChanged="Notification_SelectionChanged" PreviewMouseLeftButtonUp="Notification_MouseUp" PreviewKeyDown="Notification_KeyDown"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" AutomationProperties.Name="알림 목록">
+                        <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleText}" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,0,2" />
+                            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
+                                <Border x:Name="Row" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="8"><ContentPresenter /></Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Row" Property="Background" Value="{StaticResource BlackRaised}" /></Trigger>
+                                    <Trigger Property="IsSelected" Value="True"><Setter TargetName="Row" Property="Background" Value="{StaticResource BlackSelection}" /><Setter TargetName="Row" Property="BorderBrush" Value="{StaticResource BlackSelectionRule}" /></Trigger>
+                                    <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Row" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate></Setter.Value></Setter>
+                        </Style></ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate><DataTemplate>
+                            <Grid Height="96" Margin="10,8">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Style="{StaticResource HistoryCheckBox}" VerticalAlignment="Top" Margin="0,3,6,0" AutomationProperties.Name="{Binding TitleText, StringFormat='제거할 알림 선택: {0}'}" />
+                                <StackPanel Grid.Column="1">
+                                    <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="16" Height="16" />
+                                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}" Style="{StaticResource Muted}" FontSize="11" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="0,0,6,0" />
+                                        <TextBlock Grid.Column="2" Text="{Binding ShortTimeText}" Style="{StaticResource Muted}" FontSize="10" />
+                                    </Grid>
+                                    <TextBlock Text="{Binding TitleText}" FontSize="13" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding SenderText}" FontSize="11" Foreground="{StaticResource BlackAccentText}" Margin="0,3,0,3" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding PreviewText}" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" LineHeight="18" MaxHeight="36" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate></ListBox.ItemTemplate>
+                    </ListBox>
+                    <StackPanel x:Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
+                        <TextBlock x:Name="EmptyStateText" Text="알림 불러오는 중…" FontWeight="SemiBold" TextAlignment="Center" />
+                        <Button x:Name="ResetFiltersButton" Content="필터 초기화" Click="ResetFilters_Click" Margin="0,12,0,0" HorizontalAlignment="Center" Visibility="Collapsed" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <Border x:Name="DetailPane" Grid.Column="2" Background="{StaticResource BlackPaper}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+                <Grid>
+                    <TextBlock x:Name="DetailEmptyText" Text="알림을 선택해 내용을 확인하세요." Style="{StaticResource Muted}" FontSize="13" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
+                    <Grid x:Name="DetailContent" Visibility="Collapsed" Margin="16">
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                        <DockPanel Margin="0,0,0,12">
+                            <Button x:Name="BackToListButton" Content="목록으로" Click="BackToList_Click" DockPanel.Dock="Left" Visibility="Collapsed" Margin="0,0,8,0" />
+                            <TextBlock Text="{Binding ClassificationText}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource BlackSoft}" /><Style.Triggers><DataTrigger Binding="{Binding Record.IsPassed}" Value="True"><Setter Property="Foreground" Value="{StaticResource BlackSuccess}" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                            </TextBlock>
+                        </DockPanel>
+                        <ScrollViewer x:Name="DetailScroll" Grid.Row="1" Padding="0,0,8,0">
+                            <StackPanel>
+                                <TextBlock Text="{Binding DisplayName}" Style="{StaticResource Muted}" FontSize="12" />
+                                <TextBlock Text="{Binding TitleText}" FontSize="18" FontWeight="SemiBold" Margin="0,10,0,12" />
+                                <TextBlock Text="{Binding SenderText}" Foreground="{StaticResource BlackAccentText}" FontSize="13" />
+                                <TextBlock Text="{Binding TimeText}" Style="{StaticResource Muted}" FontSize="11" Margin="0,5,0,16" />
+                                <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,0" Padding="0,16,0,0">
+                                    <TextBlock x:Name="DetailBodyText" Text="{Binding BodyText}" FontSize="14" LineHeight="23" />
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                        <WrapPanel Grid.Row="2" Margin="0,12,0,0">
+                            <Button x:Name="CopyNotificationButton" Content="내용 복사" Click="CopyNotification_Click" Margin="0,0,8,0" />
+                            <Button x:Name="DismissNotificationButton" Content="알림 제거" Click="DismissNotification_Click" />
+                        </WrapPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+        <Grid Grid.Row="2" Margin="0,10,0,0">
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <DockPanel x:Name="PaginationPanel">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="PreviousPageButton" Content="이전" Click="PreviousPage_Click" Padding="10,5" />
+                    <TextBlock x:Name="PageNumberText" FontSize="12" Margin="10,0" VerticalAlignment="Center" />
+                    <Button x:Name="NextPageButton" Content="다음" Click="NextPage_Click" Padding="10,5" />
+                </StackPanel>
+                <TextBlock x:Name="ResultCountText" Style="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" />
+            </DockPanel>
+            <DockPanel Grid.Row="1" Margin="0,6,0,0">
+                <Button x:Name="RetryButton" Content="다시 시도" Click="Retry_Click" DockPanel.Dock="Right" Visibility="Collapsed" Padding="8,4" />
+                <TextBlock x:Name="StatusText" Style="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+            </DockPanel>
+        </Grid>
+    </Grid>
+</UserControl>

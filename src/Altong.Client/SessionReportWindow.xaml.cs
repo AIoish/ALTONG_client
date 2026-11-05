@@ -4,6 +4,7 @@ using Altong.Client.Services;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
 using Altong.Client.Services.Calendar;
+using Altong.Client.Services.Notifications;
 
 namespace Altong.Client;
 
@@ -20,6 +21,9 @@ public partial class SessionReportWindow : Window
     private readonly DashboardCalendarStore _calendar;
     private readonly DashboardSummaryStateStore _summaryState;
     private readonly NotificationSummaryCalendarView _summaryCards;
+    private readonly ReportNotificationItem[] _notificationItems;
+    private sealed record ReportNotificationItem(string AppName, string? Sender, string Title, string Body,
+        bool? IsPassed, string? ReplyText);
     private int _notificationDisplayLimit = 50;
     private int _appDisplayLimit = 50;
 
@@ -75,6 +79,25 @@ public partial class SessionReportWindow : Window
                 Percentage = maximumSeconds > 0 ? app.Seconds / maximumSeconds * 100 : 0
             }).ToArray()
         };
+        var highlightApps = result.Notifications.Select(notification => notification.AppName)
+            .Where(app => !string.IsNullOrWhiteSpace(app)).Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(app => app.Length).ToArray();
+        LegacyHighlightItemsControl.ItemsSource = result.NotificationHighlights.Select(text =>
+        {
+            var app = highlightApps.FirstOrDefault(name => text.StartsWith(name + " · ", StringComparison.OrdinalIgnoreCase));
+            return new { AppName = app, AppDisplayName = app ?? "알림 요약", Text = app is null ? text : text[(app.Length + 3)..] };
+        }).ToArray();
+        var remainingReplies = result.QuickReplies.ToList();
+        _notificationItems = result.Notifications.Select(notification =>
+        {
+            var replyIndex = remainingReplies.FindIndex(reply =>
+                string.Equals(reply.AppName, notification.AppName, StringComparison.OrdinalIgnoreCase)
+                && reply.Sender == notification.Sender && reply.NotificationTitle == notification.Title);
+            var replyText = replyIndex >= 0 ? remainingReplies[replyIndex].Text
+                : notification.IsPassed == false ? "확인했습니다. 곧 답변드릴게요." : null;
+            if (replyIndex >= 0) remainingReplies.RemoveAt(replyIndex);
+            return new ReportNotificationItem(notification.AppName, notification.Sender, notification.Title,
+                notification.Body, notification.IsPassed, replyText);
+        }).ToArray();
         if (result.SummaryItems.Count > 0) ShowSummaryItems(result.SummaryItems);
         else if (_summaryProvider is not null && result.SessionId is not null) _ = LoadSummaryItemsAsync();
         UpdateDetailLists();
@@ -82,7 +105,7 @@ public partial class SessionReportWindow : Window
 
     private void UpdateDetailLists()
     {
-        NotificationItemsControl.ItemsSource = _result.Notifications.Take(_notificationDisplayLimit).ToArray();
+        NotificationItemsControl.ItemsSource = _notificationItems.Take(_notificationDisplayLimit).ToArray();
         AppItemsControl.ItemsSource = ((SessionResult)DataContext).Apps.Take(_appDisplayLimit).ToArray();
         MoreNotificationsButton.Visibility = _result.Notifications.Count > _notificationDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
         MoreAppsButton.Visibility = _result.Apps.Count > _appDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
@@ -104,6 +127,18 @@ public partial class SessionReportWindow : Window
 
     private void ShowSummaryItems(IReadOnlyList<NotificationSummaryItem> items)
     {
+        items = items.Select(item =>
+        {
+            if (!string.Equals(item.AppName?.Trim().Replace(".exe", "", StringComparison.OrdinalIgnoreCase),
+                "Discord", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrWhiteSpace(item.Sender)) return item;
+            // 예전 요약에 발신자가 없으면 같은 앱의 원본 차단 알림에서 유일한 출처만 보완한다.
+            var senders = _result.Notifications.Where(notification => notification.IsPassed == false
+                    && string.Equals(notification.AppName.Trim().Replace(".exe", "", StringComparison.OrdinalIgnoreCase),
+                        "Discord", StringComparison.OrdinalIgnoreCase))
+                .Select(notification => NotificationSenderResolver.Resolve(notification.AppName, notification.Sender, notification.Title))
+                .Distinct(StringComparer.Ordinal).Take(2).ToArray();
+            return senders.Length == 1 && !string.IsNullOrWhiteSpace(senders[0]) ? item with { Sender = senders[0] } : item;
+        }).ToArray();
         var existing = _summaryCards.Items.ToDictionary(row => row.Summary.SummaryId);
         _summaryCards.SetItems(items.Select(item => existing.TryGetValue(item.SummaryId, out var row) && row.Summary == item
             ? row : new CalendarSummaryItemViewModel(item, _result.SessionId, correction: _result.SessionId is { } session

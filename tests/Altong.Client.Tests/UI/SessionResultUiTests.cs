@@ -165,8 +165,7 @@ public sealed class SessionResultUiTests
                             AutomationProperties.GetItemStatus(item) == "선택됨"));
                     }
                     tabs.SelectedIndex = 0;
-                    Assert.IsNotNull(window.FindName("BlockedNotificationItemsControl"));
-                    Assert.IsNotNull(window.FindName("NotificationItemsControl"));
+                    Assert.IsInstanceOfType<DashboardNotificationsView>(((ContentControl)window.FindName("NotificationsHost")).Content);
                     Assert.IsNotNull(window.FindName("JournalItemsControl"));
                     Assert.IsNotNull(window.FindName("AppUsageItemsControl"));
                     foreach (int index in new[] { 1, 2, 3, 0 })
@@ -184,9 +183,9 @@ public sealed class SessionResultUiTests
                             root.Arrange(new Rect(size));
                             root.UpdateLayout();
                             PumpBindings();
-                            var pageScroll = (ScrollViewer)tabs.SelectedContent;
-                            Assert.IsTrue(pageScroll.ScrollableWidth <= 1,
-                                "기본 크기와 최소 크기에서 페이지가 가로로 잘리지 않아야 합니다.");
+                            if (tabs.SelectedContent is ScrollViewer pageScroll)
+                                Assert.IsTrue(pageScroll.ScrollableWidth <= 1,
+                                    "기본 크기와 최소 크기에서 페이지가 가로로 잘리지 않아야 합니다.");
                             SavePreview(root, $"page-{index}-{size.Width}.png", size);
                         }
                     }
@@ -471,16 +470,13 @@ public sealed class SessionResultUiTests
                         { Percentage = (12 - i) * 100.0 / 12 }).ToArray();
 
                     tabs.SelectedIndex = 1;
+                    var rawNotifications = new SqliteNotificationRepository(database);
+                    foreach (var item in blocked.Concat(passed)) rawNotifications.InsertAsync(item.Record).GetAwaiter().GetResult();
                     RefreshDashboardData(window);
-                    var blockedGroups = NotificationAppGroup.Group(blocked, []);
-                    var passedGroups = NotificationAppGroup.Group(passed, []);
-                    foreach (var group in blockedGroups.Concat(passedGroups)) group.IsExpanded = true;
-                    ((ItemsControl)window.FindName("BlockedNotificationItemsControl")).ItemsSource = blockedGroups;
-                    ((ItemsControl)window.FindName("NotificationItemsControl")).ItemsSource = passedGroups;
-                    ((TextBlock)window.FindName("BlockedNotificationCountText")).Text = blocked.Length.ToString();
-                    ((TextBlock)window.FindName("PassedNotificationCountText")).Text = passed.Length.ToString();
                     root.UpdateLayout();
-                    var notificationsScroll = (ScrollViewer)tabs.SelectedContent;
+                    var notificationsView = (DashboardNotificationsView)((ContentControl)window.FindName("NotificationsHost")).Content;
+                    var notificationsList = (ListBox)notificationsView.FindName("NotificationsList");
+                    var notificationsScroll = Descendants(notificationsList).OfType<ScrollViewer>().Single();
                     Assert.IsTrue(notificationsScroll.ScrollableHeight > 0);
                     Assert.IsTrue(notificationsScroll.ScrollableWidth <= 1,
                         "알림이 많아도 최소 창 크기에서 가로 잘림이 없어야 합니다.");
@@ -633,9 +629,10 @@ public sealed class SessionResultUiTests
 
     private static void RefreshDashboardData(DashboardWindow window)
     {
-        var refresh = (Task)typeof(DashboardWindow).GetMethod("RefreshDashboardDataAsync",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .Invoke(window, null)!;
+        var refresh = ((TabControl)window.FindName("DashboardTabs")).SelectedIndex == 1
+            ? ((DashboardNotificationsView)((ContentControl)window.FindName("NotificationsHost")).Content).RefreshAsync()
+            : (Task)typeof(DashboardWindow).GetMethod("RefreshDashboardDataAsync",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null)!;
         var frame = new DispatcherFrame();
         var loading = typeof(DashboardWindow).GetField("_dashboardDataLoading",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;

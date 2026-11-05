@@ -51,12 +51,12 @@ public sealed record SessionResult(
         .Take(3)
         .Select(notification => $"{notification.AppName} · {notification.Title}")
         .ToArray();
-    public IReadOnlyList<QuickReplyDraft> QuickReplies => StoredQuickReplies ?? Notifications
-        .Where(notification => notification.IsPassed == false)
-        .Take(3)
-        .Select(notification => new QuickReplyDraft(notification.AppName, notification.Sender,
-            notification.Title, "확인했습니다. 집중 시간이 끝나서 이제 확인했어요. 곧 답변드릴게요."))
-        .ToArray();
+    public IReadOnlyList<QuickReplyDraft> QuickReplies => StoredQuickReplies is { } stored
+        ? stored.Select(reply => reply.Text == "확인했습니다. 집중 시간이 끝나서 이제 확인했어요. 곧 답변드릴게요."
+            ? reply with { Text = "확인했습니다. 곧 답변드릴게요." } : reply).ToArray()
+        : Notifications.Where(notification => notification.IsPassed == false).Take(3)
+            .Select(notification => new QuickReplyDraft(notification.AppName, notification.Sender,
+                notification.Title, "확인했습니다. 곧 답변드릴게요.")).ToArray();
 }
 
 /// <summary>종료된 세션의 저장 작업이 끝나면 저장된 기록과 처리 실패 안내로 결과를 공개한다.</summary>
