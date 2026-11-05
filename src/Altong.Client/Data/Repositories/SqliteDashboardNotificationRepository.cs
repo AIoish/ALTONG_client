@@ -10,6 +10,11 @@ public sealed record DashboardNotificationPage(IReadOnlyList<NotificationRecord>
     public static DashboardNotificationPage Empty { get; } = new([], false, false);
 }
 
+public sealed record DashboardNotificationQuery(bool? IsPassed = null, string? AppName = null, string Search = "");
+public sealed record NotificationAppOption(string? AppName, string Label);
+public sealed record DashboardNotificationSnapshot(IReadOnlyList<string> Ids, int PassedCount, int BlockedCount,
+    IReadOnlyList<NotificationAppOption> Apps);
+
 /// <summary>대시보드 목록의 조회와 제거 상태만 관리한다. 리포트 원본 알림은 수정하지 않는다.</summary>
 public sealed class SqliteDashboardNotificationRepository(IAltongDatabase database)
 {
@@ -23,6 +28,63 @@ public sealed class SqliteDashboardNotificationRepository(IAltongDatabase databa
             SELECT 1 FROM dashboard_notification_dismissals d WHERE d.notification_id = n.id
         )
         """;
+
+    // Snapshot only IDs, not every body. Page navigation keeps its order while new arrivals wait for an explicit refresh.
+    public async Task<DashboardNotificationSnapshot> ReadSnapshotAsync(DashboardNotificationQuery query)
+    {
+        using var connection = database.CreateOpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"""
+            SELECT n.id, n.is_passed FROM notifications n
+            WHERE {Visible}
+              AND ($app IS NULL OR n.app_name = $app COLLATE NOCASE)
+              AND ($search = '' OR instr(lower(n.app_name || char(10) || coalesce(n.sender, '') || char(10) || n.title || char(10) || n.body), lower($search)) > 0)
+            ORDER BY julianday(n.received_at) DESC, n.received_at DESC, n.id DESC;
+            """;
+        command.Parameters.AddWithValue("$app", (object?)query.AppName ?? DBNull.Value);
+        command.Parameters.AddWithValue("$search", query.Search.Trim());
+        var ids = new List<string>();
+        int passed = 0, blocked = 0;
+        using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync().ConfigureAwait(false))
+            {
+                bool isPassed = reader.GetInt32(1) == 1;
+                if (isPassed) passed++; else blocked++;
+                if (query.IsPassed is null || query.IsPassed == isPassed) ids.Add(reader.GetString(0));
+            }
+        }
+        command.Parameters.Clear();
+        command.CommandText = $"SELECT n.app_name, count(*) FROM notifications n WHERE {Visible} GROUP BY n.app_name COLLATE NOCASE ORDER BY n.app_name COLLATE NOCASE;";
+        var apps = new List<NotificationAppOption> { new(null, "모든 앱") };
+        using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync().ConfigureAwait(false))
+            {
+                string app = reader.GetString(0);
+                apps.Add(new(app, $"{(string.IsNullOrWhiteSpace(app) ? "알 수 없는 앱" : app)} ({reader.GetInt32(1)})"));
+            }
+        }
+        transaction.Commit();
+        return new(ids, passed, blocked, apps);
+    }
+
+    public async Task<IReadOnlyList<NotificationRecord>> ReadSnapshotPageAsync(DashboardNotificationSnapshot snapshot, int pageIndex, int pageSize = 30)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(pageIndex);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
+        var ids = snapshot.Ids.Skip(checked(pageIndex * pageSize)).Take(pageSize).ToArray();
+        if (ids.Length == 0) return [];
+        using var connection = database.CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        var names = ids.Select((_, index) => "$id" + index).ToArray();
+        command.CommandText = $"SELECT {Columns} FROM notifications n WHERE {Visible} AND n.id IN ({string.Join(",", names)});";
+        for (int i = 0; i < ids.Length; i++) command.Parameters.AddWithValue(names[i], ids[i]);
+        var records = (await ReadRecordsAsync(command).ConfigureAwait(false)).ToDictionary(record => record.Id);
+        return ids.Where(records.ContainsKey).Select(id => records[id]).ToArray();
+    }
 
     public async Task<DashboardNotificationPage> ReadAsync(int limitPerSection = 50,
         IEnumerable<string>? selectedIds = null)

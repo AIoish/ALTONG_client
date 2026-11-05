@@ -31,12 +31,7 @@ public partial class DashboardWindow : Window
     private bool _dashboardDataLoading;
     private bool _dashboardDataRefreshPending;
     private bool _isClosed;
-    private DateTime _lastNotificationsRefresh = DateTime.MinValue;
-    private readonly HashSet<string> _selectedNotificationIds = new(StringComparer.Ordinal);
-    private NotificationHistoryItem[] _notificationRows = [];
-    private int _notificationDisplayLimit = 50;
-    private bool _removingNotifications;
-    private int _notificationQueryRevision;
+    private DateTime _lastDashboardRefresh = DateTime.MinValue;
     private DateTime _lastFocusUsageRefresh = DateTime.MinValue;
     private DateTime _focusUsageDate;
     private bool _focusUsageLoading;
@@ -75,7 +70,7 @@ public partial class DashboardWindow : Window
             : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(summaryStatePath))!, "dashboard-calendar-schedules.json"));
         Results.PropertyChanged += Results_PropertyChanged;
         ShowHomeFocusUsage(SqliteFocusUsageRepository.Aggregate(DateTime.Today, DateTime.UtcNow, []));
-        UpdateNotificationActions();
+        NotificationsHost.Content = new DashboardNotificationsView(Results.DashboardNotifications);
         UpdateNavigationSelection();
         ReportCalendarHost.Content = new ReportCalendarView(results, calendar, openCalendar, summaryProvider, summaryStatePath);
         _activeWindowTracker.ContextChanged += ActiveWindowTracker_ContextChanged;
@@ -101,6 +96,7 @@ public partial class DashboardWindow : Window
         StateChanged += (_, _) =>
         {
             MaximizeButton.Content = WindowState == WindowState.Maximized ? "❐" : "□";
+            UpdateDashboardCornerClip();
         };
         Loaded += (_, _) =>
         {
@@ -117,9 +113,6 @@ public partial class DashboardWindow : Window
             Results.PropertyChanged -= Results_PropertyChanged;
             _clockTimer.Stop();
             _activeWindowTracker.ContextChanged -= ActiveWindowTracker_ContextChanged;
-            foreach (var row in _notificationRows) row.PropertyChanged -= NotificationSelection_Changed;
-            foreach (var group in BlockedNotificationItemsControl.Items.Cast<NotificationAppGroup>()
-                         .Concat(NotificationItemsControl.Items.Cast<NotificationAppGroup>())) group.SetRows([]);
             if (_focusModeService is not null)
                 _focusModeService.StateChanged -= FocusMode_StateChanged;
             if (_focusModeCoordinator is not null)
@@ -162,8 +155,8 @@ public partial class DashboardWindow : Window
             ? "추적 대기 중"
             : context.ActiveProcess;
         if (IsVisible &&
-            DashboardTabs.SelectedIndex is 1 or 2 &&
-            DateTime.UtcNow - _lastNotificationsRefresh >= TimeSpan.FromSeconds(5))
+            DashboardTabs.SelectedIndex == 2 &&
+            DateTime.UtcNow - _lastDashboardRefresh >= TimeSpan.FromSeconds(5))
             _ = RefreshDashboardDataAsync();
     }
 
@@ -285,43 +278,24 @@ public partial class DashboardWindow : Window
     private async Task RefreshDashboardDataAsync()
     {
         if (_isClosed) return;
-        if (_dashboardDataLoading)
+        if (DashboardTabs.SelectedIndex == 1)
         {
-            _dashboardDataRefreshPending = true;
+            await ((DashboardNotificationsView)NotificationsHost.Content).CheckForUpdatesAsync();
             return;
         }
+        if (_dashboardDataLoading) { _dashboardDataRefreshPending = true; return; }
         _dashboardDataLoading = true;
-        UpdateNotificationActions();
-        if (DashboardTabs.SelectedIndex == 1 && _notificationRows.Length == 0)
-        {
-            NotificationsEmptyStateText.Text = "알림 불러오는 중…";
-            NotificationsEmptyStateText.Visibility = Visibility.Visible;
-        }
-        _lastNotificationsRefresh = DateTime.UtcNow;
+        _lastDashboardRefresh = DateTime.UtcNow;
         try
         {
             int page = DashboardTabs.SelectedIndex;
-            bool loadNotifications = page != 2;
-            bool loadActivity = page != 1;
             var from = DateTime.Today.ToUniversalTime();
             var to = DateTime.UtcNow;
-            var notificationRevision = _notificationQueryRevision;
-            var notificationLimit = _notificationDisplayLimit;
-            var selectedIds = _selectedNotificationIds.ToArray();
             var activeFocus = _focusModeService?.IsEnabled == true ? Results.ActiveSession : null;
-            var context = !loadActivity || activeFocus is null
-                ? null : _activeWindowTracker.CaptureNow();
-            // SQLite executes much of its async API synchronously. Keep reads and aggregation off the UI thread.
+            var context = activeFocus is null ? null : _activeWindowTracker.CaptureNow();
             var data = await Task.Run(async () =>
             {
-                var journalTask = !loadActivity
-                    ? Task.FromResult<IReadOnlyList<ActivityJournalEntry>>(Array.Empty<ActivityJournalEntry>())
-                    : Results.ReadActivityJournalAsync(from, to, focusSessionsOnly: true);
-                var notificationTask = loadNotifications
-                    ? Results.DashboardNotifications.ReadAsync(notificationLimit, selectedIds)
-                    : Task.FromResult(DashboardNotificationPage.Empty);
-                await Task.WhenAll(notificationTask, journalTask);
-                var entries = (await journalTask).ToList();
+                var entries = (await Results.ReadActivityJournalAsync(from, to, focusSessionsOnly: true)).ToList();
                 if (context is { DurationSeconds: > 0 } && activeFocus is not null &&
                     !string.IsNullOrWhiteSpace(context.ActiveProcess))
                 {
@@ -333,63 +307,23 @@ public partial class DashboardWindow : Window
                     if (end > start) entries.Add(new ActivityJournalEntry(context.ActiveProcess, context.WindowTitle, start, end));
                 }
                 var journal = ActivityJournalHour.Group(entries);
-                return (Journal: journal, Notifications: await notificationTask,
-                    Usage: ActivityJournalHour.SummarizeApps(journal));
+                return (Journal: journal, Usage: ActivityJournalHour.SummarizeApps(journal));
             });
             if (_isClosed) return;
-            if (page != DashboardTabs.SelectedIndex || (loadNotifications && notificationRevision != _notificationQueryRevision))
-            {
-                _dashboardDataRefreshPending = true;
-                return;
-            }
-            if (loadNotifications)
-            {
-                foreach (var row in _notificationRows) row.PropertyChanged -= NotificationSelection_Changed;
-                _selectedNotificationIds.IntersectWith(data.Notifications.Records.Select(record => record.Id));
-                var rows = data.Notifications.Records.Select(record => new NotificationHistoryItem(record)
-                    { IsSelected = _selectedNotificationIds.Contains(record.Id) }).ToArray();
-                _notificationRows = rows;
-                foreach (var row in rows) row.PropertyChanged += NotificationSelection_Changed;
-                var blocked = rows.Where(row => row.Record.IsPassed == false).ToArray();
-                var passed = rows.Where(row => row.Record.IsPassed == true).ToArray();
-                BlockedNotificationItemsControl.ItemsSource = NotificationAppGroup.Group(blocked,
-                    BlockedNotificationItemsControl.Items.Cast<NotificationAppGroup>());
-                NotificationItemsControl.ItemsSource = NotificationAppGroup.Group(passed,
-                    NotificationItemsControl.Items.Cast<NotificationAppGroup>());
-                BlockedNotificationCountText.Text = blocked.Length.ToString(CultureInfo.InvariantCulture) + (data.Notifications.HasMoreBlocked ? "+" : "");
-                PassedNotificationCountText.Text = passed.Length.ToString(CultureInfo.InvariantCulture) + (data.Notifications.HasMorePassed ? "+" : "");
-                LoadMoreNotificationsButton.Visibility = data.Notifications.HasMore ? Visibility.Visible : Visibility.Collapsed;
-                NotificationsEmptyStateText.Text = "알림 없음";
-                NotificationsEmptyStateText.Visibility = rows.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-                UpdateNotificationActions();
-            }
-
-            if (loadActivity)
-            {
-                var usage = data.Usage;
-                double maximum = usage.Count == 0 ? 1 : usage.Max(item => item.Seconds);
-                AppUsageItemsControl.ItemsSource = usage
-                    .Select(item => item with { Percentage = item.Seconds / maximum * 100 })
-                    .ToArray();
-                JournalItemsControl.ItemsSource = data.Journal;
-                ActivityJournalEmptyText.Visibility = data.Journal.Count == 0
-                    ? Visibility.Visible : Visibility.Collapsed;
-            }
+            if (page != DashboardTabs.SelectedIndex) { _dashboardDataRefreshPending = true; return; }
+            double maximum = data.Usage.Count == 0 ? 1 : data.Usage.Max(item => item.Seconds);
+            AppUsageItemsControl.ItemsSource = data.Usage.Select(item => item with { Percentage = item.Seconds / maximum * 100 }).ToArray();
+            JournalItemsControl.ItemsSource = data.Journal;
+            ActivityJournalEmptyText.Visibility = data.Journal.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             DataErrorText.Text = "";
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            if (!_isClosed)
-            {
-                DataErrorText.Text = "기록 조회 실패 · 자동 재시도 중…";
-                if (_notificationRows.Length == 0) NotificationsEmptyStateText.Visibility = Visibility.Collapsed;
-            }
-            Console.WriteLine($"[Dashboard] {ex.Message}");
+            if (!_isClosed) DataErrorText.Text = "기록 조회 실패 · 자동 재시도 중…";
         }
         finally
         {
             _dashboardDataLoading = false;
-            if (!_isClosed) UpdateNotificationActions();
             if (_dashboardDataRefreshPending && !_isClosed)
             {
                 _dashboardDataRefreshPending = false;
@@ -397,107 +331,6 @@ public partial class DashboardWindow : Window
             }
         }
     }
-
-    private async void LoadMoreNotifications_Click(object sender, RoutedEventArgs e)
-    {
-        if (_dashboardDataLoading || _removingNotifications || _isClosed) return;
-        _notificationDisplayLimit += 50;
-        _notificationQueryRevision++;
-        await RefreshDashboardDataAsync();
-    }
-
-    private void NotificationSelection_Changed(object? sender, PropertyChangedEventArgs e)
-    {
-        if (sender is not NotificationHistoryItem row || e.PropertyName != nameof(NotificationHistoryItem.IsSelected)) return;
-        if (row.IsSelected) _selectedNotificationIds.Add(row.Record.Id);
-        else _selectedNotificationIds.Remove(row.Record.Id);
-        if (_dashboardDataLoading)
-        {
-            _notificationQueryRevision++;
-            _dashboardDataRefreshPending = true;
-        }
-        UpdateNotificationActions();
-    }
-
-    private void UpdateNotificationActions()
-    {
-        UpdateNotificationGroupActions(SelectAllBlockedNotificationsButton, DismissSelectedBlockedNotificationsButton,
-            SelectedBlockedNotificationCountText, false);
-        UpdateNotificationGroupActions(SelectAllPassedNotificationsButton, DismissSelectedPassedNotificationsButton,
-            SelectedPassedNotificationCountText, true);
-        LoadMoreNotificationsButton.IsEnabled = !_removingNotifications && !_dashboardDataLoading;
-        LoadMoreNotificationsButton.Content = _dashboardDataLoading ? "불러오는 중…" : "이전 알림 더 보기";
-    }
-
-    private void UpdateNotificationGroupActions(System.Windows.Controls.Button button,
-        System.Windows.Controls.Button removeButton, System.Windows.Controls.TextBlock countText, bool passed)
-    {
-        var rows = _notificationRows.Where(row => row.Record.IsPassed == passed).ToArray();
-        var selectedCount = rows.Count(row => row.IsSelected);
-        countText.Text = $"선택 {selectedCount}개";
-        removeButton.IsEnabled = !_removingNotifications && selectedCount > 0;
-        button.IsEnabled = !_removingNotifications && rows.Length > 0;
-        button.Content = rows.Length > 0 && rows.All(row => row.IsSelected)
-            ? "선택 해제" : "전체 선택";
-    }
-
-    private void SelectAllNotifications_Click(object sender, RoutedEventArgs e)
-    {
-        if (_removingNotifications || _isClosed) return;
-        var rows = _notificationRows.Where(row => row.Record.IsPassed == (sender == SelectAllPassedNotificationsButton)).ToArray();
-        bool select = !rows.All(row => row.IsSelected);
-        foreach (var row in rows) row.IsSelected = select;
-    }
-
-    private async void DismissNotification_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: NotificationHistoryItem row })
-            await DismissNotificationsAsync([row.Record.Id]);
-    }
-
-    private async void DismissSelectedNotifications_Click(object sender, RoutedEventArgs e)
-    {
-        var passed = sender == DismissSelectedPassedNotificationsButton;
-        await DismissNotificationsAsync(_notificationRows
-            .Where(row => row.Record.IsPassed == passed && row.IsSelected)
-            .Select(row => row.Record.Id).ToArray());
-    }
-
-    private async Task DismissNotificationsAsync(string[] ids)
-    {
-        if (_removingNotifications || ids.Length == 0 || _isClosed) return;
-        _removingNotifications = true;
-        _notificationQueryRevision++;
-        UpdateNotificationActions();
-        try
-        {
-            await Task.Run(() => Results.DashboardNotifications.DismissAsync(ids));
-            if (_isClosed) return;
-            _selectedNotificationIds.ExceptWith(ids);
-            NotificationHistoryStatusText.Text = $"알림 {ids.Length}개 제거됨";
-            NotificationHistoryStatusText.Visibility = Visibility.Visible;
-        }
-        catch (Exception ex)
-        {
-            if (!_isClosed)
-            {
-                NotificationHistoryStatusText.Text = "제거 실패 · 다시 시도하세요.";
-                NotificationHistoryStatusText.Visibility = Visibility.Visible;
-            }
-            Console.WriteLine($"[Dashboard] 알림 목록 제거 실패: {ex.GetBaseException().Message}");
-        }
-        finally
-        {
-            _removingNotifications = false;
-            if (!_isClosed)
-            {
-                _notificationQueryRevision++;
-                UpdateNotificationActions();
-                await RefreshDashboardDataAsync();
-            }
-        }
-    }
-
     private void Navigate_Click(object sender, RoutedEventArgs e)
     {
         if (sender is System.Windows.Controls.Button { Tag: string page } &&
@@ -550,7 +383,7 @@ public partial class DashboardWindow : Window
         MotionBehavior.Acknowledge(PageTitleText);
         UpdateNavigationSelection();
         BackButton.Visibility = index == 0 ? Visibility.Collapsed : Visibility.Visible;
-        if (_settingsReady && index is 1 or 2)
+        if (_settingsReady && index == 2)
             _ = RefreshDashboardDataAsync();
         if (_settingsReady && index == 0)
             _ = RefreshHomeFocusUsageAsync();
@@ -656,13 +489,13 @@ public partial class DashboardWindow : Window
             Dispatcher.BeginInvoke(() =>
             {
                 UpdateFocusModeView();
-                _lastNotificationsRefresh = DateTime.MinValue;
+                _lastDashboardRefresh = DateTime.MinValue;
                 _ = RefreshDashboardDataAsync();
             });
             return;
         }
         UpdateFocusModeView();
-        _lastNotificationsRefresh = DateTime.MinValue;
+        _lastDashboardRefresh = DateTime.MinValue;
         _ = RefreshDashboardDataAsync();
     }
 
@@ -839,6 +672,16 @@ public partial class DashboardWindow : Window
             WindowsNotificationModeKind.Error => "Windows 방해 금지: 확인 불가",
             _ => "Windows 방해 금지: 확인 중…",
         };
+    }
+
+    private void DashboardSurface_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateDashboardCornerClip();
+
+    private void UpdateDashboardCornerClip()
+    {
+        if (DashboardSurface is null) return;
+        double radius = WindowState == WindowState.Maximized ? 0 : 24;
+        DashboardSurface.CornerRadius = new CornerRadius(radius);
+        DashboardSurface.Clip = new RectangleGeometry(new Rect(DashboardSurface.RenderSize), radius, radius);
     }
 
     private void FitToWorkArea()

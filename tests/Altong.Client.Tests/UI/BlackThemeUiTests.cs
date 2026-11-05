@@ -61,7 +61,8 @@ public sealed class BlackThemeUiTests
             root.Measure(new Size(480, 380));
             root.Arrange(new Rect(0, 0, 480, 380));
             root.UpdateLayout();
-            var expander = (Expander)report.FindName("QuickRepliesExpander");
+            var expander = report.FindName("NotificationsExpander") as Expander;
+            Assert.IsNotNull(expander);
             var provider = (IExpandCollapseProvider)new ExpanderAutomationPeer(expander).GetPattern(PatternInterface.ExpandCollapse);
             Assert.AreEqual(ExpandCollapseState.Collapsed, provider.ExpandCollapseState);
             provider.Expand();

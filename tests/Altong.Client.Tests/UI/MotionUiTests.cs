@@ -22,7 +22,8 @@ public sealed class MotionUiTests
             MotionBehavior.AnimationOverride = true;
             report.Show();
             Pump(30);
-            var expander = (Expander)report.FindName("QuickRepliesExpander");
+            var expander = report.FindName("NotificationsExpander") as Expander;
+            Assert.IsNotNull(expander);
             var header = (ToggleButton)expander.Template.FindName("DisclosureHeader", expander);
             var chevron = (Path)header.Template.FindName("Chevron", header);
             var transform = (RotateTransform)chevron.RenderTransform;

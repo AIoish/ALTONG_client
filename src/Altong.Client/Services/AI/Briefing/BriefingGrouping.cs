@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Altong.Client.Data.Models;
+using Altong.Client.Services.Notifications;
 
 namespace Altong.Client.Services.AI.Briefing;
 
@@ -43,9 +44,10 @@ public static class BriefingGrouping
     /// <summary>Python app_identity: 정규화 후 .exe 제거.</summary>
     public static string AppIdentity(string? appName) => BriefingPromptBuilder.NormalizeAppIdentity(appName);
 
-    /// <summary>발신자가 비어 있으면 앱 이름을 발신자로 쓴다 (Python sqlite_adapter 규칙).</summary>
+    /// <summary>원본 발신자를 사용하고, Discord 제목도 확인한 뒤 정보가 없으면 앱 이름을 쓴다.</summary>
     public static string ModelSender(NotificationRecord notification) =>
-        string.IsNullOrWhiteSpace(notification.Sender) ? notification.AppName : notification.Sender.Trim();
+        NotificationSenderResolver.Resolve(notification.AppName, notification.Sender, notification.Title)
+            ?? notification.AppName;
 
     /// <summary>카카오톡 알림의 title은 방 이름이다. 다른 앱은 null.</summary>
     public static string? KakaoRoom(NotificationRecord notification) =>

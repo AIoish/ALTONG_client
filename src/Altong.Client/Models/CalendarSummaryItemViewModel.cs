@@ -30,6 +30,8 @@ public sealed class CalendarSummaryItemViewModel : INotifyPropertyChanged
     public string Status { get => _status; set { _status = value; Changed(nameof(Status)); } }
     public string ButtonText => IsBusy ? "저장 중…" : IsSaved ? "캘린더에 저장됨" : "캘린더에 저장";
     public string CardLabel => IsScheduleRelated ? "일정" : "AI 요약";
+    public string AppDisplayName => string.IsNullOrWhiteSpace(Summary.AppName) ? "알 수 없는 앱" : Summary.AppName;
+    public string? SourceMetadata => SourceText == Summary.AppName?.Trim() ? null : SourceText;
     public string ScheduleTitle => string.IsNullOrWhiteSpace(Draft.Title) ? "일정 제목 확인 필요" : Draft.Title;
     public string ScheduleWhen => Draft.Start is { } start && Draft.End is { } end
         ? (start.Date == end.Date ? $"{start:yyyy년 M월 d일} · {start:HH:mm}–{end:HH:mm}"

@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:services="clr-namespace:Altong.Client.Services"
         Title="ALTONG" Width="920" Height="780" MinWidth="640" MinHeight="520"
-        WindowStartupLocation="CenterScreen" WindowStyle="None"
-        Background="{DynamicResource BlackCanvas}" Foreground="{DynamicResource BlackText}" FontFamily="{x:Static services:AppTypography.BodyFont}"
+        WindowStartupLocation="CenterScreen" WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" Foreground="{DynamicResource BlackText}" FontFamily="{x:Static services:AppTypography.BodyFont}"
         FontSize="14" UseLayoutRounding="True" SnapsToDevicePixels="True">
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="44" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="24" UseAeroCaptionButtons="False" />
@@ -56,7 +56,7 @@
                                 <Setter Property="Text" Value="&#xE916;" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding}" Value="자동 집중 관리"><Setter Property="Text" Value="&#xEB44;" /></DataTrigger>
-                                    <DataTrigger Binding="{Binding}" Value="알림과 시스템"><Setter Property="Text" Value="&#xEA8F;" /></DataTrigger>
+                                    <DataTrigger Binding="{Binding}" Value="시스템 설정"><Setter Property="Text" Value="&#xEA8F;" /></DataTrigger>
                                     <DataTrigger Binding="{Binding}" Value="앱별 알림 제어"><Setter Property="Text" Value="&#xED35;" /></DataTrigger>
                                 </Style.Triggers>
                             </Style></TextBlock.Style>
@@ -214,72 +214,8 @@
                 <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource Muted}" HorizontalAlignment="Right" />
             </Grid>
         </DataTemplate>
-        <DataTemplate x:Key="NotificationRow">
-            <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,0" Padding="0,14">
-                <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="32" /><ColumnDefinition Width="36" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,8,0" AutomationProperties.Name="{Binding DisplayName, StringFormat='알림 선택: {0}'}" />
-                    <Image x:Name="NotificationAppIcon" Grid.Column="1" Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="26" Height="26" VerticalAlignment="Center" Margin="0,0,10,0" />
-                    <StackPanel Grid.Column="2">
-                        <DockPanel>
-                            <TextBlock Text="{Binding TimeText}" DockPanel.Dock="Right" Style="{StaticResource Muted}" FontSize="11" Margin="12,0,0,0" />
-                            <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}" Foreground="{StaticResource PrimaryText}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap" />
-                        </DockPanel>
-                        <Button Content="제거" Click="DismissNotification_Click" HorizontalAlignment="Right" FontSize="11" Padding="10,6" Margin="0,6,0,0" ToolTip="목록에서 제거" />
-                    </StackPanel>
-                </Grid>
-            </Border>
-        </DataTemplate>
-        <Style x:Key="NotificationHeaderToggle" TargetType="ToggleButton">
-            <Setter Property="services:MotionBehavior.ButtonFeedback" Value="True" />
-            <Setter Property="Foreground" Value="{StaticResource BlackText}" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
-                <Border x:Name="Surface" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="10">
-                    <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
-                </Border>
-                <ControlTemplate.Triggers>
-                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource BlackRaised}" /></Trigger>
-                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
-                </ControlTemplate.Triggers>
-            </ControlTemplate></Setter.Value></Setter>
-        </Style>
-        <BooleanToVisibilityConverter x:Key="NotificationGroupVisibility" />
-        <DataTemplate x:Key="NotificationAppCard">
-            <Border Background="{StaticResource BlackSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="16" Padding="14" Margin="0,0,0,10">
-                <StackPanel>
-                    <Grid>
-                        <ToggleButton x:Name="NotificationHeaderButton" Style="{StaticResource NotificationHeaderToggle}" IsChecked="{Binding IsExpanded, Mode=TwoWay}"
-                                      ToolTip="알림 목록" AutomationProperties.Name="{Binding DisplayName, StringFormat='알림 펼치기 또는 접기: {0}'}">
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <Border Width="38" Height="38" CornerRadius="10" Background="{StaticResource BlackSurface}" Margin="0,0,10,0" VerticalAlignment="Top">
-                                    <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="26" Height="26" />
-                                </Border>
-                                <StackPanel Grid.Column="1">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding DisplayName}" FontSize="16" FontWeight="SemiBold" Margin="0,0,10,6" TextWrapping="Wrap" />
-                                        <Border Grid.Column="1" Background="{StaticResource BlackRaised}" CornerRadius="7" Padding="7,3" Margin="0,0,0,6" VerticalAlignment="Top">
-                                            <TextBlock Text="{Binding CountText}" Foreground="{StaticResource BlackSoft}" FontSize="11" />
-                                        </Border>
-                                    </Grid>
-                                    <WrapPanel Margin="0,6,0,0">
-                                        <TextBlock Text="{Binding LatestTimeText}" Style="{StaticResource Muted}" FontSize="11" Margin="0,0,10,0" />
-                                        <TextBlock x:Name="NotificationExpandLabel" Text="{Binding ExpandText}" Foreground="{StaticResource BlackText}" FontSize="11" services:MotionBehavior.TextFeedback="True" />
-                                    </WrapPanel>
-                                </StackPanel>
-                            </Grid>
-                        </ToggleButton>
-                    </Grid>
-                    <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource NotificationRow}" Margin="0,12,0,0"
-                                  Visibility="{Binding IsExpanded, Converter={StaticResource NotificationGroupVisibility}}" services:MotionBehavior.FadeOnReveal="True" />
-                </StackPanel>
-            </Border>
-        </DataTemplate>
     </ResourceDictionary></Window.Resources>
-    <Border Background="{StaticResource WindowSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="24">
+    <Border x:Name="DashboardSurface" Background="{StaticResource WindowSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="24" SizeChanged="DashboardSurface_SizeChanged">
         <Grid>
             <Grid.RowDefinitions><RowDefinition Height="44" /><RowDefinition Height="*" /></Grid.RowDefinitions>
             <Grid Margin="20,0,8,0">
@@ -426,37 +362,7 @@
                             </Grid>
                         </ScrollViewer>
                     </TabItem>
-                    <TabItem Header="알림 확인">
-                        <ScrollViewer x:Name="NotificationScroll"><StackPanel>
-                            <StackPanel x:Name="NotificationGroupsPanel">
-                            <TextBlock x:Name="NotificationsEmptyStateText" Text="알림 없음" Style="{StaticResource Muted}" Margin="0,0,0,12" Visibility="Collapsed" />
-                            <Border x:Name="PassedNotificationsCard" Style="{StaticResource Card}"><StackPanel>
-                                <DockPanel Margin="0,0,0,8">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="통과 알림" Style="{StaticResource Heading}" Margin="0" /><TextBlock x:Name="PassedNotificationCountText" Margin="8,2,0,0" Foreground="{StaticResource BlackSuccess}" /></StackPanel>
-                                </DockPanel>
-                                <WrapPanel Margin="0,0,0,4">
-                                    <Button x:Name="SelectAllPassedNotificationsButton" Content="전체 선택" Click="SelectAllNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" />
-                                    <Button x:Name="DismissSelectedPassedNotificationsButton" Content="선택 제거" Click="DismissSelectedNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" IsEnabled="False" ToolTip="선택한 통과 알림 제거" />
-                                    <TextBlock x:Name="SelectedPassedNotificationCountText" Text="선택 0개" Foreground="{StaticResource BlackText}" FontSize="12" VerticalAlignment="Center" Margin="0,0,0,8" />
-                                </WrapPanel>
-                                <ItemsControl x:Name="NotificationItemsControl" ItemTemplate="{StaticResource NotificationAppCard}" />
-                            </StackPanel></Border>
-                            <Border x:Name="BlockedNotificationsCard" Style="{StaticResource Card}"><StackPanel>
-                                <DockPanel Margin="0,0,0,8">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="차단 알림" Style="{StaticResource Heading}" Margin="0" /><TextBlock x:Name="BlockedNotificationCountText" Margin="8,2,0,0" Foreground="{StaticResource BlackText}" /></StackPanel>
-                                </DockPanel>
-                                <WrapPanel Margin="0,0,0,4">
-                                    <Button x:Name="SelectAllBlockedNotificationsButton" Content="전체 선택" Click="SelectAllNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" />
-                                    <Button x:Name="DismissSelectedBlockedNotificationsButton" Content="선택 제거" Click="DismissSelectedNotifications_Click" FontSize="12" Padding="10,6" Margin="0,0,8,8" IsEnabled="False" ToolTip="선택한 차단 알림 제거" />
-                                    <TextBlock x:Name="SelectedBlockedNotificationCountText" Text="선택 0개" Foreground="{StaticResource BlackText}" FontSize="12" VerticalAlignment="Center" Margin="0,0,0,8" />
-                                </WrapPanel>
-                                <ItemsControl x:Name="BlockedNotificationItemsControl" ItemTemplate="{StaticResource NotificationAppCard}" />
-                            </StackPanel></Border>
-                            <TextBlock x:Name="NotificationHistoryStatusText" Style="{StaticResource Muted}" FontSize="12" Margin="0,0,0,12" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
-                            <Button x:Name="LoadMoreNotificationsButton" Content="이전 알림 더 보기" Click="LoadMoreNotifications_Click" HorizontalAlignment="Center" Margin="0,0,0,12" Visibility="Collapsed" />
-                            </StackPanel>
-                        </StackPanel></ScrollViewer>
-                    </TabItem>
+                    <TabItem Header="알림 확인"><ContentControl x:Name="NotificationsHost" /></TabItem>
                     <TabItem Header="활동 일지">
                         <ScrollViewer><StackPanel>
                             <TextBlock x:Name="DataPeriodText" Text="오늘 · 집중 중 앱 사용 기록" Style="{StaticResource Muted}" Margin="0,0,0,4" />
@@ -541,13 +447,12 @@
                               </Expander>
                             </Border>
                             <Border Style="{StaticResource SettingsCard}" Tag="{Binding ElementName=SystemSettingsExpander}">
-                              <Expander x:Name="SystemSettingsExpander" Header="알림과 시스템" Tag="루틴 알림 · 시작 프로그램 · 앱 정보" Style="{StaticResource BlackExpander}" HeaderTemplate="{StaticResource SettingsAccordionHeader}">
+                              <Expander x:Name="SystemSettingsExpander" Header="시스템 설정" Tag="루틴 알림 · 시작 프로그램 · 앱 정보" Style="{StaticResource BlackExpander}" HeaderTemplate="{StaticResource SettingsAccordionHeader}">
                                <StackPanel Margin="40,0,0,10">
                                 <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,0,1" Margin="0,0,0,12" />
                                 <TextBlock x:Name="WindowsDndStatusText" Style="{StaticResource Muted}" Margin="0,0,0,8" />
                                 <WrapPanel>
                                     <Button x:Name="ShowRoutineReminderButton" Content="현재 루틴 알림 보기" Click="ShowRoutineReminderButton_Click" Margin="0,0,8,8" />
-                                    <Button Content="알림 확인" Tag="1" Click="Navigate_Click" Margin="0,0,0,8" />
                                 </WrapPanel>
                                 <CheckBox x:Name="LaunchAtStartupCheckBox" Content="Windows 시작 시 알통 실행" Click="LaunchAtStartupCheckBox_Click" Margin="0,4,0,0"
                                           AutomationProperties.HelpText="로그인 시 트레이에서 시작" />

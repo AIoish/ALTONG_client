@@ -266,6 +266,9 @@ public sealed class WinRtNotificationListener : IWindowsNotificationListener
             }
         }
 
+        // Discord는 일반적인 두 줄 토스트에서도 제목에 발신자를 제공한다.
+        sender = NotificationSenderResolver.Resolve(appName, sender, title) ?? string.Empty;
+
         // 3. 만약 일반 앱에서 3줄 이상 전달된 경우 (Line 2가 발신자/보조정보인 경우)
         if (string.IsNullOrEmpty(sender) && textLines.Count > 2)
         {
