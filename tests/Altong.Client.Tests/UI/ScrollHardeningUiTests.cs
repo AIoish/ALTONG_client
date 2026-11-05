@@ -115,14 +115,21 @@ public sealed class ScrollHardeningUiTests
     public void ThousandSummaries_RevealInBatches_WithoutLosingEditableRows() => RunSta(() =>
     {
         var view = new NotificationSummaryCalendarView(Enumerable.Range(0, 1000)
-            .Select(i => new NotificationSummaryItem("summary-" + i, "긴 요약 본문", false, null)).ToArray());
+            .Select(i => new NotificationSummaryItem("summary-" + i, "긴 요약 본문", i == 0, null)).ToArray());
         var items = (ItemsControl)view.FindName("SummaryItemsControl");
         Assert.AreEqual(1000, view.Items.Length);
         Assert.AreEqual(25, items.Items.Count);
         var first = view.Items[0];
+        first.IsEditing = true;
+        first.Title = "편집 중인 일정";
+        var firstGroup = (ReportSummaryGroupViewModel)items.Items[0];
+        Assert.AreSame(first, firstGroup.Schedules.Single());
         ((Button)view.FindName("MoreSummariesButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.AreEqual(50, items.Items.Count);
-        Assert.AreSame(first, items.Items[0]);
+        Assert.AreSame(firstGroup, items.Items[0]);
+        Assert.AreSame(first, view.Items[0]);
+        Assert.IsTrue(first.IsEditing);
+        Assert.AreEqual("편집 중인 일정", first.Title);
     });
 
     [TestMethod]

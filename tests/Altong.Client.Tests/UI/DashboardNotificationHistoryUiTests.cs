@@ -16,6 +16,30 @@ namespace Altong.Client.Tests;
 public sealed class DashboardNotificationHistoryUiTests
 {
     [TestMethod]
+    public void SearchPending_KeepsNotificationListBackgroundTransparent() => RunSta(() =>
+    {
+        using var db = Database();
+        var raw = new SqliteNotificationRepository(db);
+        Insert(raw, 1, DateTime.UtcNow);
+        var view = new DashboardNotificationsView(new(db));
+        Await(view.RefreshAsync());
+        Layout(view, new Size(800, 620));
+
+        var list = (ListBox)view.FindName("NotificationsList");
+        var search = (TextBox)view.FindName("SearchBox");
+        search.Text = "발신자";
+        Assert.IsFalse(list.IsEnabled, "검색을 처리하는 동안 기존 목록은 조작할 수 없어야 합니다.");
+        list.ApplyTemplate();
+        var surface = (Border)list.Template.FindName("ListSurface", list);
+        Assert.AreEqual(Colors.Transparent, ((SolidColorBrush)surface.Background).Color,
+            "검색 중에도 알림 목록 배경이 밝아지면 안 됩니다.");
+
+        Await(view.RefreshAsync());
+        Assert.IsTrue(list.IsEnabled);
+        Assert.AreEqual(1, view.VisibleItems.Count);
+    });
+
+    [TestMethod]
     public void ThousandItems_KeepPageSelectionAndReadingPosition_WhenNewNotificationsArrive() => RunSta(() =>
     {
         using var db = Database();

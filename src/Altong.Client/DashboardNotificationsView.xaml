@@ -50,6 +50,19 @@
                 </ControlTemplate.Triggers>
             </ControlTemplate></Setter.Value></Setter>
         </Style>
+        <Style x:Key="NotificationList" TargetType="ListBox">
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBox">
+                <Border x:Name="ListSurface" Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                    <ScrollViewer Focusable="False" Padding="{TemplateBinding Padding}"
+                                  CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
+                                  HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                  VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
+                        <ItemsPresenter />
+                    </ScrollViewer>
+                </Border>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
         <Style TargetType="ScrollBar">
             <Setter Property="Width" Value="10" /><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
                 <Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True">
@@ -127,7 +140,7 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="0" /><ColumnDefinition Width="0" /></Grid.ColumnDefinitions>
             <Border x:Name="ListPane" Background="{StaticResource BlackSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
                 <Grid>
-                    <ListBox x:Name="NotificationsList" Background="Transparent" Foreground="{StaticResource BlackText}" BorderThickness="0" Padding="4" SelectionChanged="Notification_SelectionChanged" PreviewMouseLeftButtonUp="Notification_MouseUp" PreviewKeyDown="Notification_KeyDown"
+                    <ListBox x:Name="NotificationsList" Style="{StaticResource NotificationList}" Background="Transparent" Foreground="{StaticResource BlackText}" BorderThickness="0" Padding="4" SelectionChanged="Notification_SelectionChanged" PreviewMouseLeftButtonUp="Notification_MouseUp" PreviewKeyDown="Notification_KeyDown"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True"
                              VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" AutomationProperties.Name="알림 목록">
                         <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem">

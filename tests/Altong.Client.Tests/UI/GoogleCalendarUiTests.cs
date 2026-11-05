@@ -12,6 +12,7 @@ using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
 using Altong.Client.Services;
 using Altong.Client.Services.Calendar;
+using Altong.Client.Services.AI.Briefing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Altong.Client.Tests;
@@ -19,6 +20,64 @@ namespace Altong.Client.Tests;
 [TestClass]
 public sealed class GoogleCalendarUiTests
 {
+    [TestMethod]
+    public void Report_SavesRestoredGroupIdsInSnapshot() => RunSta(folder =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        const string session = "restored-group";
+        var start = new DateTime(2026, 10, 4, 9, 0, 0, DateTimeKind.Utc);
+        var sessions = new SqliteFocusSessionRepository(db);
+        Await(sessions.StartSessionAsync(new FocusSessionRecord(session, start)));
+        Await(sessions.EndSessionAsync(session, start.AddMinutes(25), true));
+        var reports = new SessionResultsService(db, sessions).Reports;
+        var notifications = new[]
+        {
+            new NotificationRecord("n1", "Slack", "사용자", "프로젝트", "프로젝트 진행", start.AddMinutes(1), false, SessionId: session),
+            new NotificationRecord("n2", "Slack", "사용자", "프로젝트", "프로젝트 공유", start.AddMinutes(2), false, SessionId: session)
+        };
+        var summaries = notifications.Select(notification => new NotificationSummaryItem(
+            LlamaReportSummaryProvider.ComputeDeterministicId("sum", session,
+                SummaryGroupResolver.GroupKey(notification), [notification.Id]),
+            notification.Body, false, null) { AppName = "Slack" }).ToArray();
+        var result = new SessionResult(start, start.AddMinutes(25), notifications, [], true)
+            { SessionId = session, SummaryItems = summaries };
+        var report = new SessionReportWindow(result, reports, calendar: new DashboardCalendarStore(Path.Combine(folder, "calendar.json")),
+            summaryStatePath: Path.Combine(folder, "state.json"));
+        try
+        {
+            report.Show();
+            ((Button)report.FindName("SaveReportButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => !report.IsVisible);
+            var loaded = reports.GetSnapshotAsync(session);
+            Await(loaded);
+            var saved = loaded.Result!;
+            Assert.IsFalse(string.IsNullOrWhiteSpace(saved.SummaryItems[0].GroupId));
+            Assert.AreEqual(saved.SummaryItems[0].GroupId, saved.SummaryItems[1].GroupId);
+        }
+        finally { report.Close(); }
+    });
+
+    [TestMethod]
+    public void Report_GroupsSplitSummaries_WhileKeepingEachSchedule() => RunSta(folder =>
+    {
+        var supplied = new FakeReportSummaryProvider().ReadAsync("grouped", CancellationToken.None).GetAwaiter().GetResult().Items;
+        var first = supplied[0] with { GroupId = "group-1" };
+        var second = supplied[2] with { GroupId = "group-1" };
+        var separate = supplied[1] with { GroupId = "group-2" };
+        var cards = new NotificationSummaryCalendarView([first, second, separate]);
+        Layout(cards, new Size(600, 660));
+
+        var list = (ItemsControl)cards.FindName("SummaryItemsControl");
+        Assert.AreEqual(2, list.Items.Count);
+        var group = (ReportSummaryGroupViewModel)list.Items[0];
+        StringAssert.Contains(group.Text, first.Text);
+        StringAssert.Contains(group.Text, second.Text);
+        CollectionAssert.AreEqual(new[] { first.SummaryId, second.SummaryId },
+            group.Schedules.Select(row => row.Summary.SummaryId).ToArray());
+        Assert.AreEqual(separate.Text, ((ReportSummaryGroupViewModel)list.Items[1]).Text);
+    });
+
     [TestMethod]
     public void Report_SavesAndCorrectsSchedules_PersistsAcrossReopen_AndSynchronizesWithDashboard() => RunSta(folder =>
     {
@@ -73,7 +132,9 @@ public sealed class GoogleCalendarUiTests
                     "AI 요약이 있어도 일부 알림 처리 실패 안내를 유지합니다.");
                 var list = (ItemsControl)cards.FindName("SummaryItemsControl");
                 FrameworkElement Row(int index) => (FrameworkElement)list.ItemContainerGenerator.ContainerFromIndex(index);
-                CalendarButton(Row(1)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.IsFalse(Descendants<Button>(Row(1)).Any(button => button.Content is string text
+                    && text is "캘린더에 저장" or "캘린더에 저장됨" or "저장 중…"),
+                    "일반 요약에는 일정 등록 버튼이 없어야 합니다.");
                 Assert.IsNull(calendar.Get("first", supplied[1].SummaryId), "일반 알림에는 일정 저장을 허용하지 않습니다.");
                 var save = CalendarButton(Row(0));
                 save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

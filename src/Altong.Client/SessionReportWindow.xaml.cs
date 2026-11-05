@@ -5,6 +5,7 @@ using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
 using Altong.Client.Services.Calendar;
 using Altong.Client.Services.Notifications;
+using Altong.Client.Services.AI.Briefing;
 
 namespace Altong.Client;
 
@@ -125,8 +126,9 @@ public partial class SessionReportWindow : Window
         UpdateDetailLists();
     }
 
-    private void ShowSummaryItems(IReadOnlyList<NotificationSummaryItem> items)
+    private void ShowSummaryItems(IReadOnlyList<NotificationSummaryItem> items, bool updateSnapshot = true)
     {
+        items = SummaryGroupResolver.Restore(items, _result.SessionId, _result.Notifications);
         items = items.Select(item =>
         {
             if (!string.Equals(item.AppName?.Trim().Replace(".exe", "", StringComparison.OrdinalIgnoreCase),
@@ -139,6 +141,12 @@ public partial class SessionReportWindow : Window
                 .Distinct(StringComparer.Ordinal).Take(2).ToArray();
             return senders.Length == 1 && !string.IsNullOrWhiteSpace(senders[0]) ? item with { Sender = senders[0] } : item;
         }).ToArray();
+        if (updateSnapshot)
+        {
+            _result = _result with { SummaryItems = items };
+            if (DataContext is SessionResult displayed)
+                DataContext = displayed with { SummaryItems = items };
+        }
         var existing = _summaryCards.Items.ToDictionary(row => row.Summary.SummaryId);
         _summaryCards.SetItems(items.Select(item => existing.TryGetValue(item.SummaryId, out var row) && row.Summary == item
             ? row : new CalendarSummaryItemViewModel(item, _result.SessionId, correction: _result.SessionId is { } session
@@ -199,8 +207,7 @@ public partial class SessionReportWindow : Window
             if (_closed) return;
             if (supply.Items.Count > 0)
             {
-                if (!supply.IsDemo) _result = _result with { SummaryItems = supply.Items };
-                ShowSummaryItems(supply.Items);
+                ShowSummaryItems(supply.Items, updateSnapshot: !supply.IsDemo);
             }
             SummaryLoadStatusText.Text = supply.Items.Count == 0 ? "새 요약 없음 · 다시 불러올 수 있어요." : "";
             SummaryLoadStatusText.Visibility = supply.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

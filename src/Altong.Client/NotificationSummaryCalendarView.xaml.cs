@@ -1,11 +1,13 @@
 using System.Windows;
 using Altong.Client.Models;
+using Altong.Client.Services.AI.Briefing;
 
 namespace Altong.Client;
 
 public partial class NotificationSummaryCalendarView : System.Windows.Controls.UserControl
 {
     public CalendarSummaryItemViewModel[] Items { get; private set; } = [];
+    private ReportSummaryGroupViewModel[] _groups = [];
     private int _displayLimit = 25;
     public event EventHandler<CalendarSummaryItemViewModel>? ScheduleCorrected;
     public event EventHandler<CalendarSummaryItemViewModel>? ScheduleSaveRequested;
@@ -23,15 +25,18 @@ public partial class NotificationSummaryCalendarView : System.Windows.Controls.U
     {
         if (Items.SequenceEqual(items)) return;
         Items = items;
+        _groups = items.GroupBy(row => (row.SessionId, App: BriefingGrouping.AppIdentity(row.Summary.AppName),
+                Group: string.IsNullOrWhiteSpace(row.Summary.GroupId) ? "summary:" + row.Summary.SummaryId : row.Summary.GroupId))
+            .Select(group => new ReportSummaryGroupViewModel(group)).ToArray();
         UpdateVisibleItems();
         CalendarLinkHint.Visibility = Items.Any(row => row.IsScheduleRelated) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateVisibleItems()
     {
-        SummaryItemsControl.ItemsSource = Items.Take(_displayLimit).ToArray();
-        MoreSummariesButton.Visibility = Items.Length > _displayLimit ? Visibility.Visible : Visibility.Collapsed;
-        MoreSummariesButton.Content = $"요약 더 보기 · {Math.Min(_displayLimit, Items.Length)}/{Items.Length}";
+        SummaryItemsControl.ItemsSource = _groups.Take(_displayLimit).ToArray();
+        MoreSummariesButton.Visibility = _groups.Length > _displayLimit ? Visibility.Visible : Visibility.Collapsed;
+        MoreSummariesButton.Content = $"요약 더 보기 · {Math.Min(_displayLimit, _groups.Length)}/{_groups.Length}그룹";
     }
 
     private void MoreSummaries_Click(object sender, RoutedEventArgs e)
