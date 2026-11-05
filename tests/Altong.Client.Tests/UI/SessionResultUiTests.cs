@@ -548,7 +548,6 @@ public sealed class SessionResultUiTests
                         Assert.AreEqual("집중 완료 · 집중 리포트", report.Title);
                         Assert.AreEqual("집중 리포트", ((TextBlock)report.FindName("ReportHeadingText")).Text);
                         Assert.AreEqual("집중 완료", ((TextBlock)report.FindName("ReportBadgeText")).Text);
-                        Assert.IsFalse(((Expander)report.FindName("QuickRepliesExpander")).IsExpanded);
                         Assert.IsFalse(((Expander)report.FindName("AppUsageExpander")).IsExpanded);
                         Assert.IsFalse(((Expander)report.FindName("NotificationsExpander")).IsExpanded);
                         var surface = (System.Windows.Media.SolidColorBrush)((Border)report.Content).Background;
@@ -566,7 +565,8 @@ public sealed class SessionResultUiTests
                             var scroll = reportGrid.Children.OfType<ScrollViewer>().Single();
                             Assert.IsTrue(scroll.ViewportHeight > 0);
                             Assert.IsTrue(scroll.ScrollableWidth <= 1, "결과 리포트에 가로 잘림이 없어야 합니다.");
-                            Assert.AreEqual(3, ((ItemsControl)report.FindName("QuickReplyItemsControl")).Items.Count);
+                            var notifications = (ItemsControl)report.FindName("NotificationItemsControl");
+                            Assert.AreEqual(blocked.Count() + 2, notifications.Items.Count);
                             foreach (var name in new[] { "SaveReportButton", "SkipSaveButton" })
                             {
                                 var action = (Button)report.FindName(name);
@@ -579,11 +579,20 @@ public sealed class SessionResultUiTests
                             var closeButton = (Button)report.FindName("ReportCloseButton");
                             Assert.AreEqual("창 닫기", AutomationProperties.GetName(closeButton));
                             SavePreview(reportRoot, $"report-{size.Width}.png", size);
-                            ((Expander)report.FindName("QuickRepliesExpander")).IsExpanded = true;
+                            var notificationsExpander = (Expander)report.FindName("NotificationsExpander");
+                            notificationsExpander.IsExpanded = true;
                             reportRoot.UpdateLayout();
-                            var replies = (ItemsControl)report.FindName("QuickReplyItemsControl");
-                            var lastReply = replies.ItemContainerGenerator.ContainerFromIndex(replies.Items.Count - 1);
-                            var copy = Descendants(lastReply).OfType<Button>().Single();
+                            var replies = Descendants(notifications).OfType<Expander>()
+                                .Where(expander => Equals(expander.Header, "답변하기") && expander.Visibility == Visibility.Visible)
+                                .ToArray();
+                            Assert.AreEqual(blocked.Count(), replies.Length,
+                                "차단 알림의 답변하기가 해당 원본 알림 안에 표시되어야 합니다.");
+                            var lastReply = replies.Last();
+                            Assert.IsFalse(lastReply.IsExpanded);
+                            lastReply.IsExpanded = true;
+                            reportRoot.UpdateLayout();
+                            var copy = Descendants(lastReply).OfType<Button>().Single(button => Equals(button.Content, "문구 복사"));
+                            Assert.AreEqual("확인했습니다. 곧 답변드릴게요.", copy.Tag);
                             copy.BringIntoView();
                             PumpBindings();
                             reportRoot.UpdateLayout();
@@ -596,7 +605,8 @@ public sealed class SessionResultUiTests
                             Assert.IsTrue(Math.Abs(scroll.VerticalOffset - scroll.ScrollableHeight) <= 1,
                                 "알림이 많아도 리포트 끝까지 스크롤할 수 있어야 합니다.");
                             SavePreview(reportRoot, $"report-bottom-{size.Width}.png", size);
-                            ((Expander)report.FindName("QuickRepliesExpander")).IsExpanded = false;
+                            lastReply.IsExpanded = false;
+                            notificationsExpander.IsExpanded = false;
                             scroll.ScrollToTop();
                         }
                     }
