@@ -45,6 +45,16 @@ public sealed class WorkContextClassifierTests
     [DataRow("TslGame.exe", WorkCategory.Leisure)]
     [DataRow("Minecraft.Windows.exe", WorkCategory.Leisure)]
     [DataRow("EADesktop.exe", WorkCategory.Leisure)]
+    [DataRow("stats.exe", WorkCategory.Work)]
+    [DataRow("StataMP-64.exe", WorkCategory.Work)]
+    [DataRow("PBIDesktop.exe", WorkCategory.Work)]
+    [DataRow("saplogon.exe", WorkCategory.Work)]
+    [DataRow("Scrivener.exe", WorkCategory.Work)]
+    [DataRow("FL64.exe", WorkCategory.Work)]
+    [DataRow("ARCHICAD.exe", WorkCategory.Work)]
+    [DataRow("X2.exe", WorkCategory.Work)]
+    [DataRow("putty.exe", WorkCategory.Work)]
+    [DataRow("obs64.exe", WorkCategory.Neutral)]
     public void ClassifiesKnownApps(string process, WorkCategory expected) =>
         Assert.AreEqual(expected, WorkContextClassifier.Classify(process));
 
