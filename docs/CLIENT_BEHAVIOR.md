@@ -87,9 +87,16 @@
 
 - **동작 조건:** 대시보드 설정의 **자동 집중 관리**가 켜져 있고(기본 켜짐), 집중 제어 방식이 **알통 자체 제어**이고 제어할 앱이 하나 이상 있을 때만 동작합니다. Windows 방해 금지 방식은 켜고 끄는 API가 없어 동작하지 않고, 알통 자체 제어가 검증되지 않은 Windows 빌드에서는 제어 가능한 앱 목록이 비어 있어 동작하지 않습니다. 설정은 체크하는 즉시 `%LOCALAPPDATA%/Altong/auto-dnd-settings.json`에 저장됩니다.
 - **앱 분류:** 프로세스 이름만으로 나눕니다(`WorkContextClassifier`). 창 제목은 보지 않고, AutoDND 로그에도 남기지 않습니다.
-  - 작업: VS Code·Visual Studio·Antigravity·JetBrains IDE·터미널, Office·한글·Notion·Obsidian, Figma·Adobe·AutoCAD 등
-  - 중립(진행도를 쌓지도 깎지도 않음): 탐색기·설정, 카카오톡·Discord·Slack·Teams·Zoom, Spotify, 브라우저·PDF 뷰어, 목록에 없는 앱
-  - 비작업: 리그 오브 레전드·발로란트·오버워치·Steam·Battle.net·Epic 등
+  - 작업: 분야별로 하루 종일 쓰는 프로그램
+    - 개발·인프라: VS Code·Visual Studio·Antigravity·JetBrains IDE·터미널·메모장, Git·Docker, PuTTY·WinSCP·Wireshark·가상 머신, DB 도구
+    - 통계·연구·분석: SPSS·Stata·SAS·Minitab·R·MATLAB·Origin·Prism·Mathematica·Power BI·Tableau, EndNote·Zotero
+    - 사무·업무 시스템: Office·한컴오피스·LibreOffice·MS Project·SAP GUI, Notion·Obsidian·Evernote, AI 앱(Claude·ChatGPT·Gemini)
+    - 글쓰기·번역: Scrivener·Trados·memoQ
+    - 디자인·영상·음악: Figma·Canva·Adobe·CLIP STUDIO·DaVinci Resolve·Vrew·CapCut, FL Studio·REAPER·Pro Tools·MuseScore
+    - 3D·건축·기계·전자: Blender·Maya·3ds Max·Cinema 4D, AutoCAD·Revit·SketchUp·Rhino·Archicad, SolidWorks·CATIA·Inventor·Fusion 360, KiCad·Altium·Quartus·Vivado·LabVIEW
+  - 중립(진행도를 쌓지도 깎지도 않음): 탐색기·설정, 카카오톡·Discord·Slack·Teams·Zoom·Outlook, Spotify·동영상 플레이어·OBS, 브라우저·PDF 뷰어, 목록에 없는 앱
+  - 비작업: 게임 런처(Steam·Battle.net·Epic·EA·Ubisoft 등), 리그 오브 레전드·발로란트·오버워치·배그·로스트아크·메이플·던파·마인크래프트·원신 등, Netflix
+  - 한계: 목록에 없는 전문 프로그램(업종별 ERP·의료·세무 프로그램 등)은 중립이라 작업 시간이 쌓이지 않습니다. 방송인·게임 개발자·QA처럼 게임이 일인 경우는 비작업으로 잘못 봅니다. 사용자가 분류를 직접 고치는 설정이 필요합니다([ROADMAP.md](ROADMAP.md) 보류 항목).
 
 ### 진입 (제안)
 

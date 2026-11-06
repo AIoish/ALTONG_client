@@ -813,6 +813,11 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
         if (ocr != null)
         {
             var result = ocr.RecognizeAsync(softwareBitmap).AsTask().GetAwaiter().GetResult();
+            double textAngle = result.TextAngle ?? 0;
+            if (Math.Abs(textAngle) >= 0.5)
+            {
+                AppLogger.Info($"[KakaoInterceptor] Windows OCR이 기울기 {textAngle:0.0}도로 판단해 줄 좌표를 되돌림");
+            }
             if (result.Lines != null)
             {
             foreach (var line in result.Lines)
@@ -824,6 +829,8 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
                 double rawMinY = line.Words.Count > 0 ? line.Words.Min(w => w.BoundingRect.Y) : 0;
                 double rawMaxX = line.Words.Count > 0 ? line.Words.Max(w => w.BoundingRect.X + w.BoundingRect.Width) : 0;
                 double rawMaxY = line.Words.Count > 0 ? line.Words.Max(w => w.BoundingRect.Y + w.BoundingRect.Height) : 0;
+                (rawMinX, rawMinY, rawMaxX, rawMaxY) = UnrotateOcrBox(
+                    rawMinX, rawMinY, rawMaxX, rawMaxY, textAngle, scaledWidth / 2.0, scaledHeight / 2.0);
 
                 // 업스케일링 좌표를 원본 창 좌표계로 정규화 복원
                 double minX = rawMinX / OcrUpscaleFactor;
@@ -913,6 +920,31 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
         }
 
         return parsedLines.Select(p => (p.Text, p.Y / scale)).ToList();
+    }
+
+    /// <summary>
+    /// Windows OCR은 글자가 기울었다고 판단하면(TextAngle) 기울기를 바로잡은 이미지 기준으로 단어 상자를 준다.
+    /// 팝업 글자는 기울어 있지 않아도 줄이 적으면 각도를 잘못 잡는 일이 있어(-7.6도 사례), 상자를 원래 이미지 좌표로
+    /// 되돌려야 PP-OCR이 글자를 온전히 잘라 읽고 줄 위치로 방 이름·발신자·본문을 제대로 나눈다.
+    /// 이미지 중심을 기준으로 상자 네 모서리를 각도만큼 돌린 뒤 감싸는 상자를 돌려준다.
+    /// </summary>
+    internal static (double MinX, double MinY, double MaxX, double MaxY) UnrotateOcrBox(
+        double minX, double minY, double maxX, double maxY, double angleDegrees, double centerX, double centerY)
+    {
+        if (angleDegrees == 0)
+        {
+            return (minX, minY, maxX, maxY);
+        }
+
+        double radians = angleDegrees * Math.PI / 180;
+        double cos = Math.Cos(radians);
+        double sin = Math.Sin(radians);
+        var corners = new[] { (minX, minY), (maxX, minY), (minX, maxY), (maxX, maxY) }
+            .Select(p => (
+                X: centerX + (p.Item1 - centerX) * cos - (p.Item2 - centerY) * sin,
+                Y: centerY + (p.Item1 - centerX) * sin + (p.Item2 - centerY) * cos))
+            .ToArray();
+        return (corners.Min(p => p.X), corners.Min(p => p.Y), corners.Max(p => p.X), corners.Max(p => p.Y));
     }
 
     /// <summary>

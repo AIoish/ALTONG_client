@@ -21,16 +21,21 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern int GetClassName(nint hWnd, StringBuilder lpClassName, int nMaxCount);
 }
 
 /// <summary>
 /// OS로부터 조회한 활성 창 정보 DTO.
 /// </summary>
+/// <param name="ClassName">Win32 창 클래스 이름. 같은 프로세스 안에서 일시적인 셸 창(트레이 펼침 등)을 가려낼 때 쓴다.</param>
 public record WindowInfo(
     nint Handle,
     int ProcessId,
     string ProcessName,
-    string WindowTitle);
+    string WindowTitle,
+    string ClassName = "");
 
 /// <summary>
 /// 활성 창 정보 조회 공급자 인터페이스 (단위 테스트 시 Mocking/Fake 주입용).
@@ -62,7 +67,13 @@ public sealed class LiveWindowInfoProvider : IWindowInfoProvider
         string processName = ResolveProcessName((int)processId);
         string windowTitle = ResolveWindowTitle(handle);
 
-        return new WindowInfo(handle, (int)processId, processName, windowTitle);
+        return new WindowInfo(handle, (int)processId, processName, windowTitle, ResolveClassName(handle));
+    }
+
+    private static string ResolveClassName(nint handle)
+    {
+        var builder = new StringBuilder(256);
+        return NativeMethods.GetClassName(handle, builder, builder.Capacity) > 0 ? builder.ToString() : string.Empty;
     }
 
     private static string ResolveProcessName(int processId)

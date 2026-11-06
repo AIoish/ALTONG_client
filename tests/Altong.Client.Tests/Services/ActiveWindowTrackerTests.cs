@@ -368,6 +368,125 @@ public sealed class ActiveWindowTrackerTests
     }
 
     [TestMethod]
+    public void SystemDialogsAndFlyouts_PickerHostAndShellHost_AreIgnored()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // 실제 로그에서 현재 창으로 잡혔던 시스템 대화상자·플라이아웃·실행기. 몇 초 떠 있어도 작업 맥락은 그대로여야 한다.
+        var systemWindows = new[]
+        {
+            new WindowInfo(200, 5678, "PickerHost.exe", "배터리 전원이 부족합니다."),
+            new WindowInfo(201, 5678, "PickerHost.exe", "Claude의 카메라 액세스를 허용할까요?"),
+            new WindowInfo(300, 9101, "ShellHost.exe", "빠른 설정"),
+            new WindowInfo(400, 9102, "CredentialUIBroker.exe", "Windows 보안"),
+            new WindowInfo(500, 9103, "Microsoft.CmdPal.UI.exe", "명령 도구 모음"),
+            new WindowInfo(501, 9103, "Microsoft.CmdPal.UI.exe", "PowerDock"),
+            new WindowInfo(600, 9104, "SamsungSettingsHost.exe", "Samsung Settings Quick"),
+        };
+
+        foreach (var systemWindow in systemWindows)
+        {
+            windowProvider.Current = systemWindow;
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+            tracker.CaptureNow();
+            timeProvider.Advance(TimeSpan.FromSeconds(4));
+            CurrentContext context = tracker.CaptureNow();
+
+            Assert.AreEqual("Antigravity IDE.exe", context.ActiveProcess, systemWindow.WindowTitle);
+            Assert.AreEqual(0, context.RecentWindows?.Count ?? 0, systemWindow.WindowTitle);
+        }
+    }
+
+    [TestMethod]
+    public void TrayOverflowWindow_IsIgnoredByClassName_ButFileExplorerIsNot()
+    {
+        var timeProvider = new TestTimeProvider();
+        var ideWindow = new WindowInfo(100, 1234, "Antigravity IDE.exe", "ALTONG_client - Antigravity");
+        var windowProvider = new FakeWindowInfoProvider { Current = ideWindow };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        // 트레이 펼침 창은 explorer.exe지만 창 클래스로 거른다
+        windowProvider.Current = new WindowInfo(200, 5678, "explorer.exe", "시스템 트레이 오버플로 창입니다.",
+            "TopLevelWindowForOverflowXamlIsland");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        Assert.AreEqual("Antigravity IDE.exe", tracker.CaptureNow().ActiveProcess);
+
+        // 같은 explorer.exe라도 파일 탐색기 창은 정상 작업 창
+        windowProvider.Current = new WindowInfo(300, 5678, "explorer.exe", "AI서비스 프로젝트 - 파일 탐색기", "CabinetWClass");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(3.5));
+        CurrentContext context = tracker.CaptureNow();
+
+        Assert.AreEqual("explorer.exe", context.ActiveProcess);
+        Assert.AreEqual("AI서비스 프로젝트 - 파일 탐색기", context.WindowTitle);
+    }
+
+    [TestMethod]
+    public void LockScreen_IsCurrentWhileLocked_ButIsNotKeptAsRecentWindow()
+    {
+        var timeProvider = new TestTimeProvider();
+        var windowProvider = new FakeWindowInfoProvider { Current = new WindowInfo(1, 101, "Code.exe", "main.cs") };
+
+        using var tracker = new ActiveWindowTracker(
+            windowProvider,
+            pollingInterval: TimeSpan.FromMilliseconds(500),
+            stabilizationThreshold: TimeSpan.FromSeconds(3),
+            selfProcessId: 9999,
+            timeProvider: timeProvider);
+
+        tracker.Start();
+
+        windowProvider.Current = new WindowInfo(2, 102, "chrome.exe", "Docs");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(3.5));
+        tracker.CaptureNow();
+
+        // 잠겨 있는 동안에는 잠금 화면이 현재 창이다 (자리를 비운 상태를 그대로 보여 준다)
+        windowProvider.Current = new WindowInfo(3, 103, "LockApp.exe", "Windows 기본 잠금 화면");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(3.5));
+        CurrentContext locked = tracker.CaptureNow();
+        Assert.AreEqual("LockApp.exe", locked.ActiveProcess);
+        CollectionAssert.AreEqual(new[] { "chrome.exe|Docs", "Code.exe|main.cs" },
+            locked.RecentWindows!.Select(w => $"{w.AppName}|{w.WindowTitle}").ToArray());
+
+        // 잠금 해제 뒤에는 최근 창 자리를 차지하지 않는다
+        windowProvider.Current = new WindowInfo(1, 101, "Code.exe", "main.cs");
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        tracker.CaptureNow();
+        timeProvider.Advance(TimeSpan.FromSeconds(3.5));
+        CurrentContext unlocked = tracker.CaptureNow();
+
+        Assert.AreEqual("Code.exe", unlocked.ActiveProcess);
+        CollectionAssert.AreEqual(new[] { "chrome.exe|Docs" },
+            unlocked.RecentWindows!.Select(w => $"{w.AppName}|{w.WindowTitle}").ToArray());
+    }
+
+    [TestMethod]
     public void ValidExplorerWindow_WithNonEmptyTitle_IsNotIgnored()
     {
         var timeProvider = new TestTimeProvider();
