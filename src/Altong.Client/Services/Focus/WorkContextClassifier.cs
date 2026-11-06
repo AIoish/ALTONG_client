@@ -26,33 +26,49 @@ public static class WorkContextClassifier
             // 개발
             "Code", "Code - Insiders", "devenv", "Antigravity", "Antigravity IDE", "Cursor", "Windsurf",
             "idea64", "pycharm64", "rider64", "webstorm64", "clion64", "goland64", "datagrip64", "studio64",
-            "WindowsTerminal", "powershell", "pwsh", "cmd", "sublime_text", "notepad++",
-            "GitHubDesktop", "Postman", "Ssms", "MATLAB", "rstudio",
-            // 문서·기획
-            "WINWORD", "EXCEL", "POWERPNT", "ONENOTE", "Hwp", "HwpViewer", "Notion", "Obsidian",
-            // 디자인·전문 도구
-            "Figma", "Photoshop", "Illustrator", "InDesign", "AfterFX", "Adobe Premiere Pro",
-            "acad", "AutoCAD", "blender",
+            "eclipse", "Unity", "UnrealEditor", "Arduino IDE",
+            "WindowsTerminal", "powershell", "pwsh", "cmd", "sublime_text", "notepad++", "Notepad",
+            "GitHubDesktop", "Fork", "SourceTree", "GitKraken", "Docker Desktop", "Postman", "Insomnia",
+            // 데이터베이스·분석
+            "Ssms", "sqldeveloper", "sqldeveloper64", "sqldeveloper64W", "MySQLWorkbench", "dbeaver", "heidisql", "pgAdmin4",
+            "MATLAB", "rstudio",
+            // AI 도구 (대부분 작업하면서 쓴다)
+            "claude", "ChatGPT", "Gemini",
+            // 문서·기획·공부
+            "WINWORD", "EXCEL", "POWERPNT", "ONENOTE", "MSACCESS", "VISIO",
+            "Hwp", "HwpViewer", "HCell", "HShow", "soffice", "soffice.bin",
+            "Notion", "Obsidian", "Evernote", "Typora", "Zotero", "Anki",
+            // 디자인·영상·전문 도구
+            "Figma", "Canva", "Photoshop", "Illustrator", "InDesign", "AfterFX", "Adobe Premiere Pro", "Lightroom",
+            "Resolve", "Vrew", "CLIPStudioPaint", "krita", "blender",
+            "acad", "AutoCAD", "SketchUp", "Revit", "Rhino", "SLDWORKS", "FreeCAD",
         ]),
         (WorkCategory.Neutral,
         [
             // 시스템
-            "explorer", "SystemSettings", "ApplicationFrameHost", "Taskmgr",
-            // 메신저·회의 (업무 연락 겸용)
-            "KakaoTalk", "Discord", "slack", "ms-teams", "Teams", "Zoom",
-            // 작업 중 틀어 두는 음악
-            "Spotify",
-            // 내용에 따라 다른 앱 (Step 2에서 KLUE 판별 대상)
-            "chrome", "msedge", "whale", "firefox", "brave", "opera",
-            "Acrobat", "AcroRd32", "PDFXEdit",
+            "explorer", "Files", "SystemSettings", "ApplicationFrameHost", "Taskmgr",
+            // 메신저·메일·회의 (업무 연락 겸용)
+            "KakaoTalk", "Discord", "slack", "ms-teams", "Teams", "Zoom", "Telegram", "LINE", "WhatsApp", "OUTLOOK", "olk",
+            // 음악·동영상 플레이어 (작업 중에 틀어 두거나 강의를 보기도 한다)
+            "Spotify", "PotPlayerMini64", "vlc",
+            // 내용에 따라 다른 앱 (창 제목 판별은 보류: 현재 필터 모델로는 안 됨)
+            "chrome", "msedge", "whale", "firefox", "brave", "opera", "vivaldi", "Arc",
+            "Acrobat", "AcroRd32", "PDFXEdit", "Hpdf",
             // 알통 자체
             "Altong.Client",
         ]),
         (WorkCategory.Leisure,
         [
-            "League of Legends", "LeagueClient", "LeagueClientUx", "VALORANT", "VALORANT-Win64-Shipping",
-            "RiotClientServices", "Overwatch", "Steam", "steamwebhelper", "Battle.net", "EpicGamesLauncher",
-            "MapleStory", "Netflix",
+            // 게임 런처
+            "Steam", "steamwebhelper", "Battle.net", "EpicGamesLauncher", "RiotClientServices",
+            "EADesktop", "UbisoftConnect", "GalaxyClient",
+            // 게임. 마인크래프트 자바판(javaw)은 자바 개발 도구와 이름이 같아 넣지 않는다.
+            "League of Legends", "LeagueClient", "LeagueClientUx", "VALORANT", "VALORANT-Win64-Shipping", "Overwatch",
+            "TslGame", "LOSTARK", "MapleStory", "DNF", "BlackDesert64", "StarCraft", "Diablo IV", "Hearthstone",
+            "Minecraft.Windows", "RobloxPlayerBeta", "GenshinImpact", "StarRail", "ZenlessZoneZero",
+            "cs2", "dota2", "FortniteClient-Win64-Shipping", "eldenring",
+            // 동영상 서비스 앱
+            "Netflix",
         ]));
 
     /// <summary>

@@ -87,9 +87,9 @@
 
 - **동작 조건:** 대시보드 설정의 **자동 집중 관리**가 켜져 있고(기본 켜짐), 집중 제어 방식이 **알통 자체 제어**이고 제어할 앱이 하나 이상 있을 때만 동작합니다. Windows 방해 금지 방식은 켜고 끄는 API가 없어 동작하지 않고, 알통 자체 제어가 검증되지 않은 Windows 빌드에서는 제어 가능한 앱 목록이 비어 있어 동작하지 않습니다. 설정은 체크하는 즉시 `%LOCALAPPDATA%/Altong/auto-dnd-settings.json`에 저장됩니다.
 - **앱 분류:** 프로세스 이름만으로 나눕니다(`WorkContextClassifier`). 창 제목은 보지 않고, AutoDND 로그에도 남기지 않습니다.
-  - 작업: VS Code·Visual Studio·Antigravity·JetBrains IDE·터미널, Office·한글·Notion·Obsidian, Figma·Adobe·AutoCAD 등
-  - 중립(진행도를 쌓지도 깎지도 않음): 탐색기·설정, 카카오톡·Discord·Slack·Teams·Zoom, Spotify, 브라우저·PDF 뷰어, 목록에 없는 앱
-  - 비작업: 리그 오브 레전드·발로란트·오버워치·Steam·Battle.net·Epic 등
+  - 작업: VS Code·Visual Studio·Antigravity·JetBrains IDE·터미널·메모장, DB 도구(SQL Developer·MySQL Workbench·DBeaver 등), AI 앱(Claude·ChatGPT·Gemini), Office·한컴오피스·LibreOffice·Notion·Obsidian, Figma·Canva·Adobe·DaVinci Resolve·Vrew, AutoCAD·SketchUp·Revit 등
+  - 중립(진행도를 쌓지도 깎지도 않음): 탐색기·설정, 카카오톡·Discord·Slack·Teams·Zoom·Outlook, Spotify·동영상 플레이어, 브라우저·PDF 뷰어, 목록에 없는 앱
+  - 비작업: 게임 런처(Steam·Battle.net·Epic·EA·Ubisoft 등), 리그 오브 레전드·발로란트·오버워치·배그·로스트아크·메이플·던파·마인크래프트·원신 등, Netflix
 
 ### 진입 (제안)
 
