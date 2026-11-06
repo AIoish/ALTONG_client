@@ -112,6 +112,16 @@ public sealed class SqliteSessionReportRepository(IAltongDatabase database)
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    public async Task DeleteAllAsync()
+    {
+        using var connection = database.CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        // Only calendar report entries are removed; source activity and notifications remain available.
+        command.CommandText = "DELETE FROM focus_session_reports;";
+        await command.ExecuteNonQueryAsync();
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     public async Task<SessionResult?> GetSnapshotAsync(string sessionId)
     {
         using var connection = database.CreateOpenConnection();

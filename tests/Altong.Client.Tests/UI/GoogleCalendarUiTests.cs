@@ -167,7 +167,7 @@ public sealed class GoogleCalendarUiTests
                 File.WriteAllText(Path.Combine(folder, "first.json"), "{invalid-json");
                 Reload(report);
                 Assert.AreSame(editing, cards.Items[2]);
-                StringAssert.Contains(((TextBlock)report.FindName("SummaryLoadStatusText")).Text, "실패");
+                StringAssert.Contains(((TextBlock)report.FindName("SummaryLoadStatusText")).Text, "불러오지 못했습니다");
                 CalendarButton(Row(2)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert.IsTrue(editing.IsSaved);
                 Assert.IsFalse(editing.IsEditing);

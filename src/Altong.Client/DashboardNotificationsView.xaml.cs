@@ -181,9 +181,12 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         _settingApps = true;
         try
         {
-            var choices = options.ToList();
+            var choices = options.Select(option => !string.IsNullOrWhiteSpace(option.AppName)
+                    && option.Label.StartsWith(option.AppName, StringComparison.OrdinalIgnoreCase)
+                ? option with { Label = Services.AppNameDisplayConverter.Format(option.AppName) + option.Label[option.AppName.Length..] }
+                : option).ToList();
             if (appName is not null && !choices.Any(option => string.Equals(option.AppName, appName, StringComparison.OrdinalIgnoreCase)))
-                choices.Add(new(appName, string.IsNullOrWhiteSpace(appName) ? "알 수 없는 앱" : appName));
+                choices.Add(new(appName, Services.AppNameDisplayConverter.Format(appName)));
             AppFilter.ItemsSource = choices;
             AppFilter.SelectedItem = choices.First(option => string.Equals(option.AppName, appName, StringComparison.OrdinalIgnoreCase));
         }
@@ -286,7 +289,11 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         DetailContent.DataContext = row;
         DetailContent.Visibility = row is null ? Visibility.Collapsed : Visibility.Visible;
         DetailEmptyText.Visibility = row is null ? Visibility.Visible : Visibility.Collapsed;
-        if (changed) { DetailScroll.ScrollToTop(); Services.MotionBehavior.Acknowledge(DetailContent); }
+        if (changed)
+        {
+            DetailScroll.ScrollToTop();
+            if (!_narrow) Services.MotionBehavior.Transition(DetailContent, offsetX: 4, offsetY: 0);
+        }
         UpdateActions();
     }
 
@@ -316,6 +323,7 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         _listOffset = ListScroll()?.VerticalOffset ?? 0;
         _detailRequested = true;
         UpdateResponsiveLayout();
+        Services.MotionBehavior.Transition(DetailPane, offsetX: 4, offsetY: 0);
         BackToListButton.Focus();
     }
     private void BackToList_Click(object sender, RoutedEventArgs args)
@@ -324,6 +332,7 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         UpdateResponsiveLayout();
         UpdateLayout();
         ListScroll()?.ScrollToVerticalOffset(_listOffset);
+        Services.MotionBehavior.Transition(ListPane, offsetX: -4, offsetY: 0);
         NotificationsList.Focus();
     }
     private ScrollViewer? ListScroll() => Descendants(NotificationsList).OfType<ScrollViewer>().FirstOrDefault();
@@ -384,8 +393,9 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         if (_detail is null) return;
         try
         {
-            Clipboard.SetText($"{_detail.DisplayName}\n{_detail.SenderText}\n{_detail.Record.Title}\n\n{_detail.Record.Body}");
+            Clipboard.SetText($"{_detail.Record.AppName}\n{_detail.SenderText}\n{_detail.Record.Title}\n\n{_detail.Record.Body}");
             StatusText.Text = "내용 복사됨";
+            Services.MotionBehavior.Acknowledge(StatusText);
         }
         catch (Exception) { StatusText.Text = "복사 실패 · 다시 시도하세요."; }
     }

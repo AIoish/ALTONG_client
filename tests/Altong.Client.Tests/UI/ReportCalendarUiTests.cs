@@ -18,6 +18,140 @@ namespace Altong.Client.Tests;
 public sealed class ReportCalendarUiTests
 {
     [TestMethod]
+    public void ResetAll_RequiresConfirmation_ClearsEveryDate_AndPreservesSourceRecords() => RunSta(() =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var results = new SessionResultsService(db, sessions);
+        var first = new DateTime(2026, 10, 5, 3, 0, 0, DateTimeKind.Utc);
+        var second = first.AddDays(45);
+        SeedResetReport(results, sessions, "reset-first", first);
+        SeedResetReport(results, sessions, "reset-second", second);
+        Await(new SqliteNotificationRepository(db).InsertAsync(new("original", "Slack", "사용자", "원본", "원본 본문", first, false, SessionId: "reset-first")));
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".calendar.json");
+        try
+        {
+            var calendar = new DashboardCalendarStore(path);
+            var a = ResetTestSchedule("reset-first", first);
+            var b = ResetTestSchedule("reset-second", second);
+            calendar.Save(a);
+            calendar.Save(b);
+            var view = new ReportCalendarView(results, calendar);
+            Await(view.SelectDateAsync(a.LocalDate));
+            var reset = (Button)view.FindName("ResetHistoryButton");
+            var confirm = (Button)view.FindName("ConfirmResetButton");
+            var panel = (Border)view.FindName("ResetConfirmationPanel");
+            var status = (TextBlock)view.FindName("HistoryStatusText");
+            reset.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.AreEqual(Visibility.Visible, panel.Visibility);
+            ((Button)view.FindName("CancelResetButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+            Assert.AreEqual(1, calendar.GetDay(a.LocalDate).Count);
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("reset-first").GetAwaiter().GetResult());
+
+            reset.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var size = new Size(568, 330);
+            view.Measure(size); view.Arrange(new Rect(size)); view.UpdateLayout();
+            var bounds = confirm.TransformToAncestor(view).TransformBounds(new Rect(confirm.RenderSize));
+            Assert.IsTrue(bounds.Left >= 0 && bounds.Right <= size.Width && bounds.Bottom <= size.Height);
+            SavePreview(view, "calendar-reset-confirmation.png", size);
+            int deletes = 0;
+            results.Reports.Changed += (_, _) => deletes++;
+            confirm.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            confirm.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => status.Text == "저장된 리포트와 일정을 모두 초기화했습니다.");
+            Assert.AreEqual(1, deletes);
+            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+            Assert.AreEqual(0, ((ListBox)view.FindName("ReportList")).Items.Count);
+            Assert.AreEqual(0, ((ListBox)view.FindName("ScheduleList")).Items.Count);
+            Assert.AreEqual(0, new DashboardCalendarStore(path).GetDay(b.LocalDate).Count);
+            Assert.IsNull(results.OpenReportAsync("reset-first").GetAwaiter().GetResult());
+            Assert.IsNull(results.OpenReportAsync("reset-second").GetAwaiter().GetResult());
+            db.Initialize();
+            Assert.IsNull(results.OpenReportAsync("reset-first").GetAwaiter().GetResult(), "다시 초기화해도 원본 기록에서 삭제한 리포트가 재생성되면 안 됩니다.");
+            using var connection = db.CreateOpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT (SELECT count(*) FROM focus_sessions), (SELECT count(*) FROM notifications);";
+            using var reader = command.ExecuteReader();
+            Assert.IsTrue(reader.Read());
+            Assert.AreEqual(2, reader.GetInt32(0));
+            Assert.AreEqual(1, reader.GetInt32(1));
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    });
+
+    [TestMethod]
+    public void ResetAll_PartialFailureIsReported_AndRetryCanFinish() => RunSta(() =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var results = new SessionResultsService(db, sessions);
+        var start = new DateTime(2026, 10, 5, 3, 0, 0, DateTimeKind.Utc);
+        SeedResetReport(results, sessions, "reset-failure", start);
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".calendar.json");
+        try
+        {
+            var calendar = new DashboardCalendarStore(path);
+            var schedule = ResetTestSchedule("reset-failure", start);
+            calendar.Save(schedule);
+            var view = new ReportCalendarView(results, calendar);
+            Await(view.SelectDateAsync(schedule.LocalDate));
+            using var connection = db.CreateOpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TRIGGER fail_reset BEFORE DELETE ON focus_session_reports BEGIN SELECT RAISE(ABORT, 'controlled failure'); END;";
+            command.ExecuteNonQuery();
+            Await(view.ResetAllAsync());
+            StringAssert.Contains(((TextBlock)view.FindName("HistoryStatusText")).Text, "리포트를 삭제하지 못했습니다");
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("reset-failure").GetAwaiter().GetResult());
+            Assert.AreEqual(0, calendar.GetDay(schedule.LocalDate).Count);
+            Assert.IsTrue(((Button)view.FindName("ResetHistoryButton")).IsEnabled);
+            command.CommandText = "DROP TRIGGER fail_reset;";
+            command.ExecuteNonQuery();
+            Await(view.ResetAllAsync());
+            Assert.AreEqual("저장된 리포트와 일정을 모두 초기화했습니다.", ((TextBlock)view.FindName("HistoryStatusText")).Text);
+            Assert.IsNull(results.OpenReportAsync("reset-failure").GetAwaiter().GetResult());
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    });
+
+    [TestMethod]
+    public void ResetAll_UnreadableCalendarDoesNotDeleteReportsOrOverwriteFile() => RunSta(() =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var results = new SessionResultsService(db, sessions);
+        var start = new DateTime(2026, 10, 5, 3, 0, 0, DateTimeKind.Utc);
+        SeedResetReport(results, sessions, "reset-invalid", start);
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".calendar.json");
+        File.WriteAllText(path, "{invalid");
+        try
+        {
+            var view = new ReportCalendarView(results, new DashboardCalendarStore(path));
+            Await(view.SelectDateAsync(start.ToLocalTime().Date));
+            Await(view.ResetAllAsync());
+            StringAssert.Contains(((TextBlock)view.FindName("HistoryStatusText")).Text, "초기화하지 못했습니다");
+            Assert.AreEqual("{invalid", File.ReadAllText(path));
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("reset-invalid").GetAwaiter().GetResult());
+        }
+        finally { File.Delete(path); }
+    });
+
+    private static void SeedResetReport(SessionResultsService results, SqliteFocusSessionRepository sessions, string id, DateTime start)
+    {
+        Await(sessions.StartSessionAsync(new(id, start, start.AddMinutes(25), IsCompleted: true)));
+        Await(results.Reports.SaveAsync(new(start, start.AddMinutes(25), [], [], true) { SessionId = id }));
+    }
+
+    private static DashboardCalendarEntry ResetTestSchedule(string session, DateTime day)
+    {
+        var start = new DateTimeOffset(DateTime.SpecifyKind(day.Date.AddHours(12), DateTimeKind.Unspecified), TimeSpan.FromHours(9));
+        return new(session, "summary", "Slack", new("event", "일정", start, start.AddHours(1), "Asia/Seoul", null, null));
+    }
+
+    [TestMethod]
     public void Dashboard_CalendarPageRendersWithinWindow_AndOpensExistingReport() => RunSta(() =>
     {
         using var db = SqliteDatabase.CreateInMemory();

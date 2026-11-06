@@ -21,7 +21,7 @@ public sealed record DashboardCalendarEntry(string SessionId, string SummaryId, 
     }
     [JsonIgnore] public string LocationText => string.IsNullOrWhiteSpace(Schedule.Location) ? "지정된 장소 없음" : Schedule.Location;
     [JsonIgnore] public string DetailsText => string.IsNullOrWhiteSpace(Schedule.Details) ? "추가 세부사항 없음" : Schedule.Details;
-    [JsonIgnore] public string SourceText => string.IsNullOrWhiteSpace(AppName) ? "알림에서 저장한 일정" : $"{AppName} · 알림에서 저장";
+    [JsonIgnore] public string SourceText => string.IsNullOrWhiteSpace(AppName) ? "알림에서 저장한 일정" : $"{AppNameDisplayConverter.Format(AppName)} · 알림에서 저장";
 }
 
 public sealed class DashboardCalendarStore
@@ -79,6 +79,12 @@ public sealed class DashboardCalendarStore
     {
         var updated = new Dictionary<(string, string), DashboardCalendarEntry>(_entries);
         if (updated.Remove((sessionId, summaryId))) Write(updated);
+    }
+
+    public void Clear()
+    {
+        if (LoadWarning is not null) throw new IOException(LoadWarning);
+        if (_entries.Count > 0) Write(new());
     }
 
     private void Write(Dictionary<(string Session, string Summary), DashboardCalendarEntry> updated)

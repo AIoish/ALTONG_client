@@ -15,6 +15,7 @@
         <SolidColorBrush x:Key="WindowSurface" Color="{StaticResource BlackCanvasColor}" />
         <SolidColorBrush x:Key="CardSurface" Color="{StaticResource BlackSurfaceColor}" />
         <services:AppIconConverter x:Key="AppIcon" />
+        <services:AppNameDisplayConverter x:Key="AppNameDisplay" />
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource PrimaryText}" />
             <Setter Property="TextWrapping" Value="Wrap" />
@@ -173,10 +174,6 @@
             <Setter Property="Background" Value="Transparent" /><Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="Foreground" Value="{StaticResource BlackMuted}" /><Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
             <Setter Property="FontSize" Value="23" />
-            <Style.Triggers><DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=(AutomationProperties.ItemStatus)}" Value="선택됨">
-                <Setter Property="Background" Value="{StaticResource BlackSelection}" /><Setter Property="Foreground" Value="{StaticResource BlackAccentText}" />
-                <Setter Property="BorderBrush" Value="{StaticResource BlackSelectionRule}" />
-            </DataTrigger></Style.Triggers>
         </Style>
         <Style TargetType="ScrollViewer" BasedOn="{StaticResource QuietScrollViewer}" />
         <Style TargetType="ScrollBar">
@@ -208,7 +205,7 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="36" /><ColumnDefinition Width="*" /><ColumnDefinition Width="100" /></Grid.ColumnDefinitions>
                 <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="28" Height="28" />
                 <StackPanel Grid.Column="1" Margin="4,0,16,0">
-                    <TextBlock Text="{Binding AppName}" Foreground="{StaticResource PrimaryText}" />
+                    <TextBlock Text="{Binding AppName, Converter={StaticResource AppNameDisplay}}" ToolTip="{Binding AppName}" Foreground="{StaticResource PrimaryText}" />
                     <ProgressBar Value="{Binding Percentage}" Maximum="100" Height="4" Margin="0,6,0,0" Foreground="{StaticResource BlackText}" Background="{StaticResource BlackRule}" BorderThickness="0" />
                 </StackPanel>
                 <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource Muted}" HorizontalAlignment="Right" />
@@ -248,7 +245,8 @@
                 </DockPanel>
                 <TabControl x:Name="DashboardTabs" Grid.Row="1" SelectedIndex="0" Background="Transparent" BorderThickness="0" SelectionChanged="DashboardTabs_SelectionChanged">
                     <TabControl.Template><ControlTemplate TargetType="TabControl">
-                        <ContentPresenter ContentSource="SelectedContent" />
+                        <ContentPresenter ContentSource="SelectedContent"
+                                          services:MotionBehavior.TransitionKey="{Binding SelectedIndex, RelativeSource={RelativeSource TemplatedParent}}" />
                     </ControlTemplate></TabControl.Template>
                     <TabItem Header="홈">
                         <ScrollViewer x:Name="HomeScroll" SizeChanged="HomeScroll_SizeChanged" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -381,7 +379,7 @@
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="36" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                                     <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="24" Height="24" VerticalAlignment="Top" />
                                                     <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                                                        <TextBlock Text="{Binding AppName}" Foreground="{StaticResource PrimaryText}" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding AppName}" />
+                                                        <TextBlock Text="{Binding AppName, Converter={StaticResource AppNameDisplay}}" Foreground="{StaticResource PrimaryText}" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding AppName}" />
                                                         <TextBlock Text="{Binding WindowSummary}" Style="{StaticResource Muted}" FontSize="12" Margin="0,4,0,0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding WindowSummary}" />
                                                     </StackPanel>
                                                     <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource Muted}" FontSize="12" Margin="0,2,0,0" />
@@ -432,7 +430,7 @@
                                     </Border>
                                     <TextBlock Text="타이머 종료 후에도 집중모드는 유지됩니다." Style="{StaticResource Muted}" FontSize="12" Margin="0,10,0,0" />
                                 </StackPanel>
-                                <TextBlock x:Name="TimerSettingsFeedbackText" Text="다음 집중부터 적용" Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0" AutomationProperties.LiveSetting="Polite" />
+                                <TextBlock x:Name="TimerSettingsFeedbackText" Text="다음 집중부터 적용" Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0" AutomationProperties.LiveSetting="Polite" services:MotionBehavior.TextFeedback="True" />
                                 <Button x:Name="SaveTimerSettingsButton" Content="루틴 저장" Click="SaveSettingsButton_Click" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,12,0,0" />
                                </StackPanel>
                               </Expander>
@@ -456,7 +454,7 @@
                                 </WrapPanel>
                                 <CheckBox x:Name="LaunchAtStartupCheckBox" Content="Windows 시작 시 알통 실행" Click="LaunchAtStartupCheckBox_Click" Margin="0,4,0,0"
                                           AutomationProperties.HelpText="로그인 시 트레이에서 시작" />
-                                <TextBlock x:Name="LaunchAtStartupStatusText" Text="로그인 시 트레이에서 시작" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,8" AutomationProperties.LiveSetting="Polite" />
+                                <TextBlock x:Name="LaunchAtStartupStatusText" Text="로그인 시 트레이에서 시작" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,8" AutomationProperties.LiveSetting="Polite" services:MotionBehavior.TextFeedback="True" />
                                 <TextBlock x:Name="AppVersionText" Style="{StaticResource Muted}" Margin="0,4" />
                                 <Button Content="ALTONG 종료" Click="ExitApplicationButton_Click" HorizontalAlignment="Left" Margin="0,12,0,0" />
                                </StackPanel>

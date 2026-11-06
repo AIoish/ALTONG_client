@@ -12,6 +12,9 @@ namespace Altong.Client.Services.AI.Briefing;
 /// </summary>
 public static class BriefingGrouping
 {
+    /// <summary>요약 생성과 기존 그룹 복원에 적용하는 최근 차단 알림 상한.</summary>
+    public const int MaxNotificationsPerSession = 50;
+
     /// <summary>요약 모델(v8)이 학습한 그룹 크기 상한. 학습 데이터는 그룹당 알림 1~7개다.</summary>
     public const int MaxNotificationsPerChunk = 7;
 

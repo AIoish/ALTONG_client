@@ -36,7 +36,6 @@ public partial class DashboardWindow : Window
     private DateTime _focusUsageDate;
     private bool _focusUsageLoading;
     private bool _focusUsageRefreshPending;
-    private bool? _lastDisplayedFocusState;
     private int _focusUsageRevision;
 
     public DashboardWindow(
@@ -344,9 +343,16 @@ public partial class DashboardWindow : Window
     {
         if (NavigationRail is null) return;
         foreach (var button in NavigationRail.Children.OfType<System.Windows.Controls.Button>())
-            System.Windows.Automation.AutomationProperties.SetItemStatus(button,
-                button.Tag is string tag && tag == DashboardTabs.SelectedIndex.ToString(CultureInfo.InvariantCulture)
-                    ? "선택됨" : "");
+        {
+            bool selected = button.Tag is string tag && tag == DashboardTabs.SelectedIndex.ToString(CultureInfo.InvariantCulture);
+            System.Windows.Automation.AutomationProperties.SetItemStatus(button, selected ? "선택됨" : "");
+            MotionBehavior.SetBrush(button, System.Windows.Controls.Control.BackgroundProperty,
+                selected ? (System.Windows.Media.Brush)FindResource("BlackSelection") : System.Windows.Media.Brushes.Transparent);
+            MotionBehavior.SetBrush(button, System.Windows.Controls.Control.BorderBrushProperty,
+                selected ? (System.Windows.Media.Brush)FindResource("BlackSelectionRule") : System.Windows.Media.Brushes.Transparent);
+            MotionBehavior.SetBrush(button, System.Windows.Controls.Control.ForegroundProperty,
+                (System.Windows.Media.Brush)FindResource(selected ? "BlackAccentText" : "BlackMuted"));
+        }
     }
 
     private void HomeScroll_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -380,7 +386,6 @@ public partial class DashboardWindow : Window
         int index = DashboardTabs.SelectedIndex;
         string[] titles = ["대시보드", "알림 확인", "오늘의 집중 활동", "설정", "캘린더"];
         PageTitleText.Text = titles[index];
-        MotionBehavior.Acknowledge(PageTitleText);
         UpdateNavigationSelection();
         BackButton.Visibility = index == 0 ? Visibility.Collapsed : Visibility.Visible;
         if (_settingsReady && index == 2)
@@ -503,14 +508,14 @@ public partial class DashboardWindow : Window
     {
         bool enabled = _focusModeService?.IsEnabled == true;
         HomeFocusHintText.Text = enabled ? "집중모드 켜짐" : "집중모드 꺼짐";
-        HomeFocusHintText.Foreground = enabled ? (System.Windows.Media.Brush)FindResource("BlackSuccess")
-            : (System.Windows.Media.Brush)FindResource("MutedText");
-        HomeFocusStatusDot.Fill = enabled ? (System.Windows.Media.Brush)FindResource("BlackSuccess")
-            : (System.Windows.Media.Brush)FindResource("MutedText");
-        HomeFocusStatusBadge.Background = (System.Windows.Media.Brush)FindResource(enabled ? "BlackSuccessSurface" : "BlackInput");
-        HomeFocusStatusBadge.BorderBrush = (System.Windows.Media.Brush)FindResource(enabled ? "BlackSuccessRule" : "BlackRule");
-        if (_lastDisplayedFocusState is { } previous && previous != enabled) MotionBehavior.Acknowledge(HomeFocusStatusBadge);
-        _lastDisplayedFocusState = enabled;
+        MotionBehavior.SetBrush(HomeFocusHintText, System.Windows.Controls.TextBlock.ForegroundProperty,
+            (System.Windows.Media.Brush)FindResource(enabled ? "BlackSuccess" : "MutedText"));
+        MotionBehavior.SetBrush(HomeFocusStatusDot, System.Windows.Shapes.Shape.FillProperty,
+            (System.Windows.Media.Brush)FindResource(enabled ? "BlackSuccess" : "MutedText"));
+        MotionBehavior.SetBrush(HomeFocusStatusBadge, System.Windows.Controls.Border.BackgroundProperty,
+            (System.Windows.Media.Brush)FindResource(enabled ? "BlackSuccessSurface" : "BlackInput"));
+        MotionBehavior.SetBrush(HomeFocusStatusBadge, System.Windows.Controls.Border.BorderBrushProperty,
+            (System.Windows.Media.Brush)FindResource(enabled ? "BlackSuccessRule" : "BlackRule"));
         FocusModeToggleButton.Content = enabled ? "집중 모드 끄기" : "집중 모드 켜기";
         FocusModeToggleButton.IsEnabled = _focusModeCoordinator is not null;
         ShowRoutineReminderButton.IsEnabled = enabled && _showRoutineReminder is not null;
@@ -537,13 +542,13 @@ public partial class DashboardWindow : Window
         {
             var check = new System.Windows.Controls.CheckBox
             {
-                Content = row.Name,
+                Content = AppNameDisplayConverter.Format(row.Name),
                 IsChecked = control.IsSelected(row.Id),
                 IsEnabled = !control.IsActive,
                 ToolTip = row.Name,
                 Margin = new Thickness(0, 4, 0, 4)
             };
-            System.Windows.Automation.AutomationProperties.SetName(check, row.Name);
+            System.Windows.Automation.AutomationProperties.SetName(check, AppNameDisplayConverter.Format(row.Name));
             check.Click += (_, _) =>
             {
                 try

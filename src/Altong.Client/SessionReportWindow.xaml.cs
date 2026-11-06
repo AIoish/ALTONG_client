@@ -43,6 +43,13 @@ public partial class SessionReportWindow : Window
             "Altong", "dashboard-summary-state.json"));
         _summaryState.Load();
         InitializeComponent();
+        bool entered = false;
+        ContentRendered += (_, _) =>
+        {
+            if (entered) return;
+            entered = true;
+            MotionBehavior.Transition(ReportSurface, prominent: !isSaved);
+        };
         Title = isSaved ? "저장된 집중 리포트" : "집중 완료 · 집중 리포트";
         ReportHeadingText.Text = "집중 리포트";
         ReportBadgeText.Text = isSaved ? "보관됨" : "집중 완료";
@@ -85,7 +92,7 @@ public partial class SessionReportWindow : Window
         LegacyHighlightItemsControl.ItemsSource = result.NotificationHighlights.Select(text =>
         {
             var app = highlightApps.FirstOrDefault(name => text.StartsWith(name + " · ", StringComparison.OrdinalIgnoreCase));
-            return new { AppName = app, AppDisplayName = app ?? "알림 요약", Text = app is null ? text : text[(app.Length + 3)..] };
+            return new { AppName = app, AppDisplayName = app is null ? "알림 요약" : AppNameDisplayConverter.Format(app), Text = app is null ? text : text[(app.Length + 3)..] };
         }).ToArray();
         var remainingReplies = result.QuickReplies.ToList();
         _notificationItems = result.Notifications.Select(notification =>
@@ -99,8 +106,10 @@ public partial class SessionReportWindow : Window
             return new ReportNotificationItem(notification.AppName, notification.Sender, notification.Title,
                 notification.Body, notification.IsPassed, replyText);
         }).ToArray();
+        UpdateSummaryContentVisibility();
         if (result.SummaryItems.Count > 0) ShowSummaryItems(result.SummaryItems);
         else if (_summaryProvider is not null && result.SessionId is not null) _ = LoadSummaryItemsAsync();
+        else SetSummaryStatus(result.BlockedCount == 0 ? "요약할 알림이 없습니다." : "AI 요약이 아직 없습니다.");
         UpdateDetailLists();
     }
 
@@ -152,8 +161,27 @@ public partial class SessionReportWindow : Window
             ? row : new CalendarSummaryItemViewModel(item, _result.SessionId, correction: _result.SessionId is { } session
                 ? _summaryState.Get(session, item.SummaryId)?.Correction ?? _calendar.Get(session, item.SummaryId)?.Schedule : null)).ToArray());
         UpdateSavedStates();
-        CalendarSummaryHost.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        LegacySummaryPanel.Visibility = items.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+        UpdateSummaryContentVisibility();
+    }
+
+    private void UpdateSummaryContentVisibility()
+    {
+        bool hasSummary = _summaryCards.Items.Length > 0;
+        CalendarSummaryHost.Visibility = hasSummary ? Visibility.Visible : Visibility.Collapsed;
+        LegacySummaryPanel.Visibility = !hasSummary && LegacyHighlightItemsControl.HasItems ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SetSummaryStatus(string? message, bool busy = false, bool failed = false)
+    {
+        var visibility = string.IsNullOrWhiteSpace(message) ? Visibility.Collapsed : Visibility.Visible;
+        SummaryLoadStatusText.Text = message ?? "";
+        SummaryLoadStatusText.Visibility = visibility;
+        SummaryStatusPanel.Visibility = visibility;
+        SummaryLoadingIndicator.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        RetrySummaryButton.Visibility = failed ? Visibility.Visible : Visibility.Collapsed;
+        SummaryStatusPanel.Background = (System.Windows.Media.Brush)FindResource(busy ? "BlackSelection" : "BlackInput");
+        SummaryStatusPanel.BorderBrush = (System.Windows.Media.Brush)FindResource(failed ? "BlackError" : busy ? "BlackSelectionRule" : "BlackRule");
+        SummaryLoadStatusText.Foreground = (System.Windows.Media.Brush)FindResource(failed ? "BlackError" : busy ? "BlackAccentText" : "BlackMuted");
     }
 
     private void Calendar_Changed(object? sender, EventArgs e) => UpdateSavedStates();
@@ -199,23 +227,32 @@ public partial class SessionReportWindow : Window
         _loadingSummaries = true;
         SaveReportButton.IsEnabled = false;
         ReloadSummaryButton.IsEnabled = false;
-        SummaryLoadStatusText.Visibility = Visibility.Visible;
-        SummaryLoadStatusText.Text = "요약 불러오는 중…";
+        SetSummaryStatus(_summaryCards.Items.Length > 0 ? "AI 요약을 갱신하고 있어요" : "AI가 알림을 요약하고 있어요", busy: true);
         try
         {
             var supply = await _summaryProvider.ReadAsync(_result.SessionId, _summaryLifetime.Token);
             if (_closed) return;
             if (supply.Items.Count > 0)
             {
+                var previous = _summaryCards.Items.Select(row => row.Summary).ToArray();
                 ShowSummaryItems(supply.Items, updateSnapshot: !supply.IsDemo);
+                SetSummaryStatus(null);
+                if (IsLoaded && !previous.SequenceEqual(_summaryCards.Items.Select(row => row.Summary)))
+                    _ = Dispatcher.InvokeAsync(() =>
+                    {
+                        if (!_closed && !_loadingSummaries) MotionBehavior.Transition(CalendarSummaryHost);
+                    }, System.Windows.Threading.DispatcherPriority.Loaded);
             }
-            SummaryLoadStatusText.Text = supply.Items.Count == 0 ? "새 요약 없음 · 다시 불러올 수 있어요." : "";
-            SummaryLoadStatusText.Visibility = supply.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            else SetSummaryStatus(_summaryCards.Items.Length > 0 ? "새 요약이 없어 기존 요약을 표시합니다."
+                : _result.BlockedCount == 0 ? "요약할 알림이 없습니다." : "생성된 AI 요약이 없습니다.");
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            if (!_closed) SetSummaryStatus("AI 요약이 중단되었습니다.", failed: true);
+        }
         catch (Exception)
         {
-            if (!_closed) SummaryLoadStatusText.Text = "요약 불러오기 실패 · 다시 시도하세요.";
+            if (!_closed) SetSummaryStatus("AI 요약을 불러오지 못했습니다.", failed: true);
         }
         finally
         {

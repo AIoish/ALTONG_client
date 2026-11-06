@@ -145,7 +145,7 @@ public sealed class ScrollHardeningUiTests
             var status = (TextBlock)report.FindName("SummaryLoadStatusText");
             var reload = (Button)report.FindName("ReloadSummaryButton");
             Assert.IsFalse(reload.IsEnabled);
-            StringAssert.Contains(status.Text, "불러오는 중");
+            StringAssert.Contains(status.Text, "요약하고 있어요");
             Layout(root, size);
             status.BringIntoView();
             Layout(root, size);
@@ -156,7 +156,7 @@ public sealed class ScrollHardeningUiTests
             while (!reload.IsEnabled && DateTime.UtcNow < deadline)
                 Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
             Assert.IsTrue(reload.IsEnabled);
-            StringAssert.Contains(status.Text, "실패");
+            StringAssert.Contains(status.Text, "불러오지 못했습니다");
             Assert.AreEqual(Visibility.Visible, status.Visibility);
             Assert.IsTrue(((Button)report.FindName("SkipSaveButton")).IsEnabled);
             Assert.IsTrue(((Button)report.FindName("ReportCloseButton")).IsEnabled);
@@ -172,7 +172,7 @@ public sealed class ScrollHardeningUiTests
             while (!reload.IsEnabled && DateTime.UtcNow < deadline)
                 Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
             Assert.IsTrue(reload.IsEnabled);
-            StringAssert.Contains(status.Text, "새 요약 없음");
+            StringAssert.Contains(status.Text, "요약할 알림이 없습니다");
         }
         finally { report.Close(); }
     });

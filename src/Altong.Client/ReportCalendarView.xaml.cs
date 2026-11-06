@@ -66,7 +66,11 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
         };
     }
 
-    private void Reports_Changed(object? sender, EventArgs e) => Dispatcher.BeginInvoke(new Action(async () => await RefreshAsync()));
+    private void Reports_Changed(object? sender, EventArgs e)
+    {
+        if (_mutating) return;
+        Dispatcher.BeginInvoke(new Action(async () => { if (!_mutating) await RefreshAsync(); }));
+    }
 
     public async Task SelectDateAsync(DateTime date)
     {
@@ -80,6 +84,7 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
     {
         int revision = ++_revision;
         _loading = true;
+        UpdateResetControls();
         var date = SelectedDate;
         var month = DisplayMonth;
         _entries.Clear();
@@ -128,7 +133,7 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
         }
         finally
         {
-            if (revision == _revision) _loading = false;
+            if (revision == _revision) { _loading = false; UpdateResetControls(); }
         }
     }
 
@@ -234,6 +239,77 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
     private async void Today_Click(object sender, RoutedEventArgs e) => await SelectDateAsync(DateTime.Today);
     private async void Retry_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
     private async void LoadMore_Click(object sender, RoutedEventArgs e) => await LoadMoreAsync();
+
+    private void UpdateResetControls()
+    {
+        ResetHistoryButton.IsEnabled = ConfirmResetButton.IsEnabled = !_mutating && !_loading;
+        CancelResetButton.IsEnabled = !_mutating;
+        ListCard.IsEnabled = !_mutating;
+    }
+
+    private void ResetHistory_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mutating || _loading) return;
+        ResetConfirmationPanel.Visibility = Visibility.Visible;
+        CancelResetButton.Focus();
+    }
+
+    private void CancelReset_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mutating) return;
+        ResetConfirmationPanel.Visibility = Visibility.Collapsed;
+        ResetHistoryButton.Focus();
+    }
+
+    private void ResetConfirmation_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.Escape || _mutating) return;
+        CancelReset_Click(sender, new RoutedEventArgs());
+        e.Handled = true;
+    }
+
+    private async void ConfirmReset_Click(object sender, RoutedEventArgs e)
+    {
+        if (ResetConfirmationPanel.Visibility == Visibility.Visible) await ResetAllAsync();
+    }
+
+    internal async Task ResetAllAsync()
+    {
+        if (_mutating || _loading) return;
+        _mutating = true;
+        _revision++;
+        _loadingMoreRevision = null;
+        UpdateResetControls();
+        HistoryStatusText.Text = "리포트와 일정을 초기화하는 중…";
+        bool schedulesCleared = false;
+        string message;
+        try
+        {
+            _calendar.Clear();
+            schedulesCleared = true;
+            await Task.Run(() => _results.Reports.DeleteAllAsync());
+            ResetConfirmationPanel.Visibility = Visibility.Collapsed;
+            _scheduleDisplayLimit = 30;
+            message = "저장된 리포트와 일정을 모두 초기화했습니다.";
+        }
+        catch (Exception)
+        {
+            message = schedulesCleared
+                ? "일정은 삭제했지만 리포트를 삭제하지 못했습니다. 다시 시도해 주세요."
+                : "초기화하지 못했습니다. 일정 파일을 확인한 뒤 다시 시도해 주세요.";
+        }
+        try
+        {
+            await RefreshAsync();
+            HistoryStatusText.Text = message;
+        }
+        finally
+        {
+            _mutating = false;
+            UpdateResetControls();
+            if (ResetConfirmationPanel.Visibility == Visibility.Collapsed) ResetHistoryButton.Focus();
+        }
+    }
 
     private void OpenGoogleCalendar_Click(object sender, RoutedEventArgs e)
     {

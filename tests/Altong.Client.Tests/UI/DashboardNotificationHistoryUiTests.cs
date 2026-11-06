@@ -234,7 +234,7 @@ public sealed class DashboardNotificationHistoryUiTests
     {
         using var db = Database();
         var raw = new SqliteNotificationRepository(db);
-        Insert(raw, 0, DateTime.UtcNow);
+        raw.InsertAsync(new("item-0", "Mail.exe", "발신자0", "제목0", "본문0", DateTime.UtcNow, true)).GetAwaiter().GetResult();
         Insert(raw, 1, DateTime.UtcNow.AddMinutes(-1));
         var view = new DashboardNotificationsView(new(db));
         var window = new Window { Content = view, Width = 820, Height = 650, ShowInTaskbar = false };
@@ -256,12 +256,14 @@ public sealed class DashboardNotificationHistoryUiTests
             var popup = (System.Windows.Controls.Primitives.Popup)apps.Template.FindName("PART_Popup", apps);
             Assert.IsTrue(popup.IsOpen);
             Assert.IsTrue(Descendants(popup.Child).OfType<TextBlock>().Any(text => text.Text == "Mail (1)"));
-            apps.SelectedItem = apps.Items.Cast<NotificationAppOption>().Single(option => option.AppName == "Mail");
+            apps.SelectedItem = apps.Items.Cast<NotificationAppOption>().Single(option => option.AppName == "Mail.exe");
             apps.IsDropDownOpen = false;
             Await(view.RefreshAsync());
             window.UpdateLayout();
             Assert.AreEqual("Mail (1)", label.Text);
-            Assert.AreEqual("Mail", view.VisibleItems.Single().AppName);
+            Assert.AreEqual("Mail.exe", view.VisibleItems.Single().AppName);
+            Assert.AreEqual("Mail", view.VisibleItems.Single().DisplayName);
+            Assert.AreEqual("Mail.exe", apps.ToolTip);
         }
         finally { window.Close(); }
     });
