@@ -28,7 +28,7 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
             using var file = File.OpenRead(dll);
             string hash = Convert.ToHexString(SHA256.HashData(file));
             if (!Environment.Is64BitProcess || hash != ValidatedDllHash)
-                CompatibilityError = "현재 Windows의 알림 제어 모듈은 검증되지 않았습니다. Windows 방식으로 전환해 주세요.";
+                CompatibilityError = "현재 Windows의 알림 제어 모듈은 검증되지 않아 Windows 방해 금지 방식을 사용합니다.";
         }
         catch (Exception ex) { CompatibilityError = $"알림 제어 호환성 확인 실패: {ex.GetType().Name}"; }
     }

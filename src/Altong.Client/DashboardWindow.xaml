@@ -467,10 +467,9 @@
                                <StackPanel Margin="40,0,0,10">
                                 <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,0,1" Margin="0,0,0,12" />
                                 <TextBlock x:Name="NotificationControlStatusText" TextWrapping="Wrap" Margin="0,0,0,8" AutomationProperties.LiveSetting="Polite" />
-                                <TextBlock Text="방식 변경 시 집중 종료 · 알림 설정 복구" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" />
+                                <TextBlock x:Name="ReenableAltongControlHint" Text="다시 사용하면 집중 종료 · 알림 설정 복구" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Visibility="Collapsed" />
                                 <WrapPanel Margin="0,8,0,8">
-                                    <Button x:Name="UseAltongControlButton" Content="알통 자체 제어" Click="UseAltongControl_Click" Margin="0,0,8,8" />
-                                    <Button x:Name="UseWindowsControlButton" Content="기존 Windows 방식" Click="UseWindowsControl_Click" Margin="0,0,8,8" />
+                                    <Button x:Name="UseAltongControlButton" Content="알통 자체 제어 다시 사용" Click="UseAltongControl_Click" Margin="0,0,8,8" Visibility="Collapsed" />
                                     <Button x:Name="RefreshNotificationAppsButton" Content="앱 새로고침" Click="RefreshNotificationApps_Click" Margin="0,0,8,8" />
                                     <Button x:Name="RestoreNotificationAppsButton" Content="알림 설정 복구" Click="RestoreNotificationApps_Click" ToolTip="집중 종료 후 배너·알림음 설정 복구" Margin="0,0,8,8" />
                                 </WrapPanel>

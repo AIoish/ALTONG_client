@@ -29,10 +29,10 @@ public sealed class TopNotchLayoutTests
     }
 
     [TestMethod]
-    [DataRow(1.0, 30)]
-    [DataRow(1.25, 38)]
-    [DataRow(1.5, 45)]
-    [DataRow(2.0, 60)]
+    [DataRow(1.0, 8)]
+    [DataRow(1.25, 10)]
+    [DataRow(1.5, 12)]
+    [DataRow(2.0, 16)]
     public void BandHeightPixels_ScalesWithDpi(double scale, int expected)
     {
         Assert.AreEqual(expected, TopNotchLayout.BandHeightPixels(scale));
@@ -155,7 +155,7 @@ public sealed class TopNotchLayoutTests
                 Assert.IsTrue(TopNotchLayout.NotchSurfaceWidth / 2 <= TopNotchLayout.WindowRightExtent, size.Label);
             }
         }
-        finally { TopNotchLayout.SetSize(TopNotchLayout.SizeOptions[0]); }
+        finally { TopNotchLayout.SetSize(TopNotchLayout.DefaultSize); }
     }
 
     [TestMethod]
@@ -163,7 +163,7 @@ public sealed class TopNotchLayoutTests
     {
         var closed = TopNotchLayout.NotchLeftSide(0);
         var open = TopNotchLayout.NotchLeftSide(1);
-        // 닫힘: 바닥 폭은 시안과 같은 235.4.
+        // 닫힘: 바닥 폭은 시안 비율 그대로 줄인 값이다(기본 높이 8에서 약 62.8).
         Assert.AreEqual(TopNotchLayout.NotchBottomWidth, TopNotchLayout.NotchSurfaceWidth - 2 * closed[^1].X, .01);
         // 열림: 바닥 폭이 목록 패널 폭과 같아 패널 옆면으로 곧게 이어진다.
         Assert.AreEqual(TopNotchLayout.PanelWidth, TopNotchLayout.NotchSurfaceWidth - 2 * open[^1].X, .01);
@@ -283,7 +283,8 @@ public sealed class TopNotchLayoutTests
     public void NotchFitsInsideTheBand()
     {
         Assert.AreEqual(TopNotchLayout.BandHeight, TopNotchLayout.NotchHeight);
-        Assert.AreEqual(360.2, TopNotchLayout.NotchSurfaceWidth, .001);
+        Assert.AreEqual(8d, TopNotchLayout.NotchHeight);
+        Assert.AreEqual(96.05, TopNotchLayout.NotchSurfaceWidth, .001);
         Assert.IsTrue(TopNotchLayout.NotchBottomWidth < TopNotchLayout.NotchSurfaceWidth);
         Assert.IsTrue(TopNotchLayout.NotchSurfaceWidth <= TopNotchLayout.WindowWidth);
         // 패널은 노치가 다 넓어지기 전(겹치는 구간)부터 내려와 끊김 없이 이어진다.

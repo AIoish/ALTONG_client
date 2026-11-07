@@ -21,8 +21,11 @@ public static class TopNotchLayout
         new("20W", 20, 360.2),
     };
 
-    /// <summary>[임시] 지금 쓰는 노치 크기. 기본은 30px(시안 그대로)이다.</summary>
-    public static NotchSize Size { get; private set; } = SizeOptions[0];
+    /// <summary>기본 노치 크기. 높이 8(폭 96.05)로, 시안(30px) 모양을 같은 비율로 줄인 것이다.</summary>
+    public static NotchSize DefaultSize => SizeOptions[5];
+
+    /// <summary>지금 쓰는 노치 크기. 기본은 <see cref="DefaultSize"/>(높이 8)이다.</summary>
+    public static NotchSize Size { get; private set; } = DefaultSize;
 
     /// <summary>[임시] 노치 크기를 바꾼다. 창은 <see cref="NotificationDockWindow"/>가 다시 배치한다.</summary>
     public static void SetSize(NotchSize size) => Size = size;
