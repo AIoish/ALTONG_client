@@ -181,6 +181,27 @@ public sealed class NotificationControlRecoveryTests
     }
 
     [TestMethod]
+    public void UnverifiedWindows_FallsBackToWindowsModeAutomatically()
+    {
+        new NotificationControlPreferences { Backend = FocusControlBackend.Altong }.Save(PreferencesPath);
+        var settings = new MemorySettings { CompatibilityError = "검증되지 않은 모듈" };
+        using var controller = new NativeFocusController(settings, PreferencesPath, JournalPath);
+
+        // 저장된 선택은 자체 제어여도 검증되지 않은 Windows에서는 Windows 방식을 쓰고, 복귀 버튼도 보이지 않는다.
+        Assert.AreEqual(FocusControlBackend.Windows, controller.Backend);
+        Assert.IsFalse(controller.CanUseAltong);
+        Assert.AreEqual(FocusControlBackend.Altong, NotificationControlPreferences.Load(PreferencesPath).Backend, "저장된 선택은 바꾸지 않는다.");
+        Assert.ThrowsException<InvalidOperationException>(() => controller.SetBackend(FocusControlBackend.Altong));
+        Assert.AreEqual(0, settings.Writes.Values.Sum());
+
+        var focus = new FocusModeService();
+        using var coordinator = new FocusModeCoordinator(focus, new Observer(), new Launcher(), new Dispatcher(), controller);
+        coordinator.Start();
+        Assert.IsTrue(focus.IsEnabled, "Windows 방해 금지 상태를 따라 집중이 켜진다.");
+        Assert.IsFalse(coordinator.CanStartDirectly);
+    }
+
+    [TestMethod]
     public void ValidPreferences_AreLoadedWithoutResetOrBackup()
     {
         var preferences = new NotificationControlPreferences { Backend = FocusControlBackend.Windows };
@@ -204,7 +225,7 @@ public sealed class NotificationControlRecoveryTests
         public Dictionary<string, AppSettings> Apps { get; } = new() { ["App"] = new(), ["Other"] = new() };
         public Dictionary<string, int> Writes { get; } = new() { ["App"] = 0, ["Other"] = 0 };
         public bool FailRegistrationRead;
-        public string? CompatibilityError => null;
+        public string? CompatibilityError { get; set; }
         public IReadOnlyList<NotificationSender> Enumerate() => Apps.Keys.Select(id => new NotificationSender(id, id, null)).ToArray();
         public bool IsRegistered(string id) => FailRegistrationRead ? throw new UnauthorizedAccessException("access denied") : Apps.ContainsKey(id);
         public SenderState Read(string id) => Apps[id].State;

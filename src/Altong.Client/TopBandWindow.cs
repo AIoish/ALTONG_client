@@ -164,13 +164,6 @@ public sealed class TopBandWindow : Window
         }
     }
 
-    /// <summary>[임시] 노치 크기를 바꾼 뒤 띠를 새 높이로 다시 예약한다.</summary>
-    public void RefreshSize()
-    {
-        Height = TopNotchLayout.BandHeight;
-        UpdatePosition();
-    }
-
     private void OnDpiChanged(object sender, System.Windows.DpiChangedEventArgs e) => UpdatePosition();
 
     private nint WndProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)

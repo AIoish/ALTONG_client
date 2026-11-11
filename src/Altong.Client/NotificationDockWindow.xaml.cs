@@ -101,7 +101,6 @@ public partial class NotificationDockWindow : Window
         _panel.SetBandStyle(_topBandStyle);
         _panel.ShowDashboardRequested += Panel_ShowDashboardRequested;
         _panel.BandStyleRequested += Panel_BandStyleRequested;
-        _panel.NotchSizeRequested += Panel_NotchSizeRequested;
         _panel.MouseEnter += Pointer_Changed;
         _panel.MouseLeave += Pointer_Changed;
         PanelHost.Content = _panel;
@@ -124,23 +123,6 @@ public partial class NotificationDockWindow : Window
     private void Panel_ShowDashboardRequested(object? sender, EventArgs e) => ShowDashboardRequested?.Invoke(this, e);
 
     private void Panel_BandStyleRequested(object? sender, TopBandStyle style) => SetTopBandStyle(style);
-
-    private void Panel_NotchSizeRequested(object? sender, NotchSize size) => SetNotchSize(size);
-
-    /// <summary>
-    /// [임시] 노치·띠 크기를 실행 중에 바꾼다. 띠는 새 높이로 다시 예약하고, 노치 표시면·렌즈·창 배치를 새 크기에 맞춘다.
-    /// 크기를 정하면 이 메서드와 패널의 비교 버튼을 지운다.
-    /// </summary>
-    public void SetNotchSize(NotchSize size)
-    {
-        if (_isClosed) return;
-        TopNotchLayout.SetSize(size);
-        _panel.SetNotchSize(size);
-        ApplyNotchFaceSize();
-        ApplyLayout();
-        _topBand?.RefreshSize();
-        RaiseAboveBand();
-    }
 
     /// <summary>노치 표시면(일렁임·렌즈)을 지금 노치 크기에 맞춘다. 표시면은 닫힌 노치 모양으로 잘라 그린다.</summary>
     private void ApplyNotchFaceSize()
@@ -1015,7 +997,6 @@ public partial class NotificationDockWindow : Window
         _notifications.Changed -= Notifications_Changed;
         _panel.ShowDashboardRequested -= Panel_ShowDashboardRequested;
         _panel.BandStyleRequested -= Panel_BandStyleRequested;
-        _panel.NotchSizeRequested -= Panel_NotchSizeRequested;
         _panel.MouseEnter -= Pointer_Changed;
         _panel.MouseLeave -= Pointer_Changed;
         IsVisibleChanged -= Dock_IsVisibleChanged;

@@ -526,8 +526,11 @@ public partial class DashboardWindow : Window
         UpdateNotificationSettingsSummary(control);
         NotificationControlStatusText.Text = control is null ? "알림 제어 연결 안 됨"
             : $"현재 방식: {(_focusModeCoordinator!.Backend == FocusControlBackend.Altong ? "알통 자체 제어" : "Windows 방해 금지")}\n{control.Status}";
-        UseAltongControlButton.IsEnabled = control is not null && _focusModeCoordinator!.Backend != FocusControlBackend.Altong;
-        UseWindowsControlButton.IsEnabled = control is not null && _focusModeCoordinator!.Backend != FocusControlBackend.Windows;
+        // 방식 전환 버튼은 두지 않는다. 설정 손상 등으로 Windows 방식으로 초기화됐고 자체 제어를 쓸 수 있을 때만 복귀 버튼을 보인다.
+        // 검증되지 않은 Windows에서는 자동으로 Windows 방식을 쓰므로 버튼을 숨긴다.
+        bool canReenable = control is not null && control.CanUseAltong && _focusModeCoordinator!.Backend == FocusControlBackend.Windows;
+        UseAltongControlButton.Visibility = canReenable ? Visibility.Visible : Visibility.Collapsed;
+        ReenableAltongControlHint.Visibility = UseAltongControlButton.Visibility;
         RefreshNotificationAppsButton.IsEnabled = control is not null;
         RestoreNotificationAppsButton.IsEnabled = control is not null;
         UpdateAutoDndView();
@@ -658,7 +661,6 @@ public partial class DashboardWindow : Window
     }
 
     private void UseAltongControl_Click(object sender, RoutedEventArgs e) => _focusModeCoordinator?.SwitchBackend(FocusControlBackend.Altong);
-    private void UseWindowsControl_Click(object sender, RoutedEventArgs e) => _focusModeCoordinator?.SwitchBackend(FocusControlBackend.Windows);
     private void RefreshNotificationApps_Click(object sender, RoutedEventArgs e) => _focusModeCoordinator?.RefreshNativeControl();
     private void RestoreNotificationApps_Click(object sender, RoutedEventArgs e) => _focusModeCoordinator?.RetryNativeRecovery();
 

@@ -9,6 +9,8 @@ public interface INativeFocusController : IDisposable
     bool IsActive { get; }
     string Status { get; }
     FocusControlBackend Backend { get; }
+    /// <summary>알통 자체 제어를 쓸 수 있는지. 검증되지 않은 Windows이거나 앱 선택 설정을 쓸 수 없으면 false다.</summary>
+    bool CanUseAltong => true;
     IReadOnlyList<NotificationSender> Senders { get; }
     bool IsSelected(string id);
     void SetSelected(string id, bool selected);
@@ -32,7 +34,12 @@ public sealed class NativeFocusController : INativeFocusController
     private readonly string? _preferencesError;
     private readonly string? _preferencesNotice;
     public bool IsActive { get; private set; }
-    public FocusControlBackend Backend => _preferences.Backend;
+    /// <summary>
+    /// 지금 쓰는 방식. 기본은 알통 자체 제어이고, 검증되지 않은 Windows(알림 제어 모듈 해시 불일치 등)에서는
+    /// 저장된 선택과 무관하게 Windows 방해 금지 방식으로 자동 대체한다. 설정 손상으로 초기화된 경우에도 Windows 방식이다.
+    /// </summary>
+    public FocusControlBackend Backend => _settings.CompatibilityError is null ? _preferences.Backend : FocusControlBackend.Windows;
+    public bool CanUseAltong => _settings.CompatibilityError is null && _preferencesError is null;
     public IReadOnlyList<NotificationSender> Senders { get; private set; } = [];
     public string Status { get; private set; } = "알림 제어 준비 중";
 
@@ -86,6 +93,8 @@ public sealed class NativeFocusController : INativeFocusController
     }
     public void SetBackend(FocusControlBackend backend)
     {
+        if (backend == FocusControlBackend.Altong && _settings.CompatibilityError is { } compatibility)
+            throw new InvalidOperationException(compatibility);
         if (_preferences.Backend == backend) return;
         if (_preferencesError is { } error) throw new InvalidOperationException(error);
         if (IsActive || _transaction.HasPendingRecovery) Stop();
