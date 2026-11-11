@@ -137,25 +137,19 @@ public sealed class TopNotchLayoutTests
     }
 
     [TestMethod]
-    public void NotchSizeOptions_ScaleTheShapeAndStillOpenIntoThePanel()
+    public void Notch_IsTheMockScaledToHeight8AndStillOpensIntoThePanel()
     {
-        try
-        {
-            foreach (var size in TopNotchLayout.SizeOptions)
-            {
-                TopNotchLayout.SetSize(size);
-                var closed = TopNotchLayout.NotchLeftSide(0);
-                var open = TopNotchLayout.NotchLeftSide(1);
-                Assert.AreEqual(size.Height, TopNotchLayout.BandHeight, size.Label);
-                Assert.AreEqual(size.Height, closed[^1].Y, .001, size.Label);
-                Assert.AreEqual(size.Height, open[^1].Y, .001, size.Label);
-                // 노치가 작아져도 열리면 바닥이 목록 패널 폭과 같아진다.
-                Assert.AreEqual(TopNotchLayout.PanelWidth, TopNotchLayout.NotchSurfaceWidth - 2 * open[^1].X, .01, size.Label);
-                Assert.IsTrue(TopNotchLayout.NotchBottomWidth > 0, size.Label);
-                Assert.IsTrue(TopNotchLayout.NotchSurfaceWidth / 2 <= TopNotchLayout.WindowRightExtent, size.Label);
-            }
-        }
-        finally { TopNotchLayout.SetSize(TopNotchLayout.DefaultSize); }
+        var closed = TopNotchLayout.NotchLeftSide(0);
+        var open = TopNotchLayout.NotchLeftSide(1);
+        // 시안(높이 30, 위쪽 폭 360.2)을 높이 8에 맞춰 같은 비율로 줄인다.
+        Assert.AreEqual(8d / 30, TopNotchLayout.HeightScale, 1e-9);
+        Assert.AreEqual(360.2 * 8 / 30, TopNotchLayout.NotchSurfaceWidth, .001);
+        Assert.AreEqual(TopNotchLayout.NotchHeight, closed[^1].Y, .001);
+        Assert.AreEqual(TopNotchLayout.NotchHeight, open[^1].Y, .001);
+        // 노치가 작아도 열리면 바닥이 목록 패널 폭과 같아진다.
+        Assert.AreEqual(TopNotchLayout.PanelWidth, TopNotchLayout.NotchSurfaceWidth - 2 * open[^1].X, .01);
+        Assert.IsTrue(TopNotchLayout.NotchBottomWidth > 0);
+        Assert.IsTrue(TopNotchLayout.NotchSurfaceWidth / 2 <= TopNotchLayout.WindowRightExtent);
     }
 
     [TestMethod]
