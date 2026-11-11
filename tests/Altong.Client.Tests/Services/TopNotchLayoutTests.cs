@@ -161,8 +161,11 @@ public sealed class TopNotchLayoutTests
         Assert.AreEqual(TopNotchLayout.NotchBottomWidth, TopNotchLayout.NotchSurfaceWidth - 2 * closed[^1].X, .01);
         // 열림: 바닥 폭이 목록 패널 폭과 같아 패널 옆면으로 곧게 이어진다.
         Assert.AreEqual(TopNotchLayout.PanelWidth, TopNotchLayout.NotchSurfaceWidth - 2 * open[^1].X, .01);
-        // 높이와 위쪽 시작점은 그대로다.
-        Assert.AreEqual(0d, open[0].X, .001);
+        // 높이는 그대로다. 노치(폭 약 96)가 목록 패널(316)보다 좁아 열린 옆선은 위쪽 시작점도 노치 밖으로 넓어지며,
+        // 옆선 곡선의 가로 폭(시안 22.1)은 높이 비율로 줄인 그대로 유지한다.
+        Assert.AreEqual(0d, closed[0].X, .001);
+        Assert.IsTrue(open[0].X < 0);
+        Assert.AreEqual(22.1 * TopNotchLayout.HeightScale, open[^1].X - open[0].X, .001);
         Assert.AreEqual(TopNotchLayout.NotchHeight, open[^1].Y);
         // 닫힘은 바닥에서 수평으로 끝나고(마지막 두 점의 y가 같음), 열림은 수직으로 끝나 패널 옆면과 꺾임 없이 이어진다.
         Assert.AreEqual(closed[^2].Y, closed[^1].Y);
@@ -278,7 +281,7 @@ public sealed class TopNotchLayoutTests
     {
         Assert.AreEqual(TopNotchLayout.BandHeight, TopNotchLayout.NotchHeight);
         Assert.AreEqual(8d, TopNotchLayout.NotchHeight);
-        Assert.AreEqual(96.05, TopNotchLayout.NotchSurfaceWidth, .001);
+        Assert.AreEqual(360.2 * 8 / 30, TopNotchLayout.NotchSurfaceWidth, .001);
         Assert.IsTrue(TopNotchLayout.NotchBottomWidth < TopNotchLayout.NotchSurfaceWidth);
         Assert.IsTrue(TopNotchLayout.NotchSurfaceWidth <= TopNotchLayout.WindowWidth);
         // 패널은 노치가 다 넓어지기 전(겹치는 구간)부터 내려와 끊김 없이 이어진다.
