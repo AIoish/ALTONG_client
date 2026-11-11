@@ -21,6 +21,26 @@ public sealed class KakaoOcrLayoutTests
     }
 
     [TestMethod]
+    public void SkewedWindowsOcrBox_IsRotatedBackOntoTheGlyphs()
+    {
+        // 실제 사례(1550x402 확대 이미지): Windows OCR이 기울기 -7.6도로 판단해 '이시영' 상자를 y 125~199로 줬다.
+        // 실제 글자는 x 321~487, y 179~239에 있어 그대로 자르면 윗부분만 들어가 PP-OCR이 'l'로 읽었다.
+        var box = LiveKakaoWindowOperator.UnrotateOcrBox(326, 125, 492, 199, -7.6, 775, 201);
+
+        Assert.IsTrue(box.MinX <= 321 && box.MaxX >= 487, $"x {box.MinX:0}~{box.MaxX:0}");
+        Assert.IsTrue(box.MinY <= 179 && box.MaxY >= 239, $"y {box.MinY:0}~{box.MaxY:0}");
+        // 논리 좌표(배율 2 × 확대 2.5)로 발신자 줄(24~48) 한가운데여야 한다.
+        double logicalTop = box.MinY / 5;
+        Assert.IsTrue(logicalTop > 28 && logicalTop < 40, $"logical top {logicalTop:0.0}");
+    }
+
+    [TestMethod]
+    public void UnskewedWindowsOcrBox_IsUnchanged()
+    {
+        Assert.AreEqual((326.0, 125.0, 492.0, 199.0), LiveKakaoWindowOperator.UnrotateOcrBox(326, 125, 492, 199, 0, 775, 201));
+    }
+
+    [TestMethod]
     public void OneToOneChat_WrappedBodyStaysInBody()
     {
         // 1:1도 맨 위 이름과 발신자 줄이 따로 있다. 본문이 두 줄로 접혀도 발신자가 밀리지 않아야 한다.

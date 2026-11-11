@@ -36,6 +36,34 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
         "SearchApp.exe",
         "TextInputHost",
         "TextInputHost.exe",
+        // 배터리 부족 경고 같은 시스템 대화상자와 파일 선택기
+        "PickerHost",
+        "PickerHost.exe",
+        // 빠른 설정·알림 센터 같은 작업 표시줄 플라이아웃
+        "ShellHost",
+        "ShellHost.exe",
+        // "Windows 보안" 자격 증명 확인 창
+        "CredentialUIBroker",
+        "CredentialUIBroker.exe",
+        // PowerToys 명령 팔레트·PowerDock 같은 실행기
+        "Microsoft.CmdPal.UI",
+        "Microsoft.CmdPal.UI.exe",
+        // 삼성 노트북 빠른 설정 패널
+        "SamsungSettingsHost",
+        "SamsungSettingsHost.exe",
+    };
+
+    // 파일 탐색기와 같은 explorer.exe라 프로세스 이름으로는 못 거르는 작업 표시줄 창
+    private static readonly HashSet<string> IgnoredWindowClasses = new(StringComparer.Ordinal)
+    {
+        "TopLevelWindowForOverflowXamlIsland", // Windows 11 트레이 펼침 창
+        "NotifyIconOverflowWindow",            // Windows 10 트레이 펼침 창
+    };
+
+    // 잠금 화면은 실제로 자리를 비운 상태라 현재 창으로는 남기지만, 잠금 해제 뒤 최근 작업 창 자리는 차지하지 않게 한다.
+    private static readonly HashSet<string> RecentHistoryExcludedProcessNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "LockApp",
     };
 
     private readonly IWindowInfoProvider _windowInfoProvider;
@@ -364,7 +392,7 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
     // 현재 창을 포함해 최신순으로 기억한다. 현재 창 자리 하나를 더 둬야 현재 창을 빼고도 직전 창 3개가 남는다.
     private void UpdateRecentWindows(string processName, string windowTitle)
     {
-        if (string.IsNullOrWhiteSpace(processName))
+        if (string.IsNullOrWhiteSpace(processName) || MatchesProcessName(processName, RecentHistoryExcludedProcessNames))
         {
             return;
         }
@@ -402,12 +430,17 @@ public sealed class ActiveWindowTracker : IActiveWindowTracker
             return true;
         }
 
-        string rawName = window.ProcessName.Trim();
-        string fileName = Path.GetFileName(rawName);
-        string baseName = Path.GetFileNameWithoutExtension(rawName);
-        return IgnoredProcessNames.Contains(rawName) ||
-               IgnoredProcessNames.Contains(fileName) ||
-               IgnoredProcessNames.Contains(baseName);
+        return MatchesProcessName(window.ProcessName, IgnoredProcessNames) ||
+               IgnoredWindowClasses.Contains(window.ClassName);
+    }
+
+    // 경로·확장자 유무와 상관없이 프로세스 이름을 비교한다.
+    private static bool MatchesProcessName(string processName, HashSet<string> names)
+    {
+        string rawName = processName.Trim();
+        return names.Contains(rawName) ||
+               names.Contains(Path.GetFileName(rawName)) ||
+               names.Contains(Path.GetFileNameWithoutExtension(rawName));
     }
 
     private static string TruncateTitle(string title, int maxLength = 65)

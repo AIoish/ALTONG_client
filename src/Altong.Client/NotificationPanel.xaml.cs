@@ -26,15 +26,12 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
 
     public event EventHandler? ShowDashboardRequested;
     public event EventHandler<TopBandStyle>? BandStyleRequested;
-    /// <summary>[임시] 노치 크기 비교 버튼을 눌렀을 때.</summary>
-    public event EventHandler<NotchSize>? NotchSizeRequested;
 
     public NotificationPanel(DockNotificationState state)
     {
         InitializeComponent();
         _state = state;
         NotificationItems.ItemsSource = state.Items;
-        BuildNotchSizeButtons();
         Refresh();
     }
 
@@ -77,36 +74,6 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
         button.Background = selected ? (System.Windows.Media.Brush)FindResource("Accent") : Brushes.Transparent;
         button.Foreground = selected ? Brushes.Black : (System.Windows.Media.Brush)FindResource("MutedText");
         System.Windows.Automation.AutomationProperties.SetItemStatus(button, selected ? "선택됨" : "선택 안 됨");
-    }
-
-    /// <summary>[임시] 노치 크기 후보마다 비교 버튼을 만든다.</summary>
-    private void BuildNotchSizeButtons()
-    {
-        foreach (var size in TopNotchLayout.SizeOptions)
-        {
-            var button = new Button
-            {
-                Content = size.Label,
-                Tag = size,
-                Width = 36,
-                Height = 26,
-                Margin = new Thickness(1),
-                FontSize = 11,
-                Style = (Style)FindResource("HeaderButton"),
-                ToolTip = $"높이 {size.Height:0}, 폭 {size.Width:0}",
-            };
-            System.Windows.Automation.AutomationProperties.SetName(button, $"노치 높이 {size.Label}");
-            button.Click += (_, _) => NotchSizeRequested?.Invoke(this, size);
-            NotchSizeButtons.Children.Add(button);
-        }
-        SetNotchSize(TopNotchLayout.Size);
-    }
-
-    /// <summary>[임시] 지금 노치 크기 버튼을 선택 표시한다.</summary>
-    public void SetNotchSize(NotchSize size)
-    {
-        foreach (Button button in NotchSizeButtons.Children)
-            MarkSelected(button, button.Tag is NotchSize option && option == size);
     }
 
     private void BandStyle_Click(object sender, RoutedEventArgs e)

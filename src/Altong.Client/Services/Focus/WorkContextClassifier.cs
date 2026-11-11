@@ -26,33 +26,68 @@ public static class WorkContextClassifier
             // 개발
             "Code", "Code - Insiders", "devenv", "Antigravity", "Antigravity IDE", "Cursor", "Windsurf",
             "idea64", "pycharm64", "rider64", "webstorm64", "clion64", "goland64", "datagrip64", "studio64",
-            "WindowsTerminal", "powershell", "pwsh", "cmd", "sublime_text", "notepad++",
-            "GitHubDesktop", "Postman", "Ssms", "MATLAB", "rstudio",
-            // 문서·기획
-            "WINWORD", "EXCEL", "POWERPNT", "ONENOTE", "Hwp", "HwpViewer", "Notion", "Obsidian",
-            // 디자인·전문 도구
-            "Figma", "Photoshop", "Illustrator", "InDesign", "AfterFX", "Adobe Premiere Pro",
-            "acad", "AutoCAD", "blender",
+            "eclipse", "Unity", "UnrealEditor", "Arduino IDE",
+            "WindowsTerminal", "powershell", "pwsh", "cmd", "sublime_text", "notepad++", "Notepad",
+            "GitHubDesktop", "Fork", "SourceTree", "GitKraken", "Docker Desktop", "Postman", "Insomnia",
+            // 서버·네트워크·가상 머신
+            "warp", "putty", "MobaXterm", "WinSCP", "filezilla", "Wireshark", "VirtualBox", "VirtualBoxVM", "vmware",
+            // 데이터베이스
+            "Ssms", "sqldeveloper", "sqldeveloper64", "sqldeveloper64W", "MySQLWorkbench", "dbeaver", "heidisql", "pgAdmin4",
+            // 통계·연구·데이터 분석 (stats = IBM SPSS Statistics, Mtb = Minitab, prism = GraphPad Prism)
+            "MATLAB", "rstudio", "stats", "StataMP-64", "StataSE-64", "StataBE-64", "sas", "Mtb", "jamovi", "JASP",
+            "Origin64", "prism", "Mathematica", "ImageJ", "ImageJ-win64", "ChemDraw", "NVivo", "PBIDesktop", "tableau",
+            "EndNote", "Mendeley Reference Manager",
+            // AI 도구 (대부분 작업하면서 쓴다)
+            "claude", "ChatGPT", "Gemini",
+            // 문서·기획·공부·업무 시스템 (saplogon = SAP GUI)
+            "WINWORD", "EXCEL", "POWERPNT", "ONENOTE", "MSACCESS", "VISIO", "WINPROJ", "MSPUB", "saplogon",
+            "Hwp", "HwpViewer", "HCell", "HShow", "soffice", "soffice.bin",
+            "Notion", "Obsidian", "Evernote", "Typora", "Zotero", "Anki",
+            // 글쓰기·번역
+            "Scrivener", "SDLTradosStudio", "TradosStudio", "MemoQ",
+            // 디자인·사진
+            "Figma", "Canva", "Photoshop", "Illustrator", "InDesign", "Lightroom", "CaptureOne",
+            "CLIPStudioPaint", "krita", "inkscape", "paintdotnet", "Aseprite",
+            // 영상·음악 (FL64 = FL Studio)
+            "AfterFX", "Adobe Premiere Pro", "Resolve", "Vrew", "CapCut",
+            "Adobe Audition", "FL64", "reaper", "ProTools", "MuseScore4", "Sibelius",
+            // 3D·건축·기계 설계 (CNEXT = CATIA)
+            "blender", "maya", "3dsmax", "Cinema 4D", "ZBrush", "houdini", "houdinifx", "Adobe Substance 3D Painter",
+            "acad", "AutoCAD", "SketchUp", "Revit", "Rhino", "Archicad", "Lumion",
+            "SLDWORKS", "CNEXT", "Inventor", "Fusion360", "FreeCAD",
+            // 전자·임베디드 (X2 = Altium Designer, UV4 = Keil µVision)
+            "kicad", "pcbnew", "eeschema", "X2", "LTspice", "quartus", "vivado", "UV4", "stm32cubeide", "LabVIEW",
         ]),
         (WorkCategory.Neutral,
         [
             // 시스템
-            "explorer", "SystemSettings", "ApplicationFrameHost", "Taskmgr",
-            // 메신저·회의 (업무 연락 겸용)
-            "KakaoTalk", "Discord", "slack", "ms-teams", "Teams", "Zoom",
-            // 작업 중 틀어 두는 음악
-            "Spotify",
-            // 내용에 따라 다른 앱 (Step 2에서 KLUE 판별 대상)
-            "chrome", "msedge", "whale", "firefox", "brave", "opera",
-            "Acrobat", "AcroRd32", "PDFXEdit",
+            "explorer", "Files", "SystemSettings", "ApplicationFrameHost", "Taskmgr",
+            // 메신저·메일·회의 (업무 연락 겸용)
+            "KakaoTalk", "Discord", "slack", "ms-teams", "Teams", "Zoom", "Telegram", "LINE", "WhatsApp", "OUTLOOK", "olk",
+            // 음악·동영상 플레이어 (작업 중에 틀어 두거나 강의를 보기도 한다)
+            "Spotify", "PotPlayerMini64", "vlc",
+            // 방송·녹화 (방송인에게는 일이지만 게임 방송에도 쓴다)
+            "obs64",
+            // 내용에 따라 다른 앱 (창 제목 판별은 보류: 현재 필터 모델로는 안 됨)
+            "chrome", "msedge", "whale", "firefox", "brave", "opera", "vivaldi", "Arc",
+            "Acrobat", "AcroRd32", "PDFXEdit", "Hpdf",
             // 알통 자체
             "Altong.Client",
         ]),
         (WorkCategory.Leisure,
         [
-            "League of Legends", "LeagueClient", "LeagueClientUx", "VALORANT", "VALORANT-Win64-Shipping",
-            "RiotClientServices", "Overwatch", "Steam", "steamwebhelper", "Battle.net", "EpicGamesLauncher",
-            "MapleStory", "Netflix",
+            // 게임 런처
+            "Steam", "steamwebhelper", "Battle.net", "EpicGamesLauncher", "RiotClientServices",
+            "EADesktop", "UbisoftConnect", "GalaxyClient",
+            // 게임. 마인크래프트 자바판(javaw)은 자바 개발 도구와 이름이 같아 넣지 않는다.
+            // 방송인·게임 개발자·QA처럼 게임이 일인 사람에게는 틀린 분류다. 목록으로는 풀 수 없어 사용자가 분류를
+            // 직접 고치는 설정이 필요하다 (ROADMAP 보류 항목).
+            "League of Legends", "LeagueClient", "LeagueClientUx", "VALORANT", "VALORANT-Win64-Shipping", "Overwatch",
+            "TslGame", "LOSTARK", "MapleStory", "DNF", "BlackDesert64", "StarCraft", "Diablo IV", "Hearthstone",
+            "Minecraft.Windows", "RobloxPlayerBeta", "GenshinImpact", "StarRail", "ZenlessZoneZero",
+            "cs2", "dota2", "FortniteClient-Win64-Shipping", "eldenring",
+            // 동영상 서비스 앱
+            "Netflix",
         ]));
 
     /// <summary>
