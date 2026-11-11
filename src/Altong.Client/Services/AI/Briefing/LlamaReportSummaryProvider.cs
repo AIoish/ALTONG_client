@@ -96,6 +96,10 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
     {
         // 1. 해당 세션의 차단된 알림 목록 조회 (최대 50건)
         var blocked = await _notifications.GetBlockedNotificationsAsync(sessionId, 50).ConfigureAwait(false);
+
+        // 카카오톡 팝업에서 본문을 읽지 못한 알림은 요약할 내용이 없다. 본문 자리에 앱이 대신 넣은 문구
+        // ("(이모티콘 또는 미디어)" 등)를 모델이 메시지로 읽고 요약하지 않도록 뺀다. 알림 자체는 목록에 그대로 남는다.
+        blocked = blocked.Where(n => !KakaoNotificationText.IsUnreadBody(n.Body)).ToList();
         if (blocked.Count == 0)
         {
             return new ReportSummarySupply([]);

@@ -358,7 +358,7 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
     {
         if (hWnd == nint.Zero)
         {
-            return new KakaoNotificationText(null, "카카오톡", "(알림 내용 없음)");
+            return new KakaoNotificationText(null, "카카오톡", KakaoNotificationText.EmptyBody);
         }
 
         try
@@ -389,22 +389,28 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
 
             KakaoNotificationText? candidate = null;
 
-            // 2. 카카오톡 그래픽 캔버스(GDI/Delphi) 텍스트를 Windows 내장 OCR로 추출 (최대 5회)
+            // 2. 카카오톡은 글자를 직접 그리므로 팝업 그림을 OCR로 읽는다 (최대 5회).
+            // 본문을 못 읽었으면 팝업이 덜 그려졌을 수 있어 다시 읽는다. 그림이 직전과 같으면 결과도 같으므로 그만둔다.
+            ulong previousHash = 0;
             for (int attempt = 0; attempt < 5; attempt++)
             {
                 var ocrText = TryExtractViaOcr(hWnd);
                 if (ocrText != null)
                 {
                     candidate = ocrText;
-                    // 발신자와 본문이 모두 온전히 추출되었으면 즉시 확정
-                    if (!string.IsNullOrWhiteSpace(ocrText.Body) &&
-                        ocrText.Body != MissingBody &&
-                        ocrText.Body != MediaBody)
+                    if (!KakaoNotificationText.IsUnreadBody(ocrText.Body))
                     {
                         string senderPart = ocrText.Sender == ocrText.Title ? ocrText.Sender : $"[{ocrText.Title}] {ocrText.Sender}";
                         AppLogger.Info($"[KakaoInterceptor] OCR 추출 완료 (시도 {attempt + 1}): {senderPart} - \"{ocrText.Body}\"");
                         return ocrText;
                     }
+
+                    if (ocrText.ContentHash != 0 && ocrText.ContentHash == previousHash)
+                    {
+                        break;
+                    }
+
+                    previousHash = ocrText.ContentHash;
                 }
             }
 
@@ -487,7 +493,7 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
             if (!string.IsNullOrWhiteSpace(windowTitle))
             {
                 var bodyLines = texts.Where(l => !l.Equals(windowTitle, StringComparison.OrdinalIgnoreCase)).ToList();
-                string body = bodyLines.Count > 0 ? string.Join("\n", bodyLines) : "(새 메시지가 도착했습니다)";
+                string body = bodyLines.Count > 0 ? string.Join("\n", bodyLines) : KakaoNotificationText.ArrivedBody;
                 AppLogger.Info($"[KakaoInterceptor] 텍스트 추출 성공 (타이틀 연동): 발신자='{windowTitle}', 본문='{body}'");
                 return new KakaoNotificationText(windowTitle, windowTitle, body);
             }
@@ -503,7 +509,7 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
             else if (texts.Count == 2)
             {
                 AppLogger.Info($"[KakaoInterceptor] UIA 2줄 텍스트 추출: 방제='{texts[0]}', 발신자='{texts[1]}'");
-                return new KakaoNotificationText(texts[1], texts[0], "(새 메시지)");
+                return new KakaoNotificationText(texts[1], texts[0], KakaoNotificationText.MissingBody);
             }
             else if (texts.Count == 1)
             {
@@ -520,10 +526,8 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
             AppLogger.Warn($"[KakaoInterceptor] 텍스트 추출 예외: {ex.Message}");
         }
 
-        return new KakaoNotificationText(null, "카카오톡", "(새 메시지가 도착했습니다)");
+        return new KakaoNotificationText(null, "카카오톡", KakaoNotificationText.ArrivedBody);
     }
-
-    private record ParsedOcrLine(string Text, double X, double Y, double Width, double Height);
 
     // 팝업 카드의 논리 좌표(96 DPI 기준). 200% 캡처에서 잰 값: 방 이름 줄 위쪽 약 10, 발신자 줄 약 36,
     // 본문 줄 약 56. 프로필 사진은 x 15~53, y 27~68이고 글자 열은 x 65부터 시작한다.
@@ -531,9 +535,6 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
     internal const double BodyRowTop = 48;
     internal const double AvatarRight = 60;
     internal const double AvatarTop = 24;
-
-    internal const string MissingBody = "(새 메시지)";
-    internal const string MediaBody = "(이모티콘 또는 미디어)";
 
     public ulong CaptureContentHash(nint hWnd)
     {
@@ -704,7 +705,13 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
                 return null;
             }
 
-            var mapped = MapOcrLines(RecognizeLines(card, scale, saveDebugImages: true));
+            var lines = RecognizeLines(card, scale, saveDebugImages: true);
+            var mapped = MapOcrLines(lines);
+            if (mapped is null || KakaoNotificationText.IsUnreadBody(mapped.Body))
+            {
+                ReportUnreadCard(card, contentHash, lines);
+            }
+
             return mapped is null ? null : mapped with { ContentHash = contentHash };
         }
         catch (Exception ex)
@@ -713,6 +720,39 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
         }
 
         return null;
+    }
+
+    private const int MaxUnreadCaptures = 20;
+
+    /// <summary>
+    /// 본문을 읽지 못한 팝업에서 읽은 줄과 줄 위치를 로그에 남긴다. 개발 빌드에서는 그 팝업 그림도 남겨
+    /// 원인을 재현할 수 있게 한다. 같은 그림은 같은 파일에 덮어쓰고 최근 20장만 둔다.
+    /// </summary>
+    private static void ReportUnreadCard(Bitmap card, ulong contentHash, IReadOnlyList<(string Text, double LogicalTop)> lines)
+    {
+        string found = lines.Count == 0
+            ? "없음"
+            : string.Join(", ", lines.Select(l => $"'{l.Text}'({l.LogicalTop:0})"));
+        AppLogger.Info($"[KakaoInterceptor] 본문 줄을 읽지 못함. 읽은 줄(위쪽 논리 px): {found}");
+
+#if DEBUG
+        try
+        {
+            string directory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Altong",
+                "kakao_unread");
+            Directory.CreateDirectory(directory);
+            card.Save(Path.Combine(directory, $"{contentHash:x16}.png"), ImageFormat.Png);
+            foreach (var old in new DirectoryInfo(directory).GetFiles("*.png")
+                         .OrderByDescending(f => f.LastWriteTimeUtc)
+                         .Skip(MaxUnreadCaptures))
+            {
+                old.Delete();
+            }
+        }
+        catch { }
+#endif
     }
 
     private const int MaxStabilityChecks = 6;
@@ -750,17 +790,20 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
     }
 
     /// <summary>
-    /// 손질한 카드 이미지에서 OCR 줄과 각 줄의 위쪽 좌표(논리 px)를 읽는다.
+    /// 손질한 카드 이미지에서 글자 줄과 각 줄의 위쪽 좌표(논리 px)를 읽는다.
+    /// 줄 위치는 OCR 엔진에 맡기지 않고 픽셀로 직접 찾는다(<see cref="FindTextRows"/>).
+    /// Windows OCR에 줄 찾기를 맡기면 자음만 있는 줄("ㅋㅋㅋ")과 기호만 있는 줄("?")을 놓치고,
+    /// 글자가 적은 팝업은 기울었다고 잘못 판단해 줄을 빠뜨리거나 줄 상자를 어긋나게 준다.
+    /// 찾은 줄은 PP-OCR로 읽고, PP-OCR 모델이 없으면 Windows OCR이 읽은 단어를 그 줄에 나눠 담는다.
     /// </summary>
-    internal static List<(string Text, double LogicalTop)> RecognizeLines(Bitmap card, float scale, bool saveDebugImages = false)
+    internal static List<(string Text, double LogicalTop)> RecognizeLines(
+        Bitmap card, float scale, bool saveDebugImages = false, bool allowPaddle = true)
     {
         int width = card.Width;
         int effectiveHeight = card.Height;
 
-        // [핵심 성능 개선] 2.5배 고품질 Bicubic 업스케일링
-        // 카카오톡 알림 팝업의 텍스트는 9~10pt(약 12~14px)로 매우 작아 Windows.Media.Ocr 엔진이
-        // 복잡한 한글 자모('늘', '뭥' 등)를 인식하지 못하고 노이즈로 버리는 문제를 완벽히 해결!
-        // 2.5배 확대 시 폰트 높이가 약 32~35px로 커져 OCR 권장 인식 범위(30~45px)에 정확히 진입함.
+        // 팝업 글자는 9~10pt(약 12~14px)로 작아 그대로는 OCR이 복잡한 한글("늘", "뭥")을 놓친다.
+        // 2.5배로 키우면 글자 높이가 약 32~35px이 되어 OCR이 잘 읽는 크기에 들어온다.
         const float OcrUpscaleFactor = 2.5f;
         int scaledWidth = (int)Math.Round(width * OcrUpscaleFactor);
         int scaledHeight = (int)Math.Round(effectiveHeight * OcrUpscaleFactor);
@@ -791,14 +834,266 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
         }
 #endif
 
-        using var ms = new MemoryStream();
-        scaledBmp.Save(ms, ImageFormat.Bmp);
-        var bytes = ms.ToArray();
+        double pxPerLogical = scale * OcrUpscaleFactor;
+        bool usePaddle = allowPaddle && PaddleOcrLineRecognizer.Instance.IsAvailable;
+        var rows = FindTextRows(scaledBmp, pxPerLogical, out Color background);
+        IReadOnlyList<string?> texts = usePaddle
+            ? rows.Select(row => PaddleOcrLineRecognizer.Instance.RecognizeLine(scaledBmp, row)).ToList()
+            : ReadRowsWithWindowsOcr(scaledBmp, rows, background);
 
+        var lines = new List<(string Text, double LogicalTop)>();
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(texts[i]))
+            {
+                lines.Add((texts[i]!.Trim(), rows[i].Top / pxPerLogical));
+            }
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// 카드에서 글자가 있는 줄을 위에서 아래 순서로 찾는다. 카드는 배경이 한 가지 색이고 프로필 사진은 이미
+    /// 덮여 있어서, 배경과 다른 픽셀이 있는 가로줄이 이어진 구간이 곧 글자 한 줄이다.
+    /// - 창 테두리(가장자리 2 논리 px)와 오른쪽 위 벨·닫기 아이콘 영역은 보지 않는다.
+    /// - 한 줄 안에서도 구간이 끊길 수 있다. "넵"은 받침 위에서, 물음표·쌍반점은 점 위에서 끊긴다.
+    ///   틈이 아주 좁거나(2 논리 px 이하), 한쪽이 낮은 조각이고 틈이 좁으면(3.5 논리 px 이하) 한 줄로 합친다.
+    ///   합친 높이가 한 줄 높이(15 논리 px)를 넘으면 서로 다른 줄이므로 합치지 않는다.
+    /// </summary>
+    internal static List<Rectangle> FindTextRows(Bitmap image, double pxPerLogical, out Color background)
+    {
+        const double EdgeMargin = 2;
+        const double ToolbarLeftRatio = 0.80;
+        const double ToolbarBottomRatio = 0.35;
+        const double SplitGlyphGap = 2;
+        const double FragmentHeight = 4;
+        const double FragmentGap = 3.5;
+        const double MaxLineHeight = 15;
+        const int InkDifference = 48;
+        const int MinInkPerRow = 2;
+
+        int width = image.Width;
+        int height = image.Height;
+        var rows = new List<Rectangle>();
+        var data = image.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            int stride = Math.Abs(data.Stride);
+            byte[] pixels = new byte[stride * height];
+            Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
+
+            int backgroundOffset = FindBackgroundOffset(pixels, stride, width, height, pxPerLogical);
+            byte backgroundB = pixels[backgroundOffset];
+            byte backgroundG = pixels[backgroundOffset + 1];
+            byte backgroundR = pixels[backgroundOffset + 2];
+            background = Color.FromArgb(backgroundR, backgroundG, backgroundB);
+
+            int margin = Math.Max(1, (int)Math.Round(EdgeMargin * pxPerLogical));
+            int toolbarLeft = (int)(width * ToolbarLeftRatio);
+            int toolbarBottom = (int)(height * ToolbarBottomRatio);
+
+            bool IsInk(int x, int y)
+            {
+                int offset = y * stride + x * 4;
+                return Math.Abs(pixels[offset] - backgroundB) > InkDifference ||
+                       Math.Abs(pixels[offset + 1] - backgroundG) > InkDifference ||
+                       Math.Abs(pixels[offset + 2] - backgroundR) > InkDifference;
+            }
+
+            int RowEnd(int y) => Math.Min(width - margin, y < toolbarBottom ? toolbarLeft : width);
+
+            // 1. 글자 픽셀이 있는 가로줄이 이어진 구간을 찾는다.
+            var runs = new List<(int Top, int Bottom)>();
+            int runTop = -1;
+            for (int y = margin; y <= height - margin; y++)
+            {
+                bool hasInk = false;
+                if (y < height - margin)
+                {
+                    int count = 0;
+                    int end = RowEnd(y);
+                    for (int x = margin; x < end && !hasInk; x++)
+                    {
+                        if (IsInk(x, y) && ++count >= MinInkPerRow)
+                        {
+                            hasInk = true;
+                        }
+                    }
+                }
+
+                if (hasInk && runTop < 0)
+                {
+                    runTop = y;
+                }
+                else if (!hasInk && runTop >= 0)
+                {
+                    runs.Add((runTop, y - 1));
+                    runTop = -1;
+                }
+            }
+
+            // 2. 한 줄 안에서 끊긴 구간을 합친다.
+            int splitGlyphGap = (int)Math.Round(SplitGlyphGap * pxPerLogical);
+            int fragmentHeight = (int)Math.Round(FragmentHeight * pxPerLogical);
+            int fragmentGap = (int)Math.Round(FragmentGap * pxPerLogical);
+            int maxLineHeight = (int)Math.Round(MaxLineHeight * pxPerLogical);
+            for (int i = 0; i < runs.Count - 1;)
+            {
+                var (upper, lower) = (runs[i], runs[i + 1]);
+                int gap = lower.Top - upper.Bottom - 1;
+                bool hasFragment = Math.Min(upper.Bottom - upper.Top, lower.Bottom - lower.Top) + 1 < fragmentHeight;
+                bool sameLine = (gap <= splitGlyphGap || (hasFragment && gap <= fragmentGap)) &&
+                                lower.Bottom - upper.Top + 1 <= maxLineHeight;
+                if (!sameLine)
+                {
+                    i++;
+                    continue;
+                }
+
+                runs[i] = (upper.Top, lower.Bottom);
+                runs.RemoveAt(i + 1);
+            }
+
+            // 3. 구간마다 글자가 있는 가로 범위를 구한다.
+            foreach (var (top, bottom) in runs)
+            {
+                int left = int.MaxValue;
+                int right = int.MinValue;
+                for (int y = top; y <= bottom; y++)
+                {
+                    int end = RowEnd(y);
+                    for (int x = margin; x < end; x++)
+                    {
+                        if (IsInk(x, y))
+                        {
+                            if (x < left) left = x;
+                            if (x > right) right = x;
+                        }
+                    }
+                }
+
+                if (left <= right)
+                {
+                    rows.Add(new Rectangle(left, top, right - left + 1, bottom - top + 1));
+                }
+            }
+        }
+        finally
+        {
+            image.UnlockBits(data);
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// 배경색 픽셀의 위치를 찾는다. 프로필 사진을 덮은 자리는 배경색으로 칠해져 있으므로 그 안의 몇 점 중
+    /// 가장 많이 나온 색을 배경으로 본다.
+    /// </summary>
+    private static int FindBackgroundOffset(byte[] pixels, int stride, int width, int height, double pxPerLogical)
+    {
+        int x = Math.Clamp((int)Math.Round(AvatarRight / 2 * pxPerLogical), 0, width - 1);
+        int top = Math.Clamp((int)Math.Round((AvatarTop + 2) * pxPerLogical), 0, height - 1);
+        int bottom = Math.Clamp(height - 1 - (int)Math.Round(2 * pxPerLogical), top, height - 1);
+
+        const int Samples = 9;
+        var offsets = new int[Samples];
+        for (int i = 0; i < Samples; i++)
+        {
+            int y = top + (bottom - top) * i / (Samples - 1);
+            offsets[i] = y * stride + x * 4;
+        }
+
+        return offsets
+            .GroupBy(o => (pixels[o], pixels[o + 1], pixels[o + 2]))
+            .OrderByDescending(g => g.Count())
+            .First()
+            .First();
+    }
+
+    /// <summary>
+    /// PP-OCR 모델이 없을 때 쓴다. 카드 전체를 Windows OCR로 읽고, 읽은 단어를 픽셀로 찾은 줄에 나눠 담는다.
+    /// Windows OCR이 주는 줄 묶음은 쓰지 않는다. 글자가 적은 팝업은 기울었다고 잘못 판단하는 일이 있어,
+    /// 그때는 단어 위치를 그 각도만큼 되돌려 원래 이미지의 줄과 맞춘다.
+    /// 단어가 하나도 담기지 않은 줄은 그 줄만 잘라 한 번 더 읽는다.
+    /// </summary>
+    private static List<string?> ReadRowsWithWindowsOcr(Bitmap image, IReadOnlyList<Rectangle> rows, Color background)
+    {
+        var texts = new List<string?>(new string?[rows.Count]);
+        var ocr = _cachedWindowsOcr.Value;
+        if (ocr is null || rows.Count == 0)
+        {
+            return texts;
+        }
+
+        var result = RunWindowsOcr(ocr, image);
+        double radians = (result.TextAngle ?? 0) * Math.PI / 180;
+        double cos = Math.Cos(radians);
+        double sin = Math.Sin(radians);
+        double centerX = image.Width / 2.0;
+        double centerY = image.Height / 2.0;
+
+        var wordsByRow = new List<(double X, string Text)>[rows.Count];
+        foreach (var word in (result.Lines ?? []).SelectMany(l => l.Words))
+        {
+            double dx = word.BoundingRect.X + word.BoundingRect.Width / 2 - centerX;
+            double dy = word.BoundingRect.Y + word.BoundingRect.Height / 2 - centerY;
+            double x = centerX + dx * cos - dy * sin;
+            double y = centerY + dx * sin + dy * cos;
+            for (int i = 0; i < rows.Count; i++)
+            {
+                if (y >= rows[i].Top && y <= rows[i].Bottom && x >= rows[i].Left && x <= rows[i].Right)
+                {
+                    (wordsByRow[i] ??= []).Add((x, word.Text));
+                    break;
+                }
+            }
+        }
+
+        for (int i = 0; i < rows.Count; i++)
+        {
+            string? text = wordsByRow[i] is { } words
+                ? string.Join(" ", words.OrderBy(w => w.X).Select(w => w.Text))
+                : ReadRowCropWithWindowsOcr(ocr, image, rows[i], background);
+
+            // ㄷㄷㄷ→CCC, ㅠㅠ→TT, ㅡㅡ→-- 같은 글리프 혼동은 PP-OCR 경로와 같게 되돌린다.
+            texts[i] = text is null ? null : PaddleOcrLineRecognizer.NormalizeJamoConfusion(text);
+        }
+
+        return texts;
+    }
+
+    private static string? ReadRowCropWithWindowsOcr(Windows.Media.Ocr.OcrEngine ocr, Bitmap image, Rectangle row, Color background)
+    {
+        // Windows OCR은 가장자리에 붙은 글자를 놓치고, 너무 작은 이미지는 받지 않는다.
+        int pad = Math.Max(24, row.Height / 2);
+        int canvasWidth = Math.Max(96, row.Width + pad * 2);
+        int canvasHeight = Math.Max(96, row.Height + pad * 2);
+        using var canvas = new Bitmap(canvasWidth, canvasHeight, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(canvas))
+        {
+            g.Clear(background);
+            g.DrawImage(
+                image,
+                new Rectangle(pad, (canvasHeight - row.Height) / 2, row.Width, row.Height),
+                row,
+                GraphicsUnit.Pixel);
+        }
+
+        var lines = RunWindowsOcr(ocr, canvas).Lines;
+        string text = string.Join(" ", (lines ?? []).Select(l => l.Text.Trim()).Where(t => t.Length > 0));
+        return text.Length == 0 ? null : text;
+    }
+
+    private static Windows.Media.Ocr.OcrResult RunWindowsOcr(Windows.Media.Ocr.OcrEngine ocr, Bitmap image)
+    {
+        using var ms = new MemoryStream();
+        image.Save(ms, ImageFormat.Bmp);
         using var ras = new Windows.Storage.Streams.InMemoryRandomAccessStream();
         using (var writer = new Windows.Storage.Streams.DataWriter(ras))
         {
-            writer.WriteBytes(bytes);
+            writer.WriteBytes(ms.ToArray());
             writer.StoreAsync().AsTask().GetAwaiter().GetResult();
             writer.DetachStream();
         }
@@ -806,145 +1101,7 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
 
         var decoder = Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(ras).AsTask().GetAwaiter().GetResult();
         using var softwareBitmap = decoder.GetSoftwareBitmapAsync().AsTask().GetAwaiter().GetResult();
-
-        var ocr = _cachedWindowsOcr.Value;
-        var parsedLines = new List<ParsedOcrLine>();
-
-        if (ocr != null)
-        {
-            var result = ocr.RecognizeAsync(softwareBitmap).AsTask().GetAwaiter().GetResult();
-            double textAngle = result.TextAngle ?? 0;
-            if (Math.Abs(textAngle) >= 0.5)
-            {
-                AppLogger.Info($"[KakaoInterceptor] Windows OCR이 기울기 {textAngle:0.0}도로 판단해 줄 좌표를 되돌림");
-            }
-            if (result.Lines != null)
-            {
-            foreach (var line in result.Lines)
-            {
-                string text = line.Text.Trim();
-                if (string.IsNullOrWhiteSpace(text)) continue;
-
-                double rawMinX = line.Words.Count > 0 ? line.Words.Min(w => w.BoundingRect.X) : 0;
-                double rawMinY = line.Words.Count > 0 ? line.Words.Min(w => w.BoundingRect.Y) : 0;
-                double rawMaxX = line.Words.Count > 0 ? line.Words.Max(w => w.BoundingRect.X + w.BoundingRect.Width) : 0;
-                double rawMaxY = line.Words.Count > 0 ? line.Words.Max(w => w.BoundingRect.Y + w.BoundingRect.Height) : 0;
-                (rawMinX, rawMinY, rawMaxX, rawMaxY) = UnrotateOcrBox(
-                    rawMinX, rawMinY, rawMaxX, rawMaxY, textAngle, scaledWidth / 2.0, scaledHeight / 2.0);
-
-                // 업스케일링 좌표를 원본 창 좌표계로 정규화 복원
-                double minX = rawMinX / OcrUpscaleFactor;
-                double minY = rawMinY / OcrUpscaleFactor;
-                double maxX = rawMaxX / OcrUpscaleFactor;
-                double maxY = rawMaxY / OcrUpscaleFactor;
-
-                // 1. 우상단 툴바 영역 (알림 음소거 벨 아이콘 '0'/'O', 닫기 'X' 버튼) 배제
-                // 카카오톡 토스트 우측 상단(X > 전체 너비의 70%, Y < 상단 35%)에 위치한 UI 아이콘 배제
-                if (minX > width * 0.70 && minY < effectiveHeight * 0.35)
-                {
-                    continue;
-                }
-
-                // [PP-OCRv5 온디바이스 라인 정밀 인식 결합]
-                // Windows.Media.Ocr가 검출한 라인 Y-Band 영역을 잘라내어 PP-OCRv5 ONNX 엔진으로 정밀 인식
-                string lineText = text;
-                if (PaddleOcrLineRecognizer.Instance.IsAvailable)
-                {
-                    int cropX = Math.Max(0, (int)Math.Floor(rawMinX));
-                    int cropY = Math.Max(0, (int)Math.Floor(rawMinY));
-                    int cropW = Math.Min(scaledWidth - cropX, (int)Math.Ceiling(rawMaxX - rawMinX));
-                    int cropH = Math.Min(scaledHeight - cropY, (int)Math.Ceiling(rawMaxY - rawMinY));
-
-                    if (cropW > 0 && cropH > 0)
-                    {
-                        var lineRect = new Rectangle(cropX, cropY, cropW, cropH);
-                        string? recognized = PaddleOcrLineRecognizer.Instance.RecognizeLine(scaledBmp, lineRect);
-                        if (!string.IsNullOrWhiteSpace(recognized))
-                        {
-                            lineText = recognized;
-                        }
-                    }
-                }
-
-                // PP-OCRv5 미사용 또는 잔여 폰트 글리프 혼동(ㄷㄷㄷ->CCC, ㅠㅠ->TT, ㅡㅡ->--) 보정
-                lineText = PaddleOcrLineRecognizer.NormalizeJamoConfusion(lineText);
-
-                // 2. 단독 기호 및 불필요한 컨트롤 라벨(전송, 메시지 입력 등) 배제
-                // (ONNX 라인 인식 및 자모 혼동 보정 완료 후 검사하므로 '[[['나 '==='로 인한 조기 삭제 방지)
-                if (!IsValidTextItem(lineText))
-                {
-                    continue;
-                }
-
-                // 3. 단일 숫자(0, 1 등) 또는 단일 영문 기호(o, x 등) 오인식 배제
-                if (lineText.Length == 1 && (char.IsDigit(lineText[0]) || lineText.Equals("o", StringComparison.OrdinalIgnoreCase) || lineText.Equals("x", StringComparison.OrdinalIgnoreCase)))
-                {
-                    continue;
-                }
-
-                parsedLines.Add(new ParsedOcrLine(lineText, minX, minY, maxX - minX, maxY - minY));
-            }
-        }
-        }
-
-        // 4. [Body-Band 가로 픽셀 투영 Fallback]
-        // Windows.Media.Ocr가 'ㅡㅡ' 등 순수 가로선 자모를 구분선 기호로 오인하여 본문 줄을 누락한 경우,
-        // 본문 영역의 가로 픽셀 투영으로 Y-Band를 검출해 PP-OCRv5로 구조 복원
-        bool hasBodyLine = parsedLines.Any(p => (p.Y / scale) >= BodyRowTop);
-        if (!hasBodyLine && PaddleOcrLineRecognizer.Instance.IsAvailable)
-        {
-            int bodyStartY = (int)Math.Round(BodyRowTop * scale * OcrUpscaleFactor);
-            int bodyEndY = scaledHeight - (int)Math.Round(4 * scale * OcrUpscaleFactor);
-            int bodyStartX = parsedLines.Count > 0
-                ? Math.Max(0, (int)Math.Floor(parsedLines.Min(p => p.X) * OcrUpscaleFactor) - 10)
-                : (int)Math.Round(width * 0.15 * OcrUpscaleFactor);
-            int bodyEndX = Math.Min(scaledWidth, (int)Math.Ceiling(width * 0.85 * OcrUpscaleFactor));
-
-            var detectedBand = DetectBodyLineBand(scaledBmp, bodyStartX, bodyStartY, bodyEndX, bodyEndY);
-            if (detectedBand.HasValue)
-            {
-                string? bodyText = PaddleOcrLineRecognizer.Instance.RecognizeLine(scaledBmp, detectedBand.Value);
-                if (!string.IsNullOrWhiteSpace(bodyText))
-                {
-                    bodyText = PaddleOcrLineRecognizer.NormalizeJamoConfusion(bodyText);
-                    if (IsValidTextItem(bodyText))
-                    {
-                        double bMinX = detectedBand.Value.X / OcrUpscaleFactor;
-                        double bMinY = detectedBand.Value.Y / OcrUpscaleFactor;
-                        double bW = detectedBand.Value.Width / OcrUpscaleFactor;
-                        double bH = detectedBand.Value.Height / OcrUpscaleFactor;
-                        parsedLines.Add(new ParsedOcrLine(bodyText, bMinX, bMinY, bW, bH));
-                    }
-                }
-            }
-        }
-
-        return parsedLines.Select(p => (p.Text, p.Y / scale)).ToList();
-    }
-
-    /// <summary>
-    /// Windows OCR은 글자가 기울었다고 판단하면(TextAngle) 기울기를 바로잡은 이미지 기준으로 단어 상자를 준다.
-    /// 팝업 글자는 기울어 있지 않아도 줄이 적으면 각도를 잘못 잡는 일이 있어(-7.6도 사례), 상자를 원래 이미지 좌표로
-    /// 되돌려야 PP-OCR이 글자를 온전히 잘라 읽고 줄 위치로 방 이름·발신자·본문을 제대로 나눈다.
-    /// 이미지 중심을 기준으로 상자 네 모서리를 각도만큼 돌린 뒤 감싸는 상자를 돌려준다.
-    /// </summary>
-    internal static (double MinX, double MinY, double MaxX, double MaxY) UnrotateOcrBox(
-        double minX, double minY, double maxX, double maxY, double angleDegrees, double centerX, double centerY)
-    {
-        if (angleDegrees == 0)
-        {
-            return (minX, minY, maxX, maxY);
-        }
-
-        double radians = angleDegrees * Math.PI / 180;
-        double cos = Math.Cos(radians);
-        double sin = Math.Sin(radians);
-        var corners = new[] { (minX, minY), (maxX, minY), (minX, maxY), (maxX, maxY) }
-            .Select(p => (
-                X: centerX + (p.Item1 - centerX) * cos - (p.Item2 - centerY) * sin,
-                Y: centerY + (p.Item1 - centerX) * sin + (p.Item2 - centerY) * cos))
-            .ToArray();
-        return (corners.Min(p => p.X), corners.Min(p => p.Y), corners.Max(p => p.X), corners.Max(p => p.Y));
+        return ocr.RecognizeAsync(softwareBitmap).AsTask().GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -979,85 +1136,7 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
         return new KakaoNotificationText(
             Sender: sender ?? title,
             Title: title ?? sender ?? "카카오톡",
-            Body: body ?? (sender is not null ? MediaBody : MissingBody));
-    }
-
-    internal static Rectangle? DetectBodyLineBand(Bitmap scaledBmp, int startX, int startY, int endX, int endY)
-    {
-        int w = endX - startX;
-        int h = endY - startY;
-        if (w <= 0 || h <= 0 || startX < 0 || startY < 0 || endX > scaledBmp.Width || endY > scaledBmp.Height)
-        {
-            return null;
-        }
-
-        var rect = new Rectangle(startX, startY, w, h);
-        var bmpData = scaledBmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-        try
-        {
-            int stride = Math.Abs(bmpData.Stride);
-            byte[] buffer = new byte[stride * h];
-            Marshal.Copy(bmpData.Scan0, buffer, 0, buffer.Length);
-
-            int firstActiveY = -1;
-            int lastActiveY = -1;
-            int minContentX = int.MaxValue;
-            int maxContentX = int.MinValue;
-
-            int c0 = (buffer[0] * 114 + buffer[1] * 587 + buffer[2] * 299) / 1000;
-            int c1 = (buffer[(w - 1) * 4] * 114 + buffer[(w - 1) * 4 + 1] * 587 + buffer[(w - 1) * 4 + 2] * 299) / 1000;
-            int c2 = (buffer[(h - 1) * stride] * 114 + buffer[(h - 1) * stride + 1] * 587 + buffer[(h - 1) * stride + 2] * 299) / 1000;
-            int c3 = (buffer[(h - 1) * stride + (w - 1) * 4] * 114 + buffer[(h - 1) * stride + (w - 1) * 4 + 1] * 587 + buffer[(h - 1) * stride + (w - 1) * 4 + 2] * 299) / 1000;
-            bool isDark = (c0 + c1 + c2 + c3) / 4 < 120;
-
-            for (int y = 0; y < h; y++)
-            {
-                int rowOffset = y * stride;
-                int strokePixelCount = 0;
-                for (int x = 0; x < w; x++)
-                {
-                    int pxOffset = rowOffset + (x * 4);
-                    byte b = buffer[pxOffset];
-                    byte g = buffer[pxOffset + 1];
-                    byte r = buffer[pxOffset + 2];
-
-                    bool isStroke = isDark
-                        ? (r > 110 || g > 110 || b > 110)
-                        : (r < 200 || g < 200 || b < 200);
-
-                    if (isStroke)
-                    {
-                        strokePixelCount++;
-                        if (x < minContentX) minContentX = x;
-                        if (x > maxContentX) maxContentX = x;
-                    }
-                }
-
-                if (strokePixelCount >= 4)
-                {
-                    if (firstActiveY == -1) firstActiveY = y;
-                    lastActiveY = y;
-                }
-            }
-
-            int contentW = maxContentX - minContentX + 1;
-            int contentH = lastActiveY - firstActiveY + 1;
-
-            if (firstActiveY != -1 && contentW >= 6 && contentH >= 1)
-            {
-                int bandY = Math.Max(0, startY + firstActiveY - 2);
-                int bandH = Math.Min(scaledBmp.Height - bandY, contentH + 4);
-                int bandX = Math.Max(0, startX + minContentX - 2);
-                int bandW = Math.Min(scaledBmp.Width - bandX, contentW + 4);
-                return new Rectangle(bandX, bandY, bandW, bandH);
-            }
-
-            return null;
-        }
-        finally
-        {
-            scaledBmp.UnlockBits(bmpData);
-        }
+            Body: body ?? (sender is not null ? KakaoNotificationText.MediaBody : KakaoNotificationText.MissingBody));
     }
 
     private static bool IsValidTextItem(string text)
