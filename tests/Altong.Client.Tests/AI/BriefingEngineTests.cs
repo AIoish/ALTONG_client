@@ -235,14 +235,14 @@ public sealed class BriefingEngineTests
         var now = new DateTime(2026, 11, 6, 21, 5, 0);
         var fakeNotifications = new[]
         {
-            new NotificationRecord("1", "KakaoTalk.exe", "박민준", "알통 팀방", "주말에 바다 갈까", now,
+            new NotificationRecord("1", "KakaoTalk.exe", "팀원A", "알통 팀방", "주말에 바다 갈까", now,
                 IsPassed: false, SessionId: "session-123"),
-            new NotificationRecord("2", "KakaoTalk.exe", "박민준", "알통 팀방", KakaoNotificationText.UnreadBody, now.AddSeconds(5),
+            new NotificationRecord("2", "KakaoTalk.exe", "팀원A", "알통 팀방", KakaoNotificationText.UnreadBody, now.AddSeconds(5),
                 IsPassed: false, SessionId: "session-123"),
             // 문구를 바꾸기 전에 저장된 알림
-            new NotificationRecord("4", "KakaoTalk.exe", "박민준", "알통 팀방", KakaoNotificationText.LegacyMediaBody, now.AddSeconds(7),
+            new NotificationRecord("4", "KakaoTalk.exe", "팀원A", "알통 팀방", KakaoNotificationText.LegacyMediaBody, now.AddSeconds(7),
                 IsPassed: false, SessionId: "session-123"),
-            new NotificationRecord("3", "KakaoTalk.exe", "김민범", "김민범", KakaoNotificationText.MissingBody, now.AddSeconds(9),
+            new NotificationRecord("3", "KakaoTalk.exe", "팀원B", "팀원B", KakaoNotificationText.MissingBody, now.AddSeconds(9),
                 IsPassed: false, SessionId: "session-123")
         };
 
