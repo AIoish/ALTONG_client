@@ -266,13 +266,13 @@ public class OcrTests
         }
 
         // Windows OCR은 자음만 있는 줄과 기호만 있는 줄을 찾지 못한다. 줄을 픽셀로 찾아야 본문으로 들어온다.
-        using var card = RenderKakaoCard("알통 팀방", "22 컴공 박민준", body);
+        using var card = RenderKakaoCard("알통 팀방", "팀원A", body);
 
         var text = LiveKakaoWindowOperator.MapOcrLines(LiveKakaoWindowOperator.RecognizeLines(card, scale: 2f));
 
         Assert.IsNotNull(text);
         Assert.AreEqual(body, text.Body);
-        Assert.AreEqual("22 컴공 박민준", text.Sender);
+        Assert.AreEqual("팀원A", text.Sender);
         Assert.AreEqual("알통 팀방", text.Title);
     }
 
@@ -286,7 +286,7 @@ public class OcrTests
             return;
         }
 
-        using var card = RenderKakaoCard("알통 팀방", "22 컴공 박민준", "내일 회의 자료 올려주세요");
+        using var card = RenderKakaoCard("알통 팀방", "팀원A", "내일 회의 자료 올려주세요");
 
         var text = LiveKakaoWindowOperator.MapOcrLines(
             LiveKakaoWindowOperator.RecognizeLines(card, scale: 2f, allowPaddle: false));
@@ -294,7 +294,7 @@ public class OcrTests
         // Windows OCR은 작은 방 이름 글자를 자주 틀리므로 방 이름은 줄이 나뉘었는지만 본다.
         Assert.IsNotNull(text);
         Assert.AreNotEqual(text.Sender, text.Title);
-        StringAssert.Contains(text.Sender, "박민준");
+        StringAssert.Contains(text.Sender, "팀원A");
         StringAssert.Contains(text.Body, "회의");
     }
 

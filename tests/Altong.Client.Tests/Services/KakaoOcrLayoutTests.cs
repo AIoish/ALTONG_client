@@ -86,19 +86,19 @@ public sealed class KakaoOcrLayoutTests
     [TestMethod]
     public void FindTextRows_SenderRowReachingBodyBoundary_DoesNotPullBodyIntoSenderRow()
     {
-        // 실제 사례(11/06): 발신자 "22 컴공 박민준"의 글자 아래쪽이 본문 경계(논리 48 = 240px)까지 내려와 있었다.
+        // 실제 사례(11/06): 발신자 이름의 글자 아래쪽이 본문 경계(논리 48 = 240px)까지 내려와 있었다.
         // 예전에는 본문 영역을 경계부터 훑다가 이 자투리를 본문 줄의 시작으로 잡아 본문 "ㅋㅋㅋ"의 위쪽을 47.6으로
-        // 계산했고, 본문이 발신자 칸에 붙어 "22 컴공 박민준 ㅋㅋㅋ" / "(이모티콘 또는 미디어)"가 됐다.
+        // 계산했고, 본문이 발신자 칸에 붙어 "팀원A ㅋㅋㅋ" / "(이모티콘 또는 미디어)"가 됐다.
         using var card = NewUpscaledCard();
         Ink(card, 322, 180, 400, 62);  // 발신자: y 180~241
         Ink(card, 327, 294, 273, 30);  // 본문 "ㅋㅋㅋ"
 
         var rows = LiveKakaoWindowOperator.FindTextRows(card, UpscaledPxPerLogical, out _);
         var text = LiveKakaoWindowOperator.MapOcrLines(
-            rows.Select((row, i) => (i == 0 ? "22 컴공 박민준" : "ㅋㅋㅋ", row.Top / UpscaledPxPerLogical)).ToList());
+            rows.Select((row, i) => (i == 0 ? "팀원A" : "ㅋㅋㅋ", row.Top / UpscaledPxPerLogical)).ToList());
 
         Assert.AreEqual(2, rows.Count);
-        Assert.AreEqual(new KakaoNotificationText("22 컴공 박민준", "22 컴공 박민준", "ㅋㅋㅋ"), text);
+        Assert.AreEqual(new KakaoNotificationText("팀원A", "팀원A", "ㅋㅋㅋ"), text);
     }
 
     [TestMethod]
