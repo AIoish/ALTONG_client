@@ -1136,7 +1136,7 @@ public sealed class LiveKakaoWindowOperator : IKakaoWindowOperator
         return new KakaoNotificationText(
             Sender: sender ?? title,
             Title: title ?? sender ?? "카카오톡",
-            Body: body ?? (sender is not null ? KakaoNotificationText.MediaBody : KakaoNotificationText.MissingBody));
+            Body: body ?? (sender is not null ? KakaoNotificationText.UnreadBody : KakaoNotificationText.MissingBody));
     }
 
     private static bool IsValidTextItem(string text)

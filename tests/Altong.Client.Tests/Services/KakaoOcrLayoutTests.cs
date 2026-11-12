@@ -39,11 +39,11 @@ public sealed class KakaoOcrLayoutTests
     }
 
     [TestMethod]
-    public void SenderWithoutBody_IsMedia()
+    public void SenderWithoutBody_IsUnreadBody()
     {
         var text = LiveKakaoWindowOperator.MapOcrLines([("알통 팀방", 10), ("팀원A", 36)]);
 
-        Assert.AreEqual(new KakaoNotificationText("팀원A", "알통 팀방", KakaoNotificationText.MediaBody), text);
+        Assert.AreEqual(new KakaoNotificationText("팀원A", "알통 팀방", KakaoNotificationText.UnreadBody), text);
     }
 
     [TestMethod]
@@ -150,7 +150,8 @@ public sealed class KakaoOcrLayoutTests
     [TestMethod]
     public void UnreadBody_IsOnlyThePlaceholdersTheAppWrites()
     {
-        Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.MediaBody));
+        Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.UnreadBody));
+        Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.LegacyMediaBody), "문구를 바꾸기 전에 저장된 알림도 구분한다.");
         Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.MissingBody));
         Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.ArrivedBody));
         Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.EmptyBody));
