@@ -8,7 +8,12 @@ namespace Altong.Client.Services;
 /// </summary>
 public sealed class TrayIconService : IDisposable
 {
+    internal const string IdleIconResource = "Altong.Client.Assets.TrayIdle.ico";
+    internal const string FocusIconResource = "Altong.Client.Assets.TrayFocus.ico";
+
     private readonly NotifyIcon _notifyIcon;
+    private readonly Icon _idleIcon;
+    private readonly Icon _focusIcon;
     private readonly ContextMenuStrip _contextMenu;
     private readonly ToolStripItem _exitApplicationItem;
     private Action? _openDashboard;
@@ -23,10 +28,12 @@ public sealed class TrayIconService : IDisposable
         _exitApplicationItem = _contextMenu.Items.Add("대시보드 종료", null, (_, _) => _exitApplication?.Invoke());
         _exitApplicationItem.Enabled = false;
 
+        _idleIcon = LoadTrayIcon(IdleIconResource);
+        _focusIcon = LoadTrayIcon(FocusIconResource);
         _notifyIcon = new NotifyIcon
         {
             ContextMenuStrip = _contextMenu,
-            Icon = SystemIcons.Application,
+            Icon = _idleIcon,
             Text = "Altong",
             Visible = true,
         };
@@ -70,6 +77,7 @@ public sealed class TrayIconService : IDisposable
 
     public void UpdateFocusModeState(bool isEnabled)
     {
+        _notifyIcon.Icon = isEnabled ? _focusIcon : _idleIcon;
         _notifyIcon.Text = isEnabled
             ? "Altong - 집중 모드 진행 중"
             : "Altong";
@@ -96,6 +104,19 @@ public sealed class TrayIconService : IDisposable
         _notifyIcon.MouseClick -= NotifyIcon_MouseClick;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
+        _idleIcon.Dispose();
+        _focusIcon.Dispose();
         _contextMenu.Dispose();
+    }
+
+    /// <summary>
+    /// 트레이 아이콘을 지금 화면 배율에 맞는 크기로 읽는다(100%면 16px, 200%면 32px).
+    /// .ico 안에 16~64px이 들어 있어 Windows가 줄이거나 늘리지 않는다.
+    /// </summary>
+    internal static Icon LoadTrayIcon(string resourceName)
+    {
+        using var stream = typeof(TrayIconService).Assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException($"트레이 아이콘 리소스가 없습니다: {resourceName}");
+        return new Icon(stream, SystemInformation.SmallIconSize);
     }
 }

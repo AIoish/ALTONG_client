@@ -97,6 +97,7 @@ ALTONG_client/
 ├── tests/Altong.Client.Tests/  # xUnit 테스트
 ├── tools/                      # MockGenerator, 패키징·캘린더 테스트 스크립트
 ├── packaging/                  # Sparse package (알림 권한용)
+├── assets/icon/                # 앱·트레이 아이콘 원본 (tools/generate-assets.ps1로 .ico·로고 생성)
 ├── reports/                    # 필터 모델 평가 보고서
 ├── docs/                       # 설계·명세·협업 문서
 └── Altong.Client.sln
