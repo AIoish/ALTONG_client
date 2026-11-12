@@ -21,26 +21,6 @@ public sealed class KakaoOcrLayoutTests
     }
 
     [TestMethod]
-    public void SkewedWindowsOcrBox_IsRotatedBackOntoTheGlyphs()
-    {
-        // 실제 사례(1550x402 확대 이미지): Windows OCR이 기울기 -7.6도로 판단해 '이시영' 상자를 y 125~199로 줬다.
-        // 실제 글자는 x 321~487, y 179~239에 있어 그대로 자르면 윗부분만 들어가 PP-OCR이 'l'로 읽었다.
-        var box = LiveKakaoWindowOperator.UnrotateOcrBox(326, 125, 492, 199, -7.6, 775, 201);
-
-        Assert.IsTrue(box.MinX <= 321 && box.MaxX >= 487, $"x {box.MinX:0}~{box.MaxX:0}");
-        Assert.IsTrue(box.MinY <= 179 && box.MaxY >= 239, $"y {box.MinY:0}~{box.MaxY:0}");
-        // 논리 좌표(배율 2 × 확대 2.5)로 발신자 줄(24~48) 한가운데여야 한다.
-        double logicalTop = box.MinY / 5;
-        Assert.IsTrue(logicalTop > 28 && logicalTop < 40, $"logical top {logicalTop:0.0}");
-    }
-
-    [TestMethod]
-    public void UnskewedWindowsOcrBox_IsUnchanged()
-    {
-        Assert.AreEqual((326.0, 125.0, 492.0, 199.0), LiveKakaoWindowOperator.UnrotateOcrBox(326, 125, 492, 199, 0, 775, 201));
-    }
-
-    [TestMethod]
     public void OneToOneChat_WrappedBodyStaysInBody()
     {
         // 1:1도 맨 위 이름과 발신자 줄이 따로 있다. 본문이 두 줄로 접혀도 발신자가 밀리지 않아야 한다.
@@ -59,11 +39,11 @@ public sealed class KakaoOcrLayoutTests
     }
 
     [TestMethod]
-    public void SenderWithoutBody_IsMedia()
+    public void SenderWithoutBody_IsUnreadBody()
     {
         var text = LiveKakaoWindowOperator.MapOcrLines([("알통 팀방", 10), ("팀원A", 36)]);
 
-        Assert.AreEqual(new KakaoNotificationText("팀원A", "알통 팀방", LiveKakaoWindowOperator.MediaBody), text);
+        Assert.AreEqual(new KakaoNotificationText("팀원A", "알통 팀방", KakaoNotificationText.UnreadBody), text);
     }
 
     [TestMethod]
@@ -71,7 +51,7 @@ public sealed class KakaoOcrLayoutTests
     {
         var text = LiveKakaoWindowOperator.MapOcrLines([("팀원A", 10)]);
 
-        Assert.AreEqual(new KakaoNotificationText("팀원A", "팀원A", LiveKakaoWindowOperator.MissingBody), text);
+        Assert.AreEqual(new KakaoNotificationText("팀원A", "팀원A", KakaoNotificationText.MissingBody), text);
     }
 
     [TestMethod]
@@ -81,6 +61,102 @@ public sealed class KakaoOcrLayoutTests
 
         Assert.AreEqual(new KakaoNotificationText("팀원A", "알통 팀방", "본문"), text);
         Assert.IsNull(LiveKakaoWindowOperator.MapOcrLines([]));
+    }
+
+    [TestMethod]
+    public void FindTextRows_FindsRoomSenderAndBodyRows_IgnoringBorderAndToolbarIcons()
+    {
+        using var card = NewUpscaledCard();
+        Ink(card, 0, 0, 1550, 2);      // 위 테두리
+        Ink(card, 0, 0, 2, 120);       // 왼쪽 테두리
+        Ink(card, 1330, 40, 50, 60);   // 벨 아이콘
+        Ink(card, 1460, 45, 45, 55);   // 닫기 아이콘
+        Ink(card, 80, 60, 210, 45);    // 방 이름
+        Ink(card, 322, 180, 400, 62);  // 발신자
+        Ink(card, 320, 283, 330, 52);  // 본문
+
+        var rows = LiveKakaoWindowOperator.FindTextRows(card, UpscaledPxPerLogical, out Color background);
+
+        Assert.AreEqual(Color.White.ToArgb(), background.ToArgb());
+        CollectionAssert.AreEqual(
+            new[] { new Rectangle(80, 60, 210, 45), new Rectangle(322, 180, 400, 62), new Rectangle(320, 283, 330, 52) },
+            rows);
+    }
+
+    [TestMethod]
+    public void FindTextRows_SenderRowReachingBodyBoundary_DoesNotPullBodyIntoSenderRow()
+    {
+        // 실제 사례(11/06): 발신자 "22 컴공 박민준"의 글자 아래쪽이 본문 경계(논리 48 = 240px)까지 내려와 있었다.
+        // 예전에는 본문 영역을 경계부터 훑다가 이 자투리를 본문 줄의 시작으로 잡아 본문 "ㅋㅋㅋ"의 위쪽을 47.6으로
+        // 계산했고, 본문이 발신자 칸에 붙어 "22 컴공 박민준 ㅋㅋㅋ" / "(이모티콘 또는 미디어)"가 됐다.
+        using var card = NewUpscaledCard();
+        Ink(card, 322, 180, 400, 62);  // 발신자: y 180~241
+        Ink(card, 327, 294, 273, 30);  // 본문 "ㅋㅋㅋ"
+
+        var rows = LiveKakaoWindowOperator.FindTextRows(card, UpscaledPxPerLogical, out _);
+        var text = LiveKakaoWindowOperator.MapOcrLines(
+            rows.Select((row, i) => (i == 0 ? "22 컴공 박민준" : "ㅋㅋㅋ", row.Top / UpscaledPxPerLogical)).ToList());
+
+        Assert.AreEqual(2, rows.Count);
+        Assert.AreEqual(new KakaoNotificationText("22 컴공 박민준", "22 컴공 박민준", "ㅋㅋㅋ"), text);
+    }
+
+    [TestMethod]
+    [DataRow(34, 8, 7, DisplayName = "물음표: 몸통과 점")]
+    [DataRow(7, 16, 15, DisplayName = "쌍반점: 낮은 조각 둘")]
+    [DataRow(27, 2, 23, DisplayName = "넵: 받침 위에서 끊김")]
+    public void FindTextRows_JoinsPiecesOfOneLine(int upperHeight, int gap, int lowerHeight)
+    {
+        using var card = NewUpscaledCard();
+        Ink(card, 322, 180, 400, 62);
+        Ink(card, 320, 288, 24, upperHeight);
+        Ink(card, 322, 288 + upperHeight + gap, 20, lowerHeight);
+
+        var rows = LiveKakaoWindowOperator.FindTextRows(card, UpscaledPxPerLogical, out _);
+
+        Assert.AreEqual(2, rows.Count);
+        Assert.AreEqual(new Rectangle(320, 288, 24, upperHeight + gap + lowerHeight), rows[1]);
+    }
+
+    [TestMethod]
+    public void FindTextRows_KeepsSeparateLinesApart()
+    {
+        using var card = NewUpscaledCard(height: 500);
+        Ink(card, 322, 180, 400, 62);  // 발신자
+        Ink(card, 320, 283, 600, 65);  // 본문 첫 줄 (아래로 내려간 글자 포함)
+        Ink(card, 330, 363, 30, 12);   // 둘째 줄 맨 위의 낮은 조각 (틈 3 논리 px)
+        Ink(card, 320, 440, 40, 9);    // 그 아래 줄의 말줄임표
+
+        var rows = LiveKakaoWindowOperator.FindTextRows(card, UpscaledPxPerLogical, out _);
+
+        CollectionAssert.AreEqual(new[] { 180, 283, 363, 440 }, rows.Select(r => r.Top).ToArray());
+    }
+
+    [TestMethod]
+    public void FindTextRows_UsesCardBackground_WhenDarkThemeWasInverted()
+    {
+        // 다크 모드 팝업은 PrepareForOcr가 밝기를 뒤집어 배경이 밝은 회색이 된다.
+        var inverted = Color.FromArgb(212, 212, 212);
+        using var card = NewUpscaledCard(inverted);
+        Ink(card, 322, 180, 400, 62, Color.FromArgb(20, 20, 20));
+        Ink(card, 320, 283, 330, 52, Color.FromArgb(110, 110, 110));
+
+        var rows = LiveKakaoWindowOperator.FindTextRows(card, UpscaledPxPerLogical, out Color background);
+
+        Assert.AreEqual(inverted.ToArgb(), background.ToArgb());
+        CollectionAssert.AreEqual(new[] { 180, 283 }, rows.Select(r => r.Top).ToArray());
+    }
+
+    [TestMethod]
+    public void UnreadBody_IsOnlyThePlaceholdersTheAppWrites()
+    {
+        Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.UnreadBody));
+        Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.LegacyMediaBody), "문구를 바꾸기 전에 저장된 알림도 구분한다.");
+        Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.MissingBody));
+        Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.ArrivedBody));
+        Assert.IsTrue(KakaoNotificationText.IsUnreadBody(KakaoNotificationText.EmptyBody));
+        Assert.IsFalse(KakaoNotificationText.IsUnreadBody("ㅋㅋㅋ"));
+        Assert.IsFalse(KakaoNotificationText.IsUnreadBody(""), "본문이 원래 없는 알림(제목만 있는 토스트)은 해당하지 않는다.");
     }
 
     [TestMethod]
@@ -131,6 +207,24 @@ public sealed class KakaoOcrLayoutTests
 #else
         Assert.IsFalse(KakaoIntegration.Resolve(null), "Release 빌드는 기본으로 끈다.");
 #endif
+    }
+
+    // 200% 팝업(620x161)을 OCR용으로 2.5배 키운 크기에서는 논리 px 하나가 5px이다.
+    private const double UpscaledPxPerLogical = 5;
+
+    private static Bitmap NewUpscaledCard(Color? background = null, int height = 402)
+    {
+        var card = new Bitmap(1550, height, PixelFormat.Format32bppArgb);
+        using var g = Graphics.FromImage(card);
+        g.Clear(background ?? Color.White);
+        return card;
+    }
+
+    private static void Ink(Bitmap card, int left, int top, int width, int height, Color? color = null)
+    {
+        using var g = Graphics.FromImage(card);
+        using var brush = new SolidBrush(color ?? Color.Black);
+        g.FillRectangle(brush, left, top, width, height);
     }
 
     private static Bitmap NewCard()

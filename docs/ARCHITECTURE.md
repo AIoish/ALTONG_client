@@ -17,7 +17,7 @@
 | 모델 실패 시 | (언급 없음) | 로딩 실패·2초 시간 초과 시 알림을 통과시킴 (fail-open, 점수 0 = 미평가) | `KlueFilterEngine.cs` |
 | 필터 결과 `category` | "긴급 업무" 등 분류 | 항상 `"미분류"` 또는 `"판정 실패"` | `KlueFilterEngine.cs` |
 | 요약·브리핑 모델 | 클라우드 LLM (Gemini 2.0 Flash / GPT-4o-mini) | 로컬 Qwen GGUF (`qwen_briefing_v8_q8_0.gguf`), `LLamaSharp` 0.27.0. 클라우드 호출 없음 | `Services/AI/Briefing/` |
-| 알림 수집 | WinRT `UserNotificationListener` | WinRT + 카카오톡 인터셉터(Win32 창 숨김 + Windows OCR, 2.5배 업스케일, 개발 빌드 전용)를 `CompositeNotificationListener`로 결합. Mock용 `LocalPipeNotificationListener` 별도 | `Services/Notifications/` |
+| 알림 수집 | WinRT `UserNotificationListener` | WinRT + 카카오톡 인터셉터(Win32 창 숨김 + 팝업 그림에서 글자 줄을 픽셀로 찾아 PP-OCR로 읽기, 모델이 없으면 Windows OCR, 개발 빌드 전용)를 `CompositeNotificationListener`로 결합. Mock용 `LocalPipeNotificationListener` 별도 | `Services/Notifications/` |
 | Windows 방해 금지 | 집중 시작 시 앱이 켬 | 앱이 직접 켜지 않음. 설정 화면을 열어 안내하고, 관찰한 DND 상태를 앱 상태에 반영 | `FocusModeCoordinator.cs`, `WindowsNotificationModeObserver.cs` |
 | 집중 OFF일 때 | (언급 없음) | 필터는 실행하지만 `IsPassed = null`, DB에 저장하지 않음 | `NotificationPipelineCoordinator.cs` |
 | 활성 창 추적 | 500ms 폴링 + 3초 안정화 룰 | `PeriodicTimer` 500ms 폴링, 안정화 기준 3초, 관측 공백 10초 초과 시 제외, 현재 창을 뺀 최근 창 3개. 시스템 대화상자·플라이아웃·트레이 펼침 창은 무시하고, 잠금 화면은 최근 창에 남기지 않음 | `ActiveWindowTracker.cs` |

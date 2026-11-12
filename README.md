@@ -58,6 +58,12 @@ flowchart LR
 ### 모델 준비
 - **필터 모델**: `models/filtering/klue-base-safety-v1/`에 들어 있습니다. 빌드할 때 출력 폴더로 복사됩니다.
 - **브리핑 모델**: Git에 포함되지 않습니다. GitHub Release `briefing-v8-q8-mvp`에서 `qwen_briefing_v8_q8_0.gguf`를 받아 `models/briefing/`에 넣으세요. 없으면 AI 요약을 쓸 수 없습니다.
+- **카카오톡 팝업 OCR 모델** (개발 빌드에서 카카오톡 연동을 쓸 때만): Git에 포함되지 않습니다. 저장소 루트에서 아래 명령으로 받으세요(13MB). 없으면 Windows OCR로 대신 읽는데, 'ㅋㅋㅋ' 같은 짧은 본문을 읽지 못해 본문이 `(내용을 읽지 못함)`으로 들어옵니다.
+  ```powershell
+  curl.exe -L -o models\ocr\ppocr-v5-ko\korean_PP-OCRv5_mobile_rec.onnx https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/5c6f574b8e2230adf4287b33e736d71b9fabd28e/inference.onnx
+  (Get-FileHash models\ocr\ppocr-v5-ko\korean_PP-OCRv5_mobile_rec.onnx).Hash  # 92F0B7785E64FC9090106A241CF4C1EB97472824558272751B88A2A4476D3A08
+  ```
+  출처는 PaddlePaddle 공식 [korean_PP-OCRv5_mobile_rec_onnx](https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx)이고 라이선스는 Apache 2.0입니다.
 
 ### 빌드 및 실행
 
