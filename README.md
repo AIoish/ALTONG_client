@@ -87,6 +87,21 @@ dotnet test
 
 상단 노치·알림 패널 사용법과 집중 모드 기록 규칙: [docs/CLIENT_BEHAVIOR.md](docs/CLIENT_BEHAVIOR.md)
 
+### 설치 파일 만들기
+
+.NET이 없는 PC에도 설치할 수 있는 `dist\AltongSetup-<버전>.exe`(약 1GB, 모델 포함)를 만듭니다.
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e   # 처음 한 번
+powershell -ExecutionPolicy Bypass -File tools/build-installer.ps1 -Version 1.0.0
+```
+
+- 모델 3개와 Windows SDK(makeappx, signtool)가 필요합니다.
+- 설치 프로그램은 관리자 권한으로 실행되며, 알림 권한용 패키지 서명 인증서(`CN=AltongDev`, 자체 서명)를 그 PC에 신뢰시키고 패키지를 등록합니다. 제거하면 인증서와 패키지도 지웁니다.
+- 서명 인증서는 빌드한 PC의 현재 사용자 인증서 저장소에 있고, 없으면 새로 만듭니다. 저장소에는 넣지 않습니다.
+- 설치 파일 자체는 서명하지 않아서, 인터넷으로 받은 PC에서는 SmartScreen 경고가 뜹니다("추가 정보 → 실행").
+- 개발 PC에 설치하면 개발용 패키지 등록이 설치본으로 바뀝니다. 다시 개발하려면 `tools/register-sparse-package.ps1`을 실행하세요.
+
 ## 프로젝트 구조
 
 ```text
