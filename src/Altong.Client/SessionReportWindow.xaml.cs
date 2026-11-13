@@ -1,5 +1,8 @@
 using System.Windows;
 using System.IO;
+using System.ComponentModel;
+using System.Globalization;
+using System.Windows.Media;
 using Altong.Client.Services;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
@@ -27,12 +30,30 @@ public partial class SessionReportWindow : Window
         bool? IsPassed, string? ReplyText);
     private int _notificationDisplayLimit = 50;
     private int _appDisplayLimit = 50;
+    private int _memoDisplayLimit = 20;
+    private readonly ReportMemoItem[] _memoItems;
+
+    internal sealed class ReportMemoItem(QuickMemoEntry entry) : INotifyPropertyChanged
+    {
+        public QuickMemoEntry Entry => entry;
+        public string Text => entry.Text;
+        public string WhenText => entry.WhenText;
+        private bool _expanded;
+        public bool IsExpanded
+        {
+            get => _expanded;
+            set { if (_expanded == value) return; _expanded = value; PropertyChanged?.Invoke(this, new(nameof(IsExpanded))); }
+        }
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
 
     public SessionReportWindow(SessionResult result, SqliteSessionReportRepository? reports = null, bool isSaved = false,
         IReportSummaryProvider? summaryProvider = null, DashboardCalendarStore? calendar = null,
         string? summaryStatePath = null)
     {
         _result = result;
+        _memoItems = result.Memos.OrderBy(memo => memo.CreatedAt).ThenBy(memo => memo.Id, StringComparer.Ordinal)
+            .Select(memo => new ReportMemoItem(memo)).ToArray();
         _reports = reports;
         _demoMode = Environment.GetEnvironmentVariable("ALTONG_CALENDAR_DEMO") == "1";
         var summaryFolder = Environment.GetEnvironmentVariable("ALTONG_SUMMARY_DIR");
@@ -115,12 +136,45 @@ public partial class SessionReportWindow : Window
 
     private void UpdateDetailLists()
     {
+        MemoSectionBorder.Visibility = _result.Memos.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        MemoReminderButton.Visibility = MemoSectionBorder.Visibility;
+        MemoReminderText.Text = $"메모 {_result.Memos.Count}개 확인";
+        MemoCountText.Text = $"{_result.Memos.Count}개";
+        MemoItemsControl.ItemsSource = _memoItems.Take(_memoDisplayLimit).ToArray();
+        MoreMemosButton.Visibility = _result.Memos.Count > _memoDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
+        MoreMemosButton.Content = $"메모 더 보기 · {Math.Min(_memoDisplayLimit, _result.Memos.Count)}/{_result.Memos.Count}";
         NotificationItemsControl.ItemsSource = _notificationItems.Take(_notificationDisplayLimit).ToArray();
         AppItemsControl.ItemsSource = ((SessionResult)DataContext).Apps.Take(_appDisplayLimit).ToArray();
         MoreNotificationsButton.Visibility = _result.Notifications.Count > _notificationDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
         MoreAppsButton.Visibility = _result.Apps.Count > _appDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
         MoreNotificationsButton.Content = $"알림 더 보기 · {Math.Min(_notificationDisplayLimit, _result.Notifications.Count)}/{_result.Notifications.Count}";
         MoreAppsButton.Content = $"앱 더 보기 · {Math.Min(_appDisplayLimit, _result.Apps.Count)}/{_result.Apps.Count}";
+    }
+
+    private void MoreMemos_Click(object sender, RoutedEventArgs e)
+    {
+        _memoDisplayLimit += 20;
+        UpdateDetailLists();
+    }
+
+    private void MemoReminder_Click(object sender, RoutedEventArgs e)
+    {
+        ReportScroll.ScrollToTop();
+        MemoSectionBorder.BringIntoView();
+    }
+
+    private void MemoPreview_Changed(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.TextBlock preview || preview.ActualWidth < 1 ||
+            preview.Tag is not System.Windows.Controls.Expander expander || !preview.IsVisible) return;
+        var text = new FormattedText(preview.Text ?? "", CultureInfo.CurrentUICulture, preview.FlowDirection,
+            new Typeface(preview.FontFamily, preview.FontStyle, preview.FontWeight, preview.FontStretch),
+            preview.FontSize, preview.Foreground, VisualTreeHelper.GetDpi(preview).PixelsPerDip)
+        {
+            MaxTextWidth = preview.ActualWidth,
+            LineHeight = preview.LineHeight
+        };
+        expander.Visibility = text.Height > preview.MaxHeight + 1 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void MoreNotifications_Click(object sender, RoutedEventArgs e)

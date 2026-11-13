@@ -287,15 +287,15 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
         {
             _calendar.Clear();
             schedulesCleared = true;
-            await Task.Run(() => _results.Reports.DeleteAllAsync());
+            await Task.Run(() => _results.DeleteAllReportsAsync());
             ResetConfirmationPanel.Visibility = Visibility.Collapsed;
             _scheduleDisplayLimit = 30;
-            message = "저장된 리포트와 일정을 모두 초기화했습니다.";
+            message = "저장된 리포트·메모·일정을 모두 초기화했습니다.";
         }
         catch (Exception)
         {
             message = schedulesCleared
-                ? "일정은 삭제했지만 리포트를 삭제하지 못했습니다. 다시 시도해 주세요."
+                ? "일정은 삭제했지만 리포트·메모 정리를 완료하지 못했습니다. 다시 시도해 주세요."
                 : "초기화하지 못했습니다. 일정 파일을 확인한 뒤 다시 시도해 주세요.";
         }
         try
@@ -327,7 +327,9 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
 
     private async void DeleteSchedule_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not System.Windows.Controls.Button { Tag: DashboardCalendarEntry entry } button) return;
+        if (_mutating || _loading || sender is not System.Windows.Controls.Button { Tag: DashboardCalendarEntry entry } button) return;
+        _mutating = true;
+        UpdateResetControls();
         button.IsEnabled = false;
         try
         {
@@ -339,7 +341,12 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
         {
             HistoryStatusText.Text = "일정을 삭제하지 못했습니다. " + (_calendar.LoadWarning ?? "다시 시도해 주세요.");
         }
-        finally { button.IsEnabled = true; }
+        finally
+        {
+            button.ClearValue(IsEnabledProperty);
+            _mutating = false;
+            UpdateResetControls();
+        }
     }
 
     private async void OpenReport_Click(object sender, RoutedEventArgs e)
@@ -363,16 +370,21 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
 
     public async Task DeleteReportAsync(string sessionId)
     {
-        if (_mutating) return;
+        if (_mutating || _loading) return;
         _mutating = true;
+        UpdateResetControls();
         try
         {
-            await Task.Run(() => _results.Reports.DeleteAsync(sessionId));
+            await Task.Run(() => _results.DeleteReportAsync(sessionId));
             await RefreshAsync();
-            HistoryStatusText.Text = "리포트를 삭제했습니다.";
+            HistoryStatusText.Text = "리포트와 메모를 삭제했습니다.";
         }
         catch (Exception) { HistoryStatusText.Text = "삭제하지 못했습니다. 다시 시도해 주세요."; }
-        finally { _mutating = false; }
+        finally
+        {
+            _mutating = false;
+            UpdateResetControls();
+        }
     }
 
     private async void DeleteReport_Click(object sender, RoutedEventArgs e)

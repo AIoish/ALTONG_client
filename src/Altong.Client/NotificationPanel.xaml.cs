@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using Altong.Client.Models;
 using Altong.Client.Services;
 using Button = System.Windows.Controls.Button;
@@ -23,6 +24,10 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
     private readonly DockNotificationState _state;
     private DockNotificationItem? _displayedDetail;
     private TopBandStyle _bandStyle;
+    private bool _stoppingFocus;
+    public bool IsMemoOpen => MemoView.Visibility == Visibility.Visible;
+    public Func<string?>? StopFocusAction { get; set; }
+    public event EventHandler? MemoModeChanged;
 
     public event EventHandler? ShowDashboardRequested;
     public event EventHandler<TopBandStyle>? BandStyleRequested;
@@ -32,6 +37,8 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
         InitializeComponent();
         _state = state;
         NotificationItems.ItemsSource = state.Items;
+        MemoView.CloseRequested += (_, _) => CloseMemo();
+        MemoView.SetStore(new QuickMemoStore());
         Refresh();
     }
 
@@ -84,8 +91,85 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
 
     private void Dashboard_Click(object sender, RoutedEventArgs e) => ShowDashboardRequested?.Invoke(this, EventArgs.Empty);
 
+    internal void SetMemoStore(QuickMemoStore store) => MemoView.SetStore(store);
+    internal System.Windows.Controls.TextBox MemoEditor => MemoView.Editor;
+    public bool TryFlushMemoDraft() => MemoView.TryFlushDraft();
+
+    private void QuickMemo_Click(object sender, RoutedEventArgs e)
+    {
+        if (IsMemoOpen) CloseMemo();
+        else
+        {
+            _state.CloseDetail();
+            SetMemoMode(true);
+            MotionBehavior.Transition(MemoView, offsetY: 4);
+        }
+    }
+
+    public void CloseMemo()
+    {
+        if (!IsMemoOpen) return;
+        if (!TryFlushMemoDraft()) return;
+        SetMemoMode(false);
+    }
+
+    private void SetMemoMode(bool open)
+    {
+        MemoView.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        NotificationListContent.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
+        NotificationBulkActions.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
+        ListHeading.Text = open ? "빠른 메모" : "중요 알림";
+        CountText.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
+        MemoButtonLabel.Text = open ? "알림 보기" : "빠른 메모";
+        MemoButtonIcon.Text = open ? "\uEA8F" : "\uE70B";
+        System.Windows.Automation.AutomationProperties.SetName(QuickMemoButton, MemoButtonLabel.Text);
+        MemoModeChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private async void StopFocus_Click(object sender, RoutedEventArgs e)
+    {
+        if (_stoppingFocus || !_state.IsActive) return;
+        if (!TryFlushMemoDraft())
+        {
+            ShowUtilityError("메모를 저장하지 못했어요. 내용을 확인한 뒤 다시 시도해 주세요.");
+            return;
+        }
+        _stoppingFocus = true;
+        StopFocusButton.IsEnabled = false;
+        UtilityStatusText.Visibility = Visibility.Collapsed;
+        // Show the disabled state before the existing synchronous Windows settings restoration runs.
+        await Dispatcher.Yield(DispatcherPriority.Render);
+        try
+        {
+            string? error = StopFocusAction is null ? "집중 제어에 연결되지 않았어요." : StopFocusAction();
+            if (error is not null) ShowUtilityError(error);
+        }
+        catch (Exception)
+        {
+            ShowUtilityError("집중을 끄지 못했어요. 대시보드에서 상태를 확인해 주세요.");
+        }
+        finally
+        {
+            _stoppingFocus = false;
+            StopFocusButton.IsEnabled = _state.IsActive;
+        }
+    }
+
+    private void ShowUtilityError(string text)
+    {
+        UtilityStatusText.Text = text;
+        UtilityStatusText.Visibility = Visibility.Visible;
+    }
+
     public void Refresh()
     {
+        MemoView.SetSession(_state.SessionId);
+        StopFocusButton.IsEnabled = _state.IsActive && !_stoppingFocus;
+        if (!_state.IsPanelOpen && IsMemoOpen)
+        {
+            TryFlushMemoDraft();
+            SetMemoMode(false);
+        }
         CountText.Text = $"미확인 {_state.UnreadCount}개 · 전체 {_state.Items.Count}개";
         MarkAllReadButton.IsEnabled = _state.UnreadCount > 0;
         DeleteReadButton.IsEnabled = _state.Items.Any(item => item.IsRead);
@@ -178,5 +262,8 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
         PreserveScrollPosition(_state.MarkAllRead);
     private void DeleteRead_Click(object sender, RoutedEventArgs e) => _state.DeleteRead();
     private void CloseDetail_Click(object sender, RoutedEventArgs e) => _state.CloseDetail();
-    private void CloseList_Click(object sender, RoutedEventArgs e) => _state.ClosePanel();
+    private void CloseList_Click(object sender, RoutedEventArgs e)
+    {
+        if (TryFlushMemoDraft()) _state.ClosePanel();
+    }
 }

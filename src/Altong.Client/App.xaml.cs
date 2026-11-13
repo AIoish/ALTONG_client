@@ -124,7 +124,8 @@ public partial class App : System.Windows.Application
         NotificationRepository = new SqliteNotificationRepository(Database);
         WindowSessionRepository = new SqliteWindowSessionRepository(Database);
         FocusSessionRepository = new SqliteFocusSessionRepository(Database);
-        SessionResults = new SessionResultsService(Database, FocusSessionRepository);
+        var quickMemos = QuickMemoStore.OpenDefault();
+        SessionResults = new SessionResultsService(Database, FocusSessionRepository, quickMemos);
 
         // 활성 창 기록은 현재 집중 세션에만 연결한다.
         ActiveWindowTracker.WindowSessionEnded += (_, e) =>
@@ -211,7 +212,17 @@ public partial class App : System.Windows.Application
         FocusRoutine.PhaseChanged += FocusRoutine_PhaseChanged;
         _routineTimer.Start();
 
-        _notificationDockWindow = new NotificationDockWindow();
+        _notificationDockWindow = new NotificationDockWindow(new DockNotificationState(), quickMemos);
+        _notificationDockWindow.Panel.StopFocusAction = () =>
+        {
+            if (!FocusModeService.IsEnabled) return null;
+            // Use the same coordinator as the dashboard, including the Windows DND guidance flow.
+            _focusModeCoordinator.RequestToggle();
+            return !FocusModeService.IsEnabled ? null
+                : _focusModeCoordinator.CanStartDirectly
+                    ? "집중을 끄지 못했어요. 대시보드에서 상태를 확인해 주세요."
+                    : "Windows 방해 금지 설정에서 집중을 꺼 주세요.";
+        };
         // 상단 노치는 화면 맨 위 띠를 예약해 다른 창이 노치를 가리지 않게 한다.
         _notificationDockWindow.ReserveTopBand = true;
         _notificationDockWindow.RoutineStatusProvider = () => new DockRoutineStatus(FocusRoutine.Phase);
@@ -433,6 +444,12 @@ public partial class App : System.Windows.Application
     {
         RunOnUiThread(() =>
         {
+            if (_notificationDockWindow?.Panel.TryFlushMemoDraft() == false)
+            {
+                System.Windows.MessageBox.Show("메모를 저장하지 못했습니다. 내용을 복사하거나 저장한 뒤 다시 종료해 주세요.",
+                    "메모 저장 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             IsShuttingDown = true;
 
             _trayIconService?.Dispose();

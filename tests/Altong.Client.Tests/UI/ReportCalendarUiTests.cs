@@ -18,12 +18,87 @@ namespace Altong.Client.Tests;
 public sealed class ReportCalendarUiTests
 {
     [TestMethod]
-    public void ResetAll_RequiresConfirmation_ClearsEveryDate_AndPreservesSourceRecords() => RunSta(() =>
+    public void Calendar_ConsecutiveDeleteOpenAndFailureRecoveryWorkWithoutLeavingThePage() => RunSta(() =>
     {
         using var db = SqliteDatabase.CreateInMemory();
         db.Initialize();
         var sessions = new SqliteFocusSessionRepository(db);
         var results = new SessionResultsService(db, sessions);
+        var start = new DateTime(2026, 10, 5, 3, 0, 0, DateTimeKind.Utc);
+        for (int i = 0; i < 3; i++) SeedResetReport(results, sessions, "consecutive-" + i, start.AddMinutes(i * 10));
+        string path = Path.Combine(Path.GetTempPath(), "altong-consecutive-" + Guid.NewGuid().ToString("N") + ".json");
+        var calendar = new DashboardCalendarStore(path);
+        calendar.Save(ResetTestSchedule("consecutive-0", start));
+        calendar.Save(ResetTestSchedule("consecutive-1", start));
+        var view = new ReportCalendarView(results, calendar);
+        var owner = new Window { Content = view, Width = 960, Height = 760, Left = -10000, Top = -10000,
+            ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            owner.Show();
+            Pump();
+            Await(view.SelectDateAsync(start.ToLocalTime().Date));
+            var reports = (ListBox)view.FindName("ReportList");
+            var schedules = (ListBox)view.FindName("ScheduleList");
+            var card = (Border)view.FindName("ListCard");
+            var reset = (Button)view.FindName("ResetHistoryButton");
+            var status = (TextBlock)view.FindName("HistoryStatusText");
+            Until(() => reports.Items.Count == 3 && reset.IsEnabled);
+            owner.UpdateLayout();
+            Button Action(string name) => Descendants(view).OfType<Button>().First(button => Equals(button.Content, name));
+            Action("삭제").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => status.Text == "리포트와 메모를 삭제했습니다.");
+            Assert.IsTrue(card.IsEnabled, "Deleting a report must restore its parent list's enabled state.");
+            Assert.AreEqual(2, reports.Items.Count);
+            owner.UpdateLayout();
+            var open = Action("리포트 열기");
+            Assert.IsTrue(open.IsEnabled);
+            open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => owner.OwnedWindows.OfType<SessionReportWindow>().Any());
+            owner.OwnedWindows.OfType<SessionReportWindow>().Single().Close();
+            Until(() => open.IsEnabled);
+
+            Action("일정 삭제").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => status.Text == "대시보드에서 일정을 삭제했습니다.");
+            Assert.IsTrue(card.IsEnabled && reset.IsEnabled);
+            Assert.AreEqual(1, schedules.Items.Count);
+            owner.UpdateLayout();
+            Assert.IsTrue(Action("리포트 열기").IsEnabled);
+
+            using var connection = db.CreateOpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TRIGGER fail_consecutive_delete BEFORE DELETE ON focus_session_reports BEGIN SELECT RAISE(ABORT, 'controlled failure'); END;";
+            command.ExecuteNonQuery();
+            Await(view.DeleteReportAsync(((ReportListEntry)reports.Items[0]).SessionId));
+            Assert.AreEqual("삭제하지 못했습니다. 다시 시도해 주세요.", status.Text);
+            Assert.IsTrue(card.IsEnabled && reset.IsEnabled, "A failed deletion must also unlock the list.");
+            command.CommandText = "DROP TRIGGER fail_consecutive_delete;";
+            command.ExecuteNonQuery();
+            Action("삭제").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => status.Text == "리포트와 메모를 삭제했습니다.");
+            Assert.AreEqual(1, reports.Items.Count);
+            Assert.IsTrue(card.IsEnabled);
+            owner.UpdateLayout();
+            Assert.IsTrue(Action("리포트 열기").IsEnabled && Action("일정 삭제").IsEnabled);
+        }
+        finally
+        {
+            foreach (Window child in owner.OwnedWindows.Cast<Window>().ToArray()) child.Close();
+            owner.Close();
+            if (File.Exists(path)) File.Delete(path);
+        }
+    });
+
+    [TestMethod]
+    public void ResetAll_RequiresConfirmation_ClearsEveryDate_AndPreservesSourceRecords() => RunSta(() =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var memos = new QuickMemoStore();
+        var results = new SessionResultsService(db, sessions, memos);
+        memos.Save("리포트와 함께 초기화할 메모", "reset-first");
+        memos.SaveDraft("입력 중이던 메모", "reset-second");
         var first = new DateTime(2026, 10, 5, 3, 0, 0, DateTimeKind.Utc);
         var second = first.AddDays(45);
         SeedResetReport(results, sessions, "reset-first", first);
@@ -60,11 +135,13 @@ public sealed class ReportCalendarUiTests
             results.Reports.Changed += (_, _) => deletes++;
             confirm.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             confirm.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Until(() => status.Text == "저장된 리포트와 일정을 모두 초기화했습니다.");
+            Until(() => status.Text == "저장된 리포트·메모·일정을 모두 초기화했습니다.");
             Assert.AreEqual(1, deletes);
             Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
             Assert.AreEqual(0, ((ListBox)view.FindName("ReportList")).Items.Count);
             Assert.AreEqual(0, ((ListBox)view.FindName("ScheduleList")).Items.Count);
+            Assert.AreEqual(0, memos.Entries.Count);
+            Assert.AreEqual("", memos.GetDraftForSession("reset-second"));
             Assert.AreEqual(0, new DashboardCalendarStore(path).GetDay(b.LocalDate).Count);
             Assert.IsNull(results.OpenReportAsync("reset-first").GetAwaiter().GetResult());
             Assert.IsNull(results.OpenReportAsync("reset-second").GetAwaiter().GetResult());
@@ -103,14 +180,14 @@ public sealed class ReportCalendarUiTests
             command.CommandText = "CREATE TRIGGER fail_reset BEFORE DELETE ON focus_session_reports BEGIN SELECT RAISE(ABORT, 'controlled failure'); END;";
             command.ExecuteNonQuery();
             Await(view.ResetAllAsync());
-            StringAssert.Contains(((TextBlock)view.FindName("HistoryStatusText")).Text, "리포트를 삭제하지 못했습니다");
+            StringAssert.Contains(((TextBlock)view.FindName("HistoryStatusText")).Text, "리포트·메모 정리를 완료하지 못했습니다");
             Assert.IsNotNull(results.Reports.GetSnapshotAsync("reset-failure").GetAwaiter().GetResult());
             Assert.AreEqual(0, calendar.GetDay(schedule.LocalDate).Count);
             Assert.IsTrue(((Button)view.FindName("ResetHistoryButton")).IsEnabled);
             command.CommandText = "DROP TRIGGER fail_reset;";
             command.ExecuteNonQuery();
             Await(view.ResetAllAsync());
-            Assert.AreEqual("저장된 리포트와 일정을 모두 초기화했습니다.", ((TextBlock)view.FindName("HistoryStatusText")).Text);
+            Assert.AreEqual("저장된 리포트·메모·일정을 모두 초기화했습니다.", ((TextBlock)view.FindName("HistoryStatusText")).Text);
             Assert.IsNull(results.OpenReportAsync("reset-failure").GetAwaiter().GetResult());
         }
         finally { if (File.Exists(path)) File.Delete(path); }
@@ -256,7 +333,8 @@ public sealed class ReportCalendarUiTests
             using var db = SqliteDatabase.CreateInMemory();
             db.Initialize();
             var sessions = new SqliteFocusSessionRepository(db);
-            var results = new SessionResultsService(db, sessions);
+            var memos = new QuickMemoStore();
+            var results = new SessionResultsService(db, sessions, memos);
             var localDay = new DateTime(2026, 10, 2);
             var start = DateTime.SpecifyKind(localDay.AddHours(10), DateTimeKind.Local).ToUniversalTime();
             var calendar = new DashboardCalendarStore(calendarPath);
@@ -319,12 +397,14 @@ public sealed class ReportCalendarUiTests
                 pageScroll.ScrollToTop();
             }
             var lastId = ((ReportListEntry)list.Items[0]).SessionId;
+            memos.Save("삭제할 리포트의 메모", lastId);
             view.UpdateLayout();
             var deleteButton = Descendants(list).OfType<Button>()
                 .First(button => Equals(button.Content, "삭제") && button.Tag is ReportListEntry entry && entry.SessionId == lastId);
             deleteButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Until(() => ((TextBlock)view.FindName("HistoryStatusText")).Text == "리포트를 삭제했습니다.");
+            Until(() => ((TextBlock)view.FindName("HistoryStatusText")).Text == "리포트와 메모를 삭제했습니다.");
             Assert.IsNull(results.OpenReportAsync(lastId).GetAwaiter().GetResult());
+            Assert.AreEqual(0, memos.GetSavedForSession(lastId).Count);
             Assert.IsTrue(((TextBlock)view.FindName("ReportCountText")).Text.Contains("64개"));
             Await(view.SelectDateAsync(localDay.AddDays(1)));
             Assert.AreEqual(0, list.Items.Count);

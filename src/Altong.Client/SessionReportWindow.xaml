@@ -120,7 +120,18 @@
                     <TextBlock Text="{Binding PeriodText}" Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,0" />
                     <TextBlock x:Name="ReportSourceText" Text="{Binding ReportSource}" Visibility="Collapsed" />
                 </StackPanel>
-                <TextBlock x:Name="ReportBadgeText" Grid.Column="1" Text="집중 완료" Foreground="{StaticResource BlackSuccess}" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0">
+                    <TextBlock x:Name="ReportBadgeText" Text="집중 완료" Foreground="{StaticResource BlackSuccess}" FontSize="12" HorizontalAlignment="Right" />
+                    <Button x:Name="MemoReminderButton" Click="MemoReminder_Click" Visibility="Collapsed"
+                            Background="{StaticResource BlackSelection}" Foreground="{StaticResource BlackAccentText}"
+                            BorderBrush="{StaticResource BlackSelectionRule}" Padding="8,5" Margin="0,7,0,0"
+                            AutomationProperties.Name="집중 중 남긴 메모 확인">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE70B;" FontFamily="Segoe MDL2 Assets" FontSize="11" Margin="0,0,6,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="MemoReminderText" FontSize="11" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
             </Grid>
         </Border>
         <ScrollViewer x:Name="ReportScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="22,0,14,0">
@@ -134,7 +145,7 @@
                         <StackPanel Grid.Column="3"><TextBlock Text="사용 앱" Style="{StaticResource Muted}" FontSize="11" /><TextBlock Text="{Binding ApplicationCount}" FontSize="22" Margin="0,5,0,0" /></StackPanel>
                     </Grid>
                 </Border>
-                <Border Style="{StaticResource SummarySection}">
+                <Border x:Name="AiSummarySection" Style="{StaticResource SummarySection}">
                     <StackPanel>
                         <DockPanel Margin="2,0,0,10">
                             <Button x:Name="ReloadSummaryButton" Content="새로고침" Click="ReloadSummary_Click" DockPanel.Dock="Right" HorizontalAlignment="Right" FontSize="12" Padding="10,6" Visibility="Collapsed" AutomationProperties.Name="AI 요약 새로고침" />
@@ -191,6 +202,53 @@
                         </ItemsControl>
                         </StackPanel>
                         <ContentControl x:Name="CalendarSummaryHost" Visibility="Collapsed" Margin="0,10,0,0" />
+                    </StackPanel>
+                </Border>
+                <Border x:Name="MemoSectionBorder" Background="{StaticResource BlackSelection}" BorderBrush="{StaticResource BlackSelectionRule}"
+                        BorderThickness="1" CornerRadius="12" Padding="14,12" Margin="0,14,0,4" Visibility="Collapsed">
+                    <StackPanel>
+                        <Grid Margin="2,2,2,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE70B;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{StaticResource BlackAccentText}"
+                                           VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <TextBlock Text="집중 중 메모" Style="{StaticResource ReportSectionTitle}" />
+                            </StackPanel>
+                            <TextBlock x:Name="MemoCountText" Grid.Column="1" Foreground="{StaticResource BlackAccentText}" FontSize="12" VerticalAlignment="Center" />
+                        </Grid>
+                        <ItemsControl x:Name="MemoItemsControl" Margin="2,4,2,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource BlackSelectionRule}" BorderThickness="0,0,0,1" Padding="0,12">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding WhenText}" Foreground="{StaticResource BlackAccentText}" FontSize="11" Margin="0,0,0,7" />
+                                            <TextBlock x:Name="MemoPreview" Text="{Binding Text}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                                       LineHeight="20" MaxHeight="60" FontSize="14" Tag="{Binding ElementName=MemoContentExpander}"
+                                                       Loaded="MemoPreview_Changed" SizeChanged="MemoPreview_Changed">
+                                                <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsExpanded}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                </Style.Triggers></Style></TextBlock.Style>
+                                            </TextBlock>
+                                            <Expander x:Name="MemoContentExpander" IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                                                      Foreground="{StaticResource BlackAccentText}" FontSize="12" Margin="0,6,0,0">
+                                                <Expander.Style>
+                                                    <Style TargetType="Expander" BasedOn="{StaticResource BlackExpander}">
+                                                        <Setter Property="Header" Value="펼쳐보기" />
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers><Trigger Property="IsExpanded" Value="True"><Setter Property="Header" Value="접기" /><Setter Property="Visibility" Value="Visible" /></Trigger></Style.Triggers>
+                                                    </Style>
+                                                </Expander.Style>
+                                                <TextBox Text="{Binding Text, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                                         BorderThickness="0" Padding="0" Background="Transparent" Foreground="{StaticResource BlackText}"
+                                                         Margin="0,7,0,0" FontSize="14" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled"
+                                                         services:MotionBehavior.FadeOnReveal="True" AutomationProperties.Name="집중 중 작성한 메모 전체 내용" />
+                                            </Expander>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button x:Name="MoreMemosButton" Click="MoreMemos_Click" HorizontalAlignment="Left" Margin="0,8" Visibility="Collapsed" />
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource DetailSection}">

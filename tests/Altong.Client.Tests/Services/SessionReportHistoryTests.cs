@@ -22,6 +22,125 @@ public sealed class SessionReportHistoryTests
     }
 
     [TestMethod]
+    public async Task ReportDeletion_CleansItsMemoFile_AndResetPreservesTheActiveFocusMemos()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "altong-delete-memos-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            using var db = SqliteDatabase.CreateInMemory();
+            db.Initialize();
+            var memos = new QuickMemoStore(path);
+            var results = new SessionResultsService(db, new SqliteFocusSessionRepository(db), memos);
+            results.Begin(Start, 0);
+            string first = results.CurrentSessionId!;
+            memos.Save("첫 리포트 메모", first);
+            memos.SaveDraft("입력 중이던 메모", first);
+            await results.Reports.SaveAsync((await results.CompleteFocusSessionAsync(Start.AddMinutes(5)))!);
+            results.Begin(Start.AddMinutes(6), 0);
+            string second = results.CurrentSessionId!;
+            memos.Save("두 번째 리포트 메모", second);
+            await results.Reports.SaveAsync((await results.CompleteFocusSessionAsync(Start.AddMinutes(10)))!);
+            results.Begin(Start.AddMinutes(11), 0);
+            string active = results.CurrentSessionId!;
+            memos.Save("현재 집중의 메모", active);
+            memos.SaveDraft("현재 작성 중인 내용", active);
+            await results.DeleteReportAsync(first);
+            Assert.IsNull(await results.OpenReportAsync(first));
+            var reopened = new QuickMemoStore(path);
+            Assert.AreEqual(0, reopened.GetSavedForSession(first).Count);
+            Assert.AreEqual("", reopened.GetDraftForSession(first));
+            Assert.AreEqual(1, reopened.GetSavedForSession(second).Count);
+            await results.DeleteAllReportsAsync();
+            reopened = new QuickMemoStore(path);
+            Assert.IsNull(await results.OpenReportAsync(second));
+            Assert.AreEqual(active, reopened.Entries.Single().SessionId);
+            Assert.AreEqual("현재 작성 중인 내용", reopened.GetDraftForSession(active));
+            Assert.AreEqual(active, reopened.DraftSessionId);
+            using var connection = db.CreateOpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT count(*) FROM focus_sessions;";
+            Assert.AreEqual(3L, await command.ExecuteScalarAsync());
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [TestMethod]
+    public async Task FailedMemoCleanup_RollsBackReportDeletion_AndDatabaseFailureDoesNotCleanMemos()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "altong-delete-failure-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            using var db = SqliteDatabase.CreateInMemory();
+            db.Initialize();
+            var memos = new QuickMemoStore(path);
+            var results = new SessionResultsService(db, new SqliteFocusSessionRepository(db), memos);
+            results.Begin(Start, 0);
+            string id = results.CurrentSessionId!;
+            memos.Save("삭제 실패 시 보존할 메모", id);
+            await results.Reports.SaveAsync((await results.CompleteFocusSessionAsync(Start.AddMinutes(5)))!);
+            string original = File.ReadAllText(path);
+            File.Move(path, path + ".backup");
+            Directory.CreateDirectory(path);
+            try
+            {
+                try { await results.DeleteReportAsync(id); Assert.Fail("Cleanup must fail for a blocked memo file."); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                Assert.IsNotNull(await results.Reports.GetSnapshotAsync(id));
+                try { await results.DeleteAllReportsAsync(); Assert.Fail("Reset must fail for a blocked memo file."); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                Assert.IsNotNull(await results.Reports.GetSnapshotAsync(id));
+            }
+            finally { Directory.Delete(path); File.Move(path + ".backup", path); }
+            using var connection = db.CreateOpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TRIGGER fail_memo_delete BEFORE DELETE ON focus_session_reports BEGIN SELECT RAISE(ABORT, 'controlled failure'); END;";
+            command.ExecuteNonQuery();
+            await Assert.ThrowsExceptionAsync<SqliteException>(() => results.DeleteAllReportsAsync());
+            Assert.AreEqual(original, File.ReadAllText(path));
+            command.CommandText = "DROP TRIGGER fail_memo_delete;";
+            command.ExecuteNonQuery();
+            await results.DeleteReportAsync(id);
+            Assert.IsNull(await results.Reports.GetSnapshotAsync(id));
+            Assert.AreEqual(0, new QuickMemoStore(path).Entries.Count);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [TestMethod]
+    public async Task SessionMemos_AreFrozenBeforeTheNextSession_AndPreservedInSavedReportSnapshots()
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var memos = new QuickMemoStore();
+        var results = new SessionResultsService(db, new SqliteFocusSessionRepository(db), memos);
+        results.Begin(Start, 0);
+        string firstId = results.CurrentSessionId!;
+        memos.Save("집중 중 저장한 메모", firstId);
+        memos.SaveDraft("아직 저장하지 않은 초안", firstId);
+        var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = results.CompleteFocusSessionAsync(Start.AddMinutes(5), pending.Task);
+        results.Begin(Start.AddMinutes(6), 0);
+        memos.Save("다음 세션 메모", results.CurrentSessionId);
+        memos.SaveDraft("다음 세션 초안", results.CurrentSessionId);
+        pending.SetResult();
+        var first = (await completion)!;
+        Assert.AreEqual(2, first.Memos.Count);
+        Assert.AreEqual("아직 저장하지 않은 초안", first.Memos.Single(m => m.IsDraft).Text);
+        await results.Reports.SaveAsync(first);
+        memos.Save("종료 후 추가된 내용", firstId);
+        var restored = (await Results(db).OpenReportAsync(firstId))!;
+        CollectionAssert.AreEqual(first.Memos.ToArray(), restored.Memos.ToArray());
+
+        // Snapshots created before memo support remain readable and do not import unrelated current notes.
+        using var connection = db.CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE focus_session_reports SET snapshot_json = json_remove(snapshot_json, '$.Memos') WHERE session_id = $id;";
+        command.Parameters.AddWithValue("$id", firstId);
+        await command.ExecuteNonQueryAsync();
+        Assert.AreEqual(0, (await results.OpenReportAsync(firstId))!.Memos.Count);
+    }
+
+    [TestMethod]
     public async Task NewReport_RequiresExplicitSave_AndUnsavedReportsDoNotReturnOnInitialize()
     {
         using var db = SqliteDatabase.CreateInMemory();
