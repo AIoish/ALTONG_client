@@ -8,6 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +17,8 @@
 
   <ItemGroup>
     <Resource Include="Fonts\Pretendard-Regular.otf" />
+    <EmbeddedResource Include="Assets\TrayIdle.ico" LogicalName="Altong.Client.Assets.TrayIdle.ico" />
+    <EmbeddedResource Include="Assets\TrayFocus.ico" LogicalName="Altong.Client.Assets.TrayFocus.ico" />
     <None Include="Fonts\Pretendard-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageReference Include="LLamaSharp" Version="0.27.0" />
@@ -38,6 +41,19 @@
     </Content>
     <Content Include="..\..\models\ocr\**\*">
       <Link>models\ocr\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <!-- sparse 패키지는 로고를 매니페스트 폴더가 아니라 외부 위치(이 출력 폴더)의 Assets에서 찾는다.
+         여기 없으면 작업 표시줄·시작 메뉴에 회색 빈 아이콘이 뜬다.
+         resources.pri는 화면 배율·표시 크기별 로고 목록이다. 없으면 작은 그림을 늘려 써서 흐려진다. -->
+    <Content Include="..\..\packaging\sparse\Assets\*.png">
+      <Link>Assets\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\..\packaging\sparse\resources.pri">
+      <Link>resources.pri</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

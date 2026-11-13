@@ -253,45 +253,49 @@ public class OcrTests
     }
 
     [TestMethod]
-    public void TestDetectBodyLineBand_LightAndDarkMode()
+    [DataRow("ㅋㅋㅋ")]
+    [DataRow("?")]
+    [DataRow("넵")]
+    [DataRow("내일 회의 3시")]
+    public void TestKakaoCard_ShortBodyIsReadAsBody(string body)
     {
-        // 1. Light mode text band detection
-        using var lightBmp = new Bitmap(300, 150, PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(lightBmp))
+        if (!PaddleOcrLineRecognizer.Instance.IsAvailable)
         {
-            g.Clear(Color.White);
-            using var font = new Font("Malgun Gothic", 12);
-            using var brush = new SolidBrush(Color.Black);
-            g.DrawString("ㅡㅡ", font, brush, new PointF(30, 80));
+            Assert.Inconclusive("PaddleOCR ONNX model or dict not found.");
+            return;
         }
 
-        var lightBand = LiveKakaoWindowOperator.DetectBodyLineBand(lightBmp, 10, 60, 250, 140);
-        Assert.IsTrue(lightBand.HasValue, "DetectBodyLineBand should detect line in light mode.");
-        Assert.IsTrue(lightBand.Value.Y >= 60 && lightBand.Value.Y <= 90, $"Band Y ({lightBand.Value.Y}) should match drawn text line.");
+        // Windows OCR은 자음만 있는 줄과 기호만 있는 줄을 찾지 못한다. 줄을 픽셀로 찾아야 본문으로 들어온다.
+        using var card = RenderKakaoCard("알통 팀방", "팀원A", body);
 
-        // 2. Dark mode text band detection
-        using var darkBmp = new Bitmap(300, 150, PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(darkBmp))
+        var text = LiveKakaoWindowOperator.MapOcrLines(LiveKakaoWindowOperator.RecognizeLines(card, scale: 2f));
+
+        Assert.IsNotNull(text);
+        Assert.AreEqual(body, text.Body);
+        Assert.AreEqual("팀원A", text.Sender);
+        Assert.AreEqual("알통 팀방", text.Title);
+    }
+
+    [TestMethod]
+    public void TestKakaoCard_WithoutPaddleModel_StillSplitsRoomSenderAndBody()
+    {
+        var koLang = new Windows.Globalization.Language("ko-KR");
+        if (!OcrEngine.IsLanguageSupported(koLang))
         {
-            g.Clear(Color.FromArgb(37, 37, 37));
-            using var font = new Font("Malgun Gothic", 12);
-            using var brush = new SolidBrush(Color.White);
-            g.DrawString("ㅡㅡ", font, brush, new PointF(30, 80));
+            Assert.Inconclusive("Korean OCR language pack not installed on this system.");
+            return;
         }
 
-        var darkBand = LiveKakaoWindowOperator.DetectBodyLineBand(darkBmp, 10, 60, 250, 140);
-        Assert.IsTrue(darkBand.HasValue, "DetectBodyLineBand should detect line in dark mode.");
-        Assert.IsTrue(darkBand.Value.Y >= 60 && darkBand.Value.Y <= 90, $"Dark mode band Y ({darkBand.Value.Y}) should match drawn text line.");
+        using var card = RenderKakaoCard("알통 팀방", "팀원A", "내일 회의 자료 올려주세요");
 
-        // 3. Blank bitmap should return null
-        using var blankBmp = new Bitmap(300, 150, PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(blankBmp))
-        {
-            g.Clear(Color.White);
-        }
+        var text = LiveKakaoWindowOperator.MapOcrLines(
+            LiveKakaoWindowOperator.RecognizeLines(card, scale: 2f, allowPaddle: false));
 
-        var blankBand = LiveKakaoWindowOperator.DetectBodyLineBand(blankBmp, 10, 60, 250, 140);
-        Assert.IsFalse(blankBand.HasValue, "DetectBodyLineBand must return null on blank canvas.");
+        // Windows OCR은 작은 방 이름 글자를 자주 틀리므로 방 이름은 줄이 나뉘었는지만 본다.
+        Assert.IsNotNull(text);
+        Assert.AreNotEqual(text.Sender, text.Title);
+        StringAssert.Contains(text.Sender, "팀원A");
+        StringAssert.Contains(text.Body, "회의");
     }
 
     [TestMethod]
@@ -303,6 +307,28 @@ public class OcrTests
         using var bmp = new Bitmap(100, 30);
         string? result = missingRecognizer.RecognizeLine(bmp);
         Assert.IsNull(result, "RecognizeLine must return null when model is absent.");
+    }
+
+    /// <summary>
+    /// 200% 배율 카카오톡 팝업 카드(620x161)를 흉내 낸다. 줄 위치는 실제 캡처에서 잰 값이다:
+    /// 방 이름 y 17~41, 발신자 y 72~96, 본문 y 113~133 (물리 px). 프로필 사진 자리는 이미 덮인 상태다.
+    /// </summary>
+    private static Bitmap RenderKakaoCard(string room, string sender, string body)
+    {
+        var card = new Bitmap(620, 161, PixelFormat.Format32bppArgb);
+        // WPF UI 테스트가 먼저 실행되어 프로세스 DPI가 바뀌어도 글자 크기가 달라지지 않도록 고정한다.
+        card.SetResolution(96, 96);
+        using var g = Graphics.FromImage(card);
+        g.Clear(Color.White);
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        using var roomFont = new Font("Malgun Gothic", 17, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var senderFont = new Font("Malgun Gothic", 23, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var bodyFont = new Font("Malgun Gothic", 21, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var bodyBrush = new SolidBrush(Color.FromArgb(118, 118, 118));
+        g.DrawString(room, roomFont, Brushes.Black, new PointF(28, 16));
+        g.DrawString(sender, senderFont, Brushes.Black, new PointF(122, 68));
+        g.DrawString(body, bodyFont, bodyBrush, new PointF(122, 109));
+        return card;
     }
 
     private static Bitmap RenderTextLineBitmap(string text, float fontSize = 18)

@@ -1,6 +1,7 @@
 using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Services.AI.Briefing;
+using Altong.Client.Services.Notifications;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Altong.Client.Tests;
@@ -224,6 +225,36 @@ public sealed class BriefingEngineTests
         Assert.IsTrue(item.IsScheduleRelated);
         Assert.IsNotNull(item.Schedule);
         StringAssert.Contains(item.Schedule!.Title, "회의");
+    }
+
+    [TestMethod]
+    public async Task LlamaReportSummaryProvider_LeavesOutNotificationsWhoseBodyWasNotRead()
+    {
+        // 카카오톡 팝업에서 본문을 못 읽으면 본문 자리에 "(내용을 읽지 못함)" 같은 문구가 들어간다.
+        // 이 문구가 요약 입력에 들어가면 모델이 메시지로 읽고 그대로 요약해 버린다.
+        var now = new DateTime(2026, 11, 6, 21, 5, 0);
+        var fakeNotifications = new[]
+        {
+            new NotificationRecord("1", "KakaoTalk.exe", "팀원A", "알통 팀방", "주말에 바다 갈까", now,
+                IsPassed: false, SessionId: "session-123"),
+            new NotificationRecord("2", "KakaoTalk.exe", "팀원A", "알통 팀방", KakaoNotificationText.UnreadBody, now.AddSeconds(5),
+                IsPassed: false, SessionId: "session-123"),
+            // 문구를 바꾸기 전에 저장된 알림
+            new NotificationRecord("4", "KakaoTalk.exe", "팀원A", "알통 팀방", KakaoNotificationText.LegacyMediaBody, now.AddSeconds(7),
+                IsPassed: false, SessionId: "session-123"),
+            new NotificationRecord("3", "KakaoTalk.exe", "팀원B", "팀원B", KakaoNotificationText.MissingBody, now.AddSeconds(9),
+                IsPassed: false, SessionId: "session-123")
+        };
+
+        using var provider = new LlamaReportSummaryProvider(
+            new FakeNotificationRepository(fakeNotifications), "non_existent_model.gguf", () => now);
+
+        var supply = await provider.ReadAsync("session-123", CancellationToken.None);
+
+        Assert.AreEqual(1, supply.Items.Count);
+        StringAssert.Contains(supply.Items[0].Text, "주말에 바다 갈까");
+        Assert.IsFalse(supply.Items[0].Text.Contains("읽지 못함"), supply.Items[0].Text);
+        Assert.IsFalse(supply.Items[0].Text.Contains("이모티콘"), supply.Items[0].Text);
     }
 
     [TestMethod]

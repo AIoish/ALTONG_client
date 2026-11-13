@@ -58,6 +58,12 @@ flowchart LR
 ### 모델 준비
 - **필터 모델**: `models/filtering/klue-base-safety-v1/`에 들어 있습니다. 빌드할 때 출력 폴더로 복사됩니다.
 - **브리핑 모델**: Git에 포함되지 않습니다. GitHub Release `briefing-v8-q8-mvp`에서 `qwen_briefing_v8_q8_0.gguf`를 받아 `models/briefing/`에 넣으세요. 없으면 AI 요약을 쓸 수 없습니다.
+- **카카오톡 팝업 OCR 모델** (개발 빌드에서 카카오톡 연동을 쓸 때만): Git에 포함되지 않습니다. 저장소 루트에서 아래 명령으로 받으세요(13MB). 없으면 Windows OCR로 대신 읽는데, 'ㅋㅋㅋ' 같은 짧은 본문을 읽지 못해 본문이 `(내용을 읽지 못함)`으로 들어옵니다.
+  ```powershell
+  curl.exe -L -o models\ocr\ppocr-v5-ko\korean_PP-OCRv5_mobile_rec.onnx https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/5c6f574b8e2230adf4287b33e736d71b9fabd28e/inference.onnx
+  (Get-FileHash models\ocr\ppocr-v5-ko\korean_PP-OCRv5_mobile_rec.onnx).Hash  # 92F0B7785E64FC9090106A241CF4C1EB97472824558272751B88A2A4476D3A08
+  ```
+  출처는 PaddlePaddle 공식 [korean_PP-OCRv5_mobile_rec_onnx](https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx)이고 라이선스는 Apache 2.0입니다.
 
 ### 빌드 및 실행
 
@@ -81,6 +87,21 @@ dotnet test
 
 상단 노치·알림 패널 사용법과 집중 모드 기록 규칙: [docs/CLIENT_BEHAVIOR.md](docs/CLIENT_BEHAVIOR.md)
 
+### 설치 파일 만들기
+
+.NET이 없는 PC에도 설치할 수 있는 `dist\AltongSetup-<버전>.exe`(약 1GB, 모델 포함)를 만듭니다.
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e   # 처음 한 번
+powershell -ExecutionPolicy Bypass -File tools/build-installer.ps1 -Version 1.0.0
+```
+
+- 모델 3개와 Windows SDK(makeappx, signtool)가 필요합니다.
+- 설치 프로그램은 관리자 권한으로 실행되며, 알림 권한용 패키지 서명 인증서(`CN=AltongDev`, 자체 서명)를 그 PC에 신뢰시키고 패키지를 등록합니다. 제거하면 인증서와 패키지도 지웁니다.
+- 서명 인증서는 빌드한 PC의 현재 사용자 인증서 저장소에 있고, 없으면 새로 만듭니다. 저장소에는 넣지 않습니다.
+- 설치 파일 자체는 서명하지 않아서, 인터넷으로 받은 PC에서는 SmartScreen 경고가 뜹니다("추가 정보 → 실행").
+- 개발 PC에 설치하면 개발용 패키지 등록이 설치본으로 바뀝니다. 다시 개발하려면 `tools/register-sparse-package.ps1`을 실행하세요.
+
 ## 프로젝트 구조
 
 ```text
@@ -91,6 +112,7 @@ ALTONG_client/
 ├── tests/Altong.Client.Tests/  # xUnit 테스트
 ├── tools/                      # MockGenerator, 패키징·캘린더 테스트 스크립트
 ├── packaging/                  # Sparse package (알림 권한용)
+├── assets/icon/                # 앱·트레이 아이콘 원본 (tools/generate-assets.ps1로 .ico·로고 생성)
 ├── reports/                    # 필터 모델 평가 보고서
 ├── docs/                       # 설계·명세·협업 문서
 └── Altong.Client.sln

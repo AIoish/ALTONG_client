@@ -9,6 +9,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | Track 1 실시간 필터 | KLUE base 안전 보강 판별 모델 (FP32 ONNX, 약 440MB) | `Microsoft.ML.OnnxRuntime` 1.31.0 (`Altong.Filtering`) | `models/filtering/klue-base-safety-v1/` | manifest의 SHA256으로 확인 후 로딩 |
 | Track 2 세션 브리핑 | Qwen LoRA 병합 GGUF (`qwen_briefing_v8_q8_0.gguf`) | `LLamaSharp` 0.27.0 (CPU) | `models/briefing/` (gitignore) | GitHub Release `briefing-v8-q8-mvp`에서 받음 |
+| 카카오톡 팝업 OCR (개발 빌드 전용) | PP-OCRv5 한국어 모바일 인식 모델 (ONNX, 13MB, Apache 2.0) | `Microsoft.ML.OnnxRuntime` (`PaddleOcrLineRecognizer`) | `models/ocr/ppocr-v5-ko/` (onnx는 gitignore, 사전은 포함) | Hugging Face `PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx`의 `inference.onnx`. 받는 명령은 README '모델 준비' 참고. 없으면 Windows OCR로 대신 읽음 |
 
 > [!WARNING]
 > 아래 원문 중 현재 구현과 다른 부분:

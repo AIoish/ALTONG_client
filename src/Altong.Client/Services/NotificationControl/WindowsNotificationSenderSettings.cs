@@ -7,17 +7,31 @@ using Microsoft.Win32;
 namespace Altong.Client.Services.NotificationControl;
 
 /// <summary>
-/// Build-pinned adapter for the notebook's private NotificationController COM ABI.
+/// Build-pinned adapter for the private NotificationController COM ABI.
 /// This is not a supported/public Windows API. Refuse writes on an unknown DLL, including after Windows updates.
-/// Slot signatures were checked against the matching Microsoft symbols; unused slots are never invoked.
+/// Slot signatures were checked against the matching Microsoft symbols for each validated DLL; unused slots are never invoked.
 /// </summary>
 public sealed class WindowsNotificationSenderSettings : INotificationSenderSettings
 {
-    public const string ValidatedDllHash = "3242604B327A90314F88F044FFA4E3B8B2DD28F7D9E7009AB38793ABFE6FFC2D";
+    /// <summary>
+    /// 검증한 <c>NotificationController.dll</c> SHA256별 앱 설정 인터페이스 ID와 vtable 순번.
+    /// factory 3(GetSettingsForAumid)과 앱 설정 5(알림 켜짐)·7/8(배너)·9(알림센터 보관)은 모든 검증 빌드에서 같다.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, NotificationControllerLayout> ValidatedLayouts =
+        new Dictionary<string, NotificationControllerLayout>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["3242604B327A90314F88F044FFA4E3B8B2DD28F7D9E7009AB38793ABFE6FFC2D"] = new(
+                "Windows 11 25H2 build 26200.9711", new("9DCA8F00-CB98-434B-9473-5A0691200DC4"),
+                SoundFile: 33, SetSoundFile: 34, Title: 37, HasValidAppInfo: 43),
+            ["C2C4693C3204BA7FB1D2BA1D78D8E4705CCA76BBA5C7D368D43C7A05CB599F97"] = new(
+                "Windows 10 22H2 build 19045.6466", new("266DE187-1DE7-4021-A421-806ABA49A99E"),
+                SoundFile: 21, SetSoundFile: 22, Title: 25, HasValidAppInfo: 30),
+        };
+
     private const string SettingsPath = @"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings";
     private static readonly Guid ClassId = new("D18705BE-FC2F-44C8-AEFF-1CD49AEA8FC1");
     private static readonly Guid FactoryId = new("443B1739-3779-4ABA-953B-9E4FF84DD4B6");
-    private static readonly Guid SenderId = new("9DCA8F00-CB98-434B-9473-5A0691200DC4");
+    private readonly NotificationControllerLayout _layout = null!;
     public string? CompatibilityError { get; }
 
     public WindowsNotificationSenderSettings()
@@ -27,8 +41,10 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
             var dll = Path.Combine(Environment.SystemDirectory, "NotificationController.dll");
             using var file = File.OpenRead(dll);
             string hash = Convert.ToHexString(SHA256.HashData(file));
-            if (!Environment.Is64BitProcess || hash != ValidatedDllHash)
+            if (!Environment.Is64BitProcess || !ValidatedLayouts.TryGetValue(hash, out var layout))
                 CompatibilityError = "현재 Windows의 알림 제어 모듈은 검증되지 않아 Windows 방해 금지 방식을 사용합니다.";
+            else
+                _layout = layout;
         }
         catch (Exception ex) { CompatibilityError = $"알림 제어 호환성 확인 실패: {ex.GetType().Name}"; }
     }
@@ -46,8 +62,8 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
                 rows.Add(WithSender(id, p =>
                 {
                     var state = ReadState(p);
-                    string name = ReadString(p, 37);
-                    int valid = ReadInt(p, 43);
+                    string name = ReadString(p, _layout.Title);
+                    int valid = ReadInt(p, _layout.HasValidAppInfo);
                     return new NotificationSender(id, string.IsNullOrWhiteSpace(name) ? id : name,
                         NotificationSenderPolicy.ExclusionReason(id, valid != 0, state.Enabled, state.ShowInActionCenter));
                 }));
@@ -75,7 +91,7 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
     });
     public void SetSound(string id, string value) => WithSender(id, p =>
     {
-        Marshal.ThrowExceptionForHR(Method<PutString>(p, 34)(p, value));
+        Marshal.ThrowExceptionForHR(Method<PutString>(p, _layout.SetSoundFile)(p, value));
         return true;
     });
 
@@ -108,8 +124,8 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
         key.SetValue(name, restored, kind);
     }
 
-    private static SenderState ReadState(IntPtr p) => new(ReadInt(p, 5) != 0, ReadInt(p, 9) != 0,
-        ReadInt(p, 7), ReadString(p, 33));
+    private SenderState ReadState(IntPtr p) => new(ReadInt(p, 5) != 0, ReadInt(p, 9) != 0,
+        ReadInt(p, 7), ReadString(p, _layout.SoundFile));
 
     /// <summary>
     /// 이 COM 서버는 다른 프로세스(LOCAL_SERVER)라 factory를 만들 때마다 비용이 크다. 일괄 작업(<see cref="BeginBatch"/>) 동안에는
@@ -172,7 +188,7 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
         try
         {
             Marshal.ThrowExceptionForHR(Method<GetSender>(factory, 3)(factory, id, out sender));
-            var senderIid = SenderId;
+            var senderIid = _layout.SenderId;
             Marshal.ThrowExceptionForHR(Marshal.QueryInterface(sender, in senderIid, out typed));
             return action(typed);
         }
@@ -229,3 +245,7 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int PutString(IntPtr self, [MarshalAs(UnmanagedType.LPWStr)] string value);
 }
+
+/// <summary>검증한 Windows 빌드 하나의 앱 설정 인터페이스 ID와, 빌드마다 다른 vtable 순번.</summary>
+public sealed record NotificationControllerLayout(
+    string Build, Guid SenderId, int SoundFile, int SetSoundFile, int Title, int HasValidAppInfo);

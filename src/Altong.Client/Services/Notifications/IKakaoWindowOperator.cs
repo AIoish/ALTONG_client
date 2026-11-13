@@ -6,7 +6,32 @@ namespace Altong.Client.Services.Notifications;
 /// </summary>
 public record KakaoNotificationText(string? Sender, string Title, string Body)
 {
+    /// <summary>방 이름 줄만 읽고 발신자·본문 줄을 읽지 못했을 때의 본문.</summary>
+    public const string MissingBody = "(새 메시지)";
+
+    /// <summary>발신자 줄까지 읽고 본문 줄을 읽지 못했을 때의 본문.</summary>
+    public const string UnreadBody = "(내용을 읽지 못함)";
+
+    /// <summary>
+    /// 예전에 <see cref="UnreadBody"/> 자리에 쓰던 문구. 이모티콘이 아니라 글자를 못 읽은 경우에도 붙어 사실과 달랐다.
+    /// 이미 저장된 알림에 남아 있어 구분할 때만 쓴다.
+    /// </summary>
+    public const string LegacyMediaBody = "(이모티콘 또는 미디어)";
+
+    /// <summary>OCR이 실패해 창 제목만 얻었을 때의 본문.</summary>
+    public const string ArrivedBody = "(새 메시지가 도착했습니다)";
+
+    /// <summary>창이 없어 아무것도 읽지 못했을 때의 본문.</summary>
+    public const string EmptyBody = "(알림 내용 없음)";
+
     public ulong ContentHash { get; init; }
+
+    /// <summary>
+    /// 본문이 실제 메시지가 아니라, 본문을 읽지 못해 앱이 대신 넣은 문구인지 확인한다.
+    /// 이런 알림은 누가 보냈는지만 알 수 있으므로 요약 모델에 본문으로 넣지 않는다.
+    /// </summary>
+    public static bool IsUnreadBody(string? body) =>
+        body is MissingBody or UnreadBody or LegacyMediaBody or ArrivedBody or EmptyBody;
 }
 
 /// <summary>
