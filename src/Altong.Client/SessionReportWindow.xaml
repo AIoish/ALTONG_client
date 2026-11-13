@@ -15,6 +15,8 @@
         <SolidColorBrush x:Key="MutedText" Color="{StaticResource BlackMutedColor}" />
         <SolidColorBrush x:Key="WindowSurface" Color="{StaticResource BlackPaperColor}" />
         <SolidColorBrush x:Key="CardSurface" Color="{StaticResource BlackSurfaceColor}" />
+        <SolidColorBrush x:Key="ReportSummarySurface" Color="#2B3038" />
+        <SolidColorBrush x:Key="ReportDivider" Color="#3B3D43" />
         <services:AppIconConverter x:Key="AppIcon" />
         <services:AppNameDisplayConverter x:Key="AppNameDisplay" />
         <Style TargetType="Expander" BasedOn="{StaticResource BlackExpander}" />
@@ -52,6 +54,28 @@
             <Setter Property="FontSize" Value="16" /><Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{StaticResource BlackText}" />
         </Style>
+        <Style x:Key="ReportMetricValue" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="FontSize" Value="22" />
+            <Setter Property="Margin" Value="0,5,0,0" />
+        </Style>
+        <Style x:Key="ReportBlockedCount" TargetType="TextBlock" BasedOn="{StaticResource ReportMetricValue}">
+            <Setter Property="Foreground" Value="{StaticResource BlackAccentText}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding BlockedCount}" Value="0">
+                    <Setter Property="Foreground" Value="{StaticResource BlackMuted}" />
+                    <Setter Property="FontWeight" Value="Normal" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ReportPassedCount" TargetType="TextBlock" BasedOn="{StaticResource ReportMetricValue}">
+            <Setter Property="Foreground" Value="{StaticResource BlackSuccess}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding PassedCount}" Value="0">
+                    <Setter Property="Foreground" Value="{StaticResource BlackMuted}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
         <DataTemplate x:Key="ReportSectionHeader">
             <TextBlock Text="{Binding}" Style="{StaticResource ReportSectionTitle}" />
         </DataTemplate>
@@ -60,14 +84,14 @@
         </Style>
         <Style x:Key="Card" TargetType="Border">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="{StaticResource BlackRule}" />
+            <Setter Property="BorderBrush" Value="{StaticResource ReportDivider}" />
             <Setter Property="BorderThickness" Value="0,0,0,1" />
             <Setter Property="Padding" Value="0,0,0,18" />
             <Setter Property="Margin" Value="0,0,0,18" />
 
         </Style>
         <Style x:Key="DetailSection" TargetType="Border">
-            <Setter Property="BorderBrush" Value="{StaticResource BlackRule}" /><Setter Property="BorderThickness" Value="0,1,0,0" />
+            <Setter Property="BorderBrush" Value="{StaticResource ReportDivider}" /><Setter Property="BorderThickness" Value="0,1,0,0" />
             <Setter Property="Margin" Value="0,12,0,0" /><Setter Property="Padding" Value="0,4,0,4" />
         </Style>
         <Style x:Key="MetricSection" TargetType="Border">
@@ -120,18 +144,18 @@
                     <TextBlock Text="{Binding PeriodText}" Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,0" />
                     <TextBlock x:Name="ReportSourceText" Text="{Binding ReportSource}" Visibility="Collapsed" />
                 </StackPanel>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0">
-                    <TextBlock x:Name="ReportBadgeText" Text="집중 완료" Foreground="{StaticResource BlackSuccess}" FontSize="12" HorizontalAlignment="Right" />
-                    <Button x:Name="MemoReminderButton" Click="MemoReminder_Click" Visibility="Collapsed"
-                            Background="{StaticResource BlackSelection}" Foreground="{StaticResource BlackAccentText}"
-                            BorderBrush="{StaticResource BlackSelectionRule}" Padding="8,5" Margin="0,7,0,0"
-                            AutomationProperties.Name="집중 중 남긴 메모 확인">
+                <WrapPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="12,0,0,0">
+                    <TextBlock x:Name="ReportBadgeText" Text="집중 완료" Foreground="{StaticResource BlackSuccess}" FontSize="12" VerticalAlignment="Center" />
+                    <Border x:Name="MemoPresenceBadge" Visibility="Collapsed" Margin="10,0,0,0" Padding="8,5" CornerRadius="8"
+                            Background="{StaticResource BlackSelection}" BorderBrush="{StaticResource BlackSelectionRule}" BorderThickness="1"
+                            Focusable="False" IsHitTestVisible="False">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE70B;" FontFamily="Segoe MDL2 Assets" FontSize="11" Margin="0,0,6,0" VerticalAlignment="Center" />
-                            <TextBlock x:Name="MemoReminderText" FontSize="11" />
+                            <TextBlock Text="&#xE70B;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="{StaticResource BlackAccentText}" Margin="0,0,6,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="MemoPresenceText" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource BlackAccentText}"
+                                       VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
                         </StackPanel>
-                    </Button>
-                </StackPanel>
+                    </Border>
+                </WrapPanel>
             </Grid>
         </Border>
         <ScrollViewer x:Name="ReportScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="22,0,14,0">
@@ -140,8 +164,8 @@
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="1.5*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                         <StackPanel><TextBlock Text="집중 시간" Style="{StaticResource Muted}" FontSize="11" /><TextBlock Text="{Binding DurationText}" FontSize="26" FontWeight="SemiBold" Margin="0,5,8,0" /></StackPanel>
-                        <StackPanel Grid.Column="1"><TextBlock Text="차단 알림" Style="{StaticResource Muted}" FontSize="11" /><TextBlock Text="{Binding BlockedCount}" FontSize="22" Foreground="{StaticResource BlackText}" Margin="0,5,0,0" /></StackPanel>
-                        <StackPanel Grid.Column="2"><TextBlock Text="통과 알림" Style="{StaticResource Muted}" FontSize="11" /><TextBlock Text="{Binding PassedCount}" FontSize="22" Foreground="{StaticResource BlackSuccess}" Margin="0,5,0,0" /></StackPanel>
+                        <StackPanel Grid.Column="1"><TextBlock Text="차단 알림" Style="{StaticResource Muted}" FontSize="11" /><TextBlock x:Name="BlockedCountText" Text="{Binding BlockedCount}" Style="{StaticResource ReportBlockedCount}" /></StackPanel>
+                        <StackPanel Grid.Column="2"><TextBlock Text="통과 알림" Style="{StaticResource Muted}" FontSize="11" /><TextBlock x:Name="PassedCountText" Text="{Binding PassedCount}" Style="{StaticResource ReportPassedCount}" /></StackPanel>
                         <StackPanel Grid.Column="3"><TextBlock Text="사용 앱" Style="{StaticResource Muted}" FontSize="11" /><TextBlock Text="{Binding ApplicationCount}" FontSize="22" Margin="0,5,0,0" /></StackPanel>
                     </Grid>
                 </Border>
@@ -149,7 +173,7 @@
                     <StackPanel>
                         <DockPanel Margin="2,0,0,10">
                             <Button x:Name="ReloadSummaryButton" Content="새로고침" Click="ReloadSummary_Click" DockPanel.Dock="Right" HorizontalAlignment="Right" FontSize="12" Padding="10,6" Visibility="Collapsed" AutomationProperties.Name="AI 요약 새로고침" />
-                            <TextBlock Text="AI 요약" Style="{StaticResource ReportSectionTitle}" VerticalAlignment="Center" />
+                            <TextBlock Text="AI 요약" Style="{StaticResource ReportSectionTitle}" FontSize="18" Foreground="{StaticResource BlackAccentText}" VerticalAlignment="Center" />
                         </DockPanel>
                         <Border x:Name="SummaryStatusPanel" Background="{StaticResource BlackSelection}"
                                 BorderBrush="{StaticResource BlackSelectionRule}" BorderThickness="1" CornerRadius="8"
@@ -203,79 +227,6 @@
                         </StackPanel>
                         <ContentControl x:Name="CalendarSummaryHost" Visibility="Collapsed" Margin="0,10,0,0" />
                     </StackPanel>
-                </Border>
-                <Border x:Name="MemoSectionBorder" Background="{StaticResource BlackSelection}" BorderBrush="{StaticResource BlackSelectionRule}"
-                        BorderThickness="1" CornerRadius="12" Padding="14,12" Margin="0,14,0,4" Visibility="Collapsed">
-                    <StackPanel>
-                        <Grid Margin="2,2,2,0">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE70B;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="{StaticResource BlackAccentText}"
-                                           VerticalAlignment="Center" Margin="0,0,8,0" />
-                                <TextBlock Text="집중 중 메모" Style="{StaticResource ReportSectionTitle}" />
-                            </StackPanel>
-                            <TextBlock x:Name="MemoCountText" Grid.Column="1" Foreground="{StaticResource BlackAccentText}" FontSize="12" VerticalAlignment="Center" />
-                        </Grid>
-                        <ItemsControl x:Name="MemoItemsControl" Margin="2,4,2,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border BorderBrush="{StaticResource BlackSelectionRule}" BorderThickness="0,0,0,1" Padding="0,12">
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding WhenText}" Foreground="{StaticResource BlackAccentText}" FontSize="11" Margin="0,0,0,7" />
-                                            <TextBlock x:Name="MemoPreview" Text="{Binding Text}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
-                                                       LineHeight="20" MaxHeight="60" FontSize="14" Tag="{Binding ElementName=MemoContentExpander}"
-                                                       Loaded="MemoPreview_Changed" SizeChanged="MemoPreview_Changed">
-                                                <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsExpanded}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
-                                                </Style.Triggers></Style></TextBlock.Style>
-                                            </TextBlock>
-                                            <Expander x:Name="MemoContentExpander" IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
-                                                      Foreground="{StaticResource BlackAccentText}" FontSize="12" Margin="0,6,0,0">
-                                                <Expander.Style>
-                                                    <Style TargetType="Expander" BasedOn="{StaticResource BlackExpander}">
-                                                        <Setter Property="Header" Value="펼쳐보기" />
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                        <Style.Triggers><Trigger Property="IsExpanded" Value="True"><Setter Property="Header" Value="접기" /><Setter Property="Visibility" Value="Visible" /></Trigger></Style.Triggers>
-                                                    </Style>
-                                                </Expander.Style>
-                                                <TextBox Text="{Binding Text, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
-                                                         BorderThickness="0" Padding="0" Background="Transparent" Foreground="{StaticResource BlackText}"
-                                                         Margin="0,7,0,0" FontSize="14" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled"
-                                                         services:MotionBehavior.FadeOnReveal="True" AutomationProperties.Name="집중 중 작성한 메모 전체 내용" />
-                                            </Expander>
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <Button x:Name="MoreMemosButton" Click="MoreMemos_Click" HorizontalAlignment="Left" Margin="0,8" Visibility="Collapsed" />
-                    </StackPanel>
-                </Border>
-                <Border Style="{StaticResource DetailSection}">
-                    <Expander x:Name="AppUsageExpander" Header="앱 사용시간" Foreground="{StaticResource BlackSoft}" FontWeight="SemiBold" Style="{StaticResource ReportSectionExpander}">
-                    <StackPanel Margin="0,8,0,0">
-                        <ItemsControl x:Name="AppItemsControl" ItemsSource="{Binding Apps}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,8">
-                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="44" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                        <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="28" Height="28" />
-                                        <TextBlock Grid.Column="1" Text="{Binding AppName, Converter={StaticResource AppNameDisplay}}" ToolTip="{Binding AppName}" Margin="8,0,16,0" />
-                                        <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource Muted}" MaxWidth="120" TextAlignment="Right" />
-                                        <ProgressBar Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Value="{Binding Percentage}" Maximum="100" Height="4" Margin="8,10,0,0" Foreground="{StaticResource BlackText}" Background="{StaticResource BlackRaised}" BorderThickness="0" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <Button x:Name="MoreAppsButton" Click="MoreApps_Click" HorizontalAlignment="Left" Margin="0,8" Visibility="Collapsed" />
-                        <TextBlock Text="앱 사용 기록 없음" Margin="0,8">
-                            <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource Muted}">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers><DataTrigger Binding="{Binding HasItems, ElementName=AppItemsControl}" Value="False"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
-                            </Style></TextBlock.Style>
-                        </TextBlock>
-                    </StackPanel></Expander>
                 </Border>
                 <Border Style="{StaticResource DetailSection}">
                     <Expander x:Name="NotificationsExpander" Header="원본 알림" Foreground="{StaticResource BlackSoft}" FontWeight="SemiBold" Style="{StaticResource ReportSectionExpander}">
@@ -356,15 +307,95 @@
                         </TextBlock>
                     </StackPanel></Expander>
                 </Border>
+                <Border Style="{StaticResource DetailSection}">
+                    <Expander x:Name="AppUsageExpander" Header="앱 사용시간" Foreground="{StaticResource BlackSoft}" FontWeight="SemiBold" Style="{StaticResource ReportSectionExpander}">
+                    <StackPanel Margin="0,8,0,0">
+                        <ItemsControl x:Name="AppItemsControl" ItemsSource="{Binding Apps}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,8">
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="44" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="28" Height="28" />
+                                        <TextBlock Grid.Column="1" Text="{Binding AppName, Converter={StaticResource AppNameDisplay}}" ToolTip="{Binding AppName}" Margin="8,0,16,0" />
+                                        <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource Muted}" MaxWidth="120" TextAlignment="Right" />
+                                        <ProgressBar Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Value="{Binding Percentage}" Maximum="100" Height="4" Margin="8,10,0,0" Foreground="{StaticResource BlackText}" Background="{StaticResource BlackRaised}" BorderThickness="0" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button x:Name="MoreAppsButton" Click="MoreApps_Click" HorizontalAlignment="Left" Margin="0,8" Visibility="Collapsed" />
+                        <TextBlock Text="앱 사용 기록 없음" Margin="0,8">
+                            <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource Muted}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers><DataTrigger Binding="{Binding HasItems, ElementName=AppItemsControl}" Value="False"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                            </Style></TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel></Expander>
+                </Border>
+                <Border x:Name="MemoSectionBorder" Style="{StaticResource DetailSection}" Visibility="Collapsed">
+                    <Expander x:Name="MemosExpander" Header="집중 중 메모" IsExpanded="False"
+                              Foreground="{StaticResource BlackSoft}" FontWeight="SemiBold" Style="{StaticResource ReportSectionExpander}">
+                    <StackPanel Margin="0,8,0,0">
+                        <ItemsControl x:Name="MemoItemsControl" Margin="2,4,2,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource ReportDivider}" BorderThickness="0,0,0,1" Padding="0,10">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding WhenText}" Foreground="{StaticResource BlackMuted}" FontSize="11" Margin="0,0,0,6" />
+                                            <TextBlock x:Name="MemoPreview" Text="{Binding Text}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                                       LineHeight="19" MaxHeight="57" FontSize="13" Tag="{Binding ElementName=MemoContentExpander}"
+                                                       Loaded="MemoPreview_Changed" SizeChanged="MemoPreview_Changed">
+                                                <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsExpanded}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                </Style.Triggers></Style></TextBlock.Style>
+                                            </TextBlock>
+                                            <Expander x:Name="MemoContentExpander" IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                                                      Foreground="{StaticResource BlackMuted}" FontSize="12" Margin="0,6,0,0">
+                                                <Expander.Style>
+                                                    <Style TargetType="Expander" BasedOn="{StaticResource BlackExpander}">
+                                                        <Setter Property="Header" Value="펼쳐보기" />
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers><Trigger Property="IsExpanded" Value="True"><Setter Property="Header" Value="접기" /><Setter Property="Visibility" Value="Visible" /></Trigger></Style.Triggers>
+                                                    </Style>
+                                                </Expander.Style>
+                                                <TextBox Text="{Binding Text, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                                         BorderThickness="0" Padding="0" Background="Transparent" Foreground="{StaticResource BlackText}"
+                                                         Margin="0,7,0,0" FontSize="14" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled"
+                                                         services:MotionBehavior.FadeOnReveal="True" AutomationProperties.Name="집중 중 작성한 메모 전체 내용" />
+                                            </Expander>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button x:Name="MoreMemosButton" Click="MoreMemos_Click" HorizontalAlignment="Left" Margin="0,8" Visibility="Collapsed" />
+                    </StackPanel>
+                    </Expander>
+                </Border>
             </StackPanel>
         </ScrollViewer>
         <Border Grid.Row="3" Background="{StaticResource BlackInput}" BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,0" CornerRadius="0,0,12,12" Padding="22,12">
             <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                <TextBlock x:Name="SaveStatusText" Style="{StaticResource Muted}" FontSize="11" Margin="0,0,12,0" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" services:MotionBehavior.TextFeedback="True" />
-                <WrapPanel Grid.Column="1" HorizontalAlignment="Right">
+                <TextBlock x:Name="SaveAvailabilityText" Grid.ColumnSpan="2" Text="AI 요약 완료 후 리포트를 저장할 수 있어요."
+                           Style="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"
+                           Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+                <TextBlock x:Name="SaveStatusText" Grid.Row="1" Style="{StaticResource Muted}" FontSize="11" Margin="0,0,12,0" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" services:MotionBehavior.TextFeedback="True" />
+                <WrapPanel Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right">
                     <Button x:Name="SkipSaveButton" Content="저장하지 않고 닫기" Margin="0,0,8,0" Click="CloseButton_Click" FontSize="12" />
-                    <Button x:Name="SaveReportButton" Content="리포트 저장" Style="{StaticResource PrimaryButton}" Click="SaveReport_Click" IsDefault="True" FontSize="12" />
+                    <Button x:Name="SaveReportButton" Style="{StaticResource PrimaryButton}" Click="SaveReport_Click" IsDefault="True" FontSize="12"
+                            MinWidth="112" AutomationProperties.Name="리포트 저장">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Path x:Name="SaveCompletedIcon" Width="16" Height="16" Margin="0,0,6,0" Visibility="Collapsed"
+                                  Data="M2,8 L6,12 L14,4" Stroke="{Binding Foreground, ElementName=SaveReportButton}"
+                                  StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                  StrokeDashArray="12,12" />
+                            <TextBlock x:Name="SaveReportLabel" Text="리포트 저장" TextWrapping="NoWrap" VerticalAlignment="Center"
+                                       Foreground="{Binding Foreground, ElementName=SaveReportButton}" />
+                        </StackPanel>
+                    </Button>
                 </WrapPanel>
             </Grid>
         </Border>

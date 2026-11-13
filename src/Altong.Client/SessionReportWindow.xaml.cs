@@ -9,6 +9,7 @@ using Altong.Client.Models;
 using Altong.Client.Services.Calendar;
 using Altong.Client.Services.Notifications;
 using Altong.Client.Services.AI.Briefing;
+using Brush = System.Windows.Media.Brush;
 
 namespace Altong.Client;
 
@@ -17,6 +18,7 @@ public partial class SessionReportWindow : Window
     private SessionResult _result;
     private readonly SqliteSessionReportRepository? _reports;
     private bool _saving;
+    private bool _saveSucceeded;
     private bool _loadingSummaries;
     private bool _closed;
     private readonly CancellationTokenSource _summaryLifetime = new();
@@ -75,12 +77,13 @@ public partial class SessionReportWindow : Window
         ReportHeadingText.Text = "집중 리포트";
         ReportBadgeText.Text = isSaved ? "보관됨" : "집중 완료";
         _summaryCards = new([], _demoMode);
+        _summaryCards.Resources["SummaryCardSurface"] = FindResource("ReportSummarySurface");
         _summaryCards.ScheduleCorrected += SaveCorrection;
         _summaryCards.ScheduleSaveRequested += SaveSchedule;
         CalendarSummaryHost.Content = _summaryCards;
         _calendar.Changed += Calendar_Changed;
         ReloadSummaryButton.Visibility = _summaryProvider is null || result.SessionId is null ? Visibility.Collapsed : Visibility.Visible;
-        Closing += (_, e) => e.Cancel = _saving;
+        Closing += (_, e) => e.Cancel = _saving && !_saveSucceeded;
         Closed += (_, _) =>
         {
             _closed = true;
@@ -137,9 +140,9 @@ public partial class SessionReportWindow : Window
     private void UpdateDetailLists()
     {
         MemoSectionBorder.Visibility = _result.Memos.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        MemoReminderButton.Visibility = MemoSectionBorder.Visibility;
-        MemoReminderText.Text = $"메모 {_result.Memos.Count}개 확인";
-        MemoCountText.Text = $"{_result.Memos.Count}개";
+        MemosExpander.Header = $"집중 중 메모 · {_result.Memos.Count}개";
+        MemoPresenceText.Text = $"메모 {_result.Memos.Count}개";
+        MemoPresenceBadge.Visibility = MemoSectionBorder.Visibility;
         MemoItemsControl.ItemsSource = _memoItems.Take(_memoDisplayLimit).ToArray();
         MoreMemosButton.Visibility = _result.Memos.Count > _memoDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
         MoreMemosButton.Content = $"메모 더 보기 · {Math.Min(_memoDisplayLimit, _result.Memos.Count)}/{_result.Memos.Count}";
@@ -155,12 +158,6 @@ public partial class SessionReportWindow : Window
     {
         _memoDisplayLimit += 20;
         UpdateDetailLists();
-    }
-
-    private void MemoReminder_Click(object sender, RoutedEventArgs e)
-    {
-        ReportScroll.ScrollToTop();
-        MemoSectionBorder.BringIntoView();
     }
 
     private void MemoPreview_Changed(object sender, RoutedEventArgs e)
@@ -280,6 +277,11 @@ public partial class SessionReportWindow : Window
         if (_loadingSummaries || _saving || _closed || _summaryProvider is null || _result.SessionId is null) return;
         _loadingSummaries = true;
         SaveReportButton.IsEnabled = false;
+        if (SaveReportButton.Visibility == Visibility.Visible)
+        {
+            SaveAvailabilityText.Visibility = Visibility.Visible;
+            SaveStatusText.Visibility = Visibility.Collapsed;
+        }
         ReloadSummaryButton.IsEnabled = false;
         SetSummaryStatus(_summaryCards.Items.Length > 0 ? "AI 요약을 갱신하고 있어요" : "AI가 알림을 요약하고 있어요", busy: true);
         try
@@ -311,7 +313,13 @@ public partial class SessionReportWindow : Window
         finally
         {
             _loadingSummaries = false;
-            if (!_closed) { SaveReportButton.IsEnabled = true; ReloadSummaryButton.IsEnabled = true; }
+            if (!_closed)
+            {
+                SaveAvailabilityText.Visibility = Visibility.Collapsed;
+                SaveStatusText.Visibility = Visibility.Visible;
+                SaveReportButton.IsEnabled = true;
+                ReloadSummaryButton.IsEnabled = true;
+            }
         }
     }
 
@@ -332,29 +340,68 @@ public partial class SessionReportWindow : Window
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_saving) Close();
+        if (!_saving || _saveSucceeded) Close();
     }
 
     private async void SaveReport_Click(object sender, RoutedEventArgs e)
     {
-        if (_saving || _loadingSummaries || _reports is null) return;
+        if (_saving || _saveSucceeded || _loadingSummaries || _closed || _reports is null) return;
         _saving = true;
         SaveReportButton.IsEnabled = false;
         SkipSaveButton.IsEnabled = false;
+        SetSaveLabel("저장 중");
         SaveStatusText.Text = "리포트 저장 중…";
         try
         {
             await Task.Run(() => _reports.SaveAsync(_result));
-            _saving = false;
-            Close();
         }
         catch (Exception)
         {
             _saving = false;
             SaveReportButton.IsEnabled = true;
             SkipSaveButton.IsEnabled = true;
+            SetSaveLabel("다시 저장");
             SaveStatusText.Text = "저장 실패 · 다시 시도하세요.";
+            return;
         }
+
+        // Persistence is finished. Feedback failure must never be presented as a save failure.
+        _saveSucceeded = true;
+        try
+        {
+            SetSaveLabel("저장 완료");
+            SaveStatusText.Text = "캘린더에 저장했어요";
+            SkipSaveButton.Content = "닫기";
+            SkipSaveButton.IsEnabled = true;
+            MotionBehavior.SetButtonFeedback(SaveReportButton, false);
+            // Keep the completed button non-interactive without dimming its confirmation.
+            if (SaveReportButton.Template.FindName("Surface", SaveReportButton) is System.Windows.Controls.Border surface)
+                surface.Opacity = 1;
+            MotionBehavior.SetBrush(SaveReportButton, System.Windows.Controls.Control.BackgroundProperty, (Brush)FindResource("BlackSuccessSurface"));
+            MotionBehavior.SetBrush(SaveReportButton, System.Windows.Controls.Control.BorderBrushProperty, (Brush)FindResource("BlackSuccessRule"));
+            MotionBehavior.SetBrush(SaveReportButton, System.Windows.Controls.Control.ForegroundProperty, (Brush)FindResource("BlackSuccess"));
+            SaveCompletedIcon.Visibility = Visibility.Visible;
+            MotionBehavior.DrawCheck(SaveCompletedIcon);
+            MotionBehavior.Acknowledge(SaveReportLabel);
+            await Task.Delay(TimeSpan.FromMilliseconds(600), _summaryLifetime.Token);
+            await MotionBehavior.FadeOutAsync(ReportSurface, _summaryLifetime.Token);
+        }
+        catch (OperationCanceledException) when (_closed) { }
+        catch (Exception)
+        {
+            // The report is already saved; close normally if its optional feedback cannot run.
+        }
+        finally
+        {
+            _saving = false;
+            if (!_closed) Close();
+        }
+    }
+
+    private void SetSaveLabel(string text)
+    {
+        SaveReportLabel.Text = text;
+        System.Windows.Automation.AutomationProperties.SetName(SaveReportButton, text);
     }
 
     private void CopyQuickReply_Click(object sender, RoutedEventArgs e)

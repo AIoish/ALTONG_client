@@ -12,6 +12,53 @@ namespace Altong.Client.Tests;
 [TestClass]
 public sealed class ReportSummaryLoadingUiTests
 {
+    [DataTestMethod]
+    [DataRow("success")]
+    [DataRow("empty")]
+    [DataRow("failure")]
+    public void SaveAvailabilityHint_FollowsLoadingAndFitsSmallWindow(string outcome) => RunSta(() =>
+    {
+        using var db = Altong.Client.Data.SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var provider = new ControlledProvider();
+        var now = DateTime.UtcNow;
+        var result = new SessionResult(now.AddMinutes(-25), now, [], [], true) { SessionId = "save-hint" };
+        var report = new SessionReportWindow(result, new Altong.Client.Data.Repositories.SqliteSessionReportRepository(db),
+            summaryProvider: provider);
+        try
+        {
+            report.Show();
+            report.Width = 480;
+            report.Height = 380;
+            report.UpdateLayout();
+            var hint = (TextBlock)report.FindName("SaveAvailabilityText");
+            var save = (Button)report.FindName("SaveReportButton");
+            Assert.AreEqual(Visibility.Visible, hint.Visibility);
+            Assert.AreEqual(Visibility.Collapsed, ((TextBlock)report.FindName("SaveStatusText")).Visibility);
+            Assert.IsFalse(save.IsEnabled);
+            var hintBounds = hint.TransformToAncestor(report).TransformBounds(new Rect(hint.RenderSize));
+            var buttonBounds = save.TransformToAncestor(report).TransformBounds(new Rect(save.RenderSize));
+            Assert.IsTrue(hintBounds.Bottom <= buttonBounds.Top && hintBounds.Right <= report.ActualWidth);
+            Assert.IsTrue(buttonBounds.Bottom <= report.ActualHeight);
+            if (Environment.GetEnvironmentVariable("ALTONG_UI_PREVIEW_DIR") is { Length: > 0 } directory)
+            {
+                Directory.CreateDirectory(directory);
+                var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(480, 380, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                bitmap.Render(report);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                using var output = File.Create(Path.Combine(directory, "report-save-hint.png"));
+                encoder.Save(output);
+            }
+            if (outcome == "failure") provider.Pending.SetException(new IOException("controlled failure"));
+            else provider.Pending.SetResult(new(outcome == "empty" ? [] : [new("summary", "요약 결과", false, null)]));
+            Until(() => save.IsEnabled);
+            Assert.AreEqual(Visibility.Collapsed, hint.Visibility);
+            Assert.AreEqual(Visibility.Visible, ((TextBlock)report.FindName("SaveStatusText")).Visibility);
+        }
+        finally { report.Close(); }
+    });
+
     [TestMethod]
     public void InitialLoading_LabelsPreview_AndRetryReplacesItWithSummary() => RunSta(() =>
     {

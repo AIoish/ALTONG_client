@@ -384,7 +384,7 @@ public partial class DashboardWindow : Window
         if (!ReferenceEquals(e.Source, DashboardTabs) || DashboardTabs.SelectedIndex < 0)
             return;
         int index = DashboardTabs.SelectedIndex;
-        string[] titles = ["대시보드", "알림 확인", "오늘의 집중 활동", "설정", "캘린더"];
+        string[] titles = ["메인 화면", "알림 확인", "오늘의 집중 활동", "설정", "캘린더"];
         PageTitleText.Text = titles[index];
         UpdateNavigationSelection();
         BackButton.Visibility = index == 0 ? Visibility.Collapsed : Visibility.Visible;

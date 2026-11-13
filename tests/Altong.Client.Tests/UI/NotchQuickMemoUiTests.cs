@@ -219,8 +219,15 @@ public sealed class NotchQuickMemoUiTests
             var entries = Enumerable.Range(0, 22).Select(i => new QuickMemoEntry($"memo-{i}",
                 $"집중 중 메모 {i + 1}\n" + (i == 0 ? new string('가', 300) : "집중 후 확인할 내용입니다."), now.AddMinutes(i), "report", i == 1)).ToArray();
             string folder = Path.Combine(Path.GetTempPath(), "altong-report-memo-" + Guid.NewGuid().ToString("N"));
-            var result = new SessionResult(now.AddMinutes(-25).UtcDateTime, now.UtcDateTime, [], [], true)
-                { SessionId = "report", Memos = entries };
+            var result = new SessionResult(now.AddMinutes(-25).UtcDateTime, now.UtcDateTime,
+                [new NotificationRecord("preview-notification", "Discord", "팀원 A", "프로젝트 검토",
+                    "프로젝트 검토 요청이 도착했습니다.", now.UtcDateTime, IsPassed: false, SessionId: "report")], [], true)
+                {
+                    SessionId = "report", Memos = entries,
+                    SummaryItems = [new Altong.Client.Models.NotificationSummaryItem("preview-summary",
+                        "프로젝트 검토 요청이 도착했습니다.", false, null)
+                        { GroupId = "preview-group", AppName = "Discord", Sender = "팀원 A" }]
+                };
             var report = new SessionReportWindow(result, calendar: new DashboardCalendarStore(Path.Combine(folder, "calendar.json")),
                 summaryStatePath: Path.Combine(folder, "state.json"));
             try
@@ -232,16 +239,29 @@ public sealed class NotchQuickMemoUiTests
                 var section = (FrameworkElement)report.FindName("MemoSectionBorder");
                 var aiSummary = (FrameworkElement)report.FindName("AiSummarySection");
                 var appUsage = (FrameworkElement)report.FindName("AppUsageExpander");
-                Assert.IsTrue(aiSummary.TranslatePoint(new System.Windows.Point(), report).Y < section.TranslatePoint(new System.Windows.Point(), report).Y);
-                Assert.IsTrue(section.TranslatePoint(new System.Windows.Point(), report).Y < appUsage.TranslatePoint(new System.Windows.Point(), report).Y,
-                    "Memo placement must remain between AI summary and app usage.");
+                var notifications = (FrameworkElement)report.FindName("NotificationsExpander");
+                Assert.IsTrue(aiSummary.TranslatePoint(new System.Windows.Point(), report).Y < notifications.TranslatePoint(new System.Windows.Point(), report).Y);
+                Assert.IsTrue(notifications.TranslatePoint(new System.Windows.Point(), report).Y < appUsage.TranslatePoint(new System.Windows.Point(), report).Y);
+                Assert.IsTrue(appUsage.TranslatePoint(new System.Windows.Point(), report).Y < section.TranslatePoint(new System.Windows.Point(), report).Y,
+                    "Report sections follow AI summary, original notifications, app usage, and memos.");
                 var items = (ItemsControl)report.FindName("MemoItemsControl");
                 Assert.AreEqual(Visibility.Visible, section.Visibility);
-                Assert.AreEqual("22개", ((TextBlock)report.FindName("MemoCountText")).Text);
+                var memosExpander = (Expander)report.FindName("MemosExpander");
+                Assert.IsFalse(memosExpander.IsExpanded);
+                Assert.AreEqual("집중 중 메모 · 22개", memosExpander.Header);
+                Assert.AreEqual("메모 22개", ((TextBlock)report.FindName("MemoPresenceText")).Text);
+                var presenceBadge = (Border)report.FindName("MemoPresenceBadge");
+                Assert.AreEqual(Visibility.Visible, presenceBadge.Visibility);
+                Assert.IsFalse(presenceBadge.Focusable);
+                Assert.IsFalse(presenceBadge.IsHitTestVisible);
+                Assert.AreEqual(report.FindResource("BlackAccentText"), ((TextBlock)report.FindName("BlockedCountText")).Foreground);
+                Assert.AreEqual(report.FindResource("BlackMuted"), ((TextBlock)report.FindName("PassedCountText")).Foreground);
+                SavePreview(report, "report-memos-collapsed.png");
+                memosExpander.IsExpanded = true;
+                Pump();
                 Assert.AreEqual(20, items.Items.Count);
                 Assert.AreEqual(entries[1].WhenText, ((SessionReportWindow.ReportMemoItem)items.Items[1]).WhenText);
-                Assert.AreEqual(Visibility.Visible, ((Button)report.FindName("MemoReminderButton")).Visibility);
-                Assert.AreEqual("메모 22개 확인", ((TextBlock)report.FindName("MemoReminderText")).Text);
+                Assert.IsNull(report.FindName("MemoReminderButton"));
                 var firstMemo = (FrameworkElement)items.ItemContainerGenerator.ContainerFromIndex(0);
                 var longMemo = (Expander)items.ItemTemplate.FindName("MemoContentExpander", firstMemo);
                 var secondMemo = (FrameworkElement)items.ItemContainerGenerator.ContainerFromIndex(1);
@@ -257,6 +277,16 @@ public sealed class NotchQuickMemoUiTests
                     report.Width = size.Width;
                     report.Height = size.Height;
                     Pump();
+                    ((ScrollViewer)report.FindName("ReportScroll")).ScrollToTop();
+                    report.UpdateLayout();
+                    var completion = (TextBlock)report.FindName("ReportBadgeText");
+                    var presencePosition = presenceBadge.TranslatePoint(new System.Windows.Point(), report);
+                    var completionPosition = completion.TranslatePoint(new System.Windows.Point(), report);
+                    Assert.IsTrue(presencePosition.X > completionPosition.X);
+                    Assert.IsTrue(presencePosition.X + presenceBadge.ActualWidth <= report.ActualWidth);
+                    Assert.IsTrue(Math.Abs(presencePosition.Y + presenceBadge.ActualHeight / 2
+                        - completionPosition.Y - completion.ActualHeight / 2) <= 1);
+                    SavePreview(report, $"report-overview-{size.Width:0}.png");
                     section.BringIntoView();
                     report.UpdateLayout();
                     var save = (Button)report.FindName("SaveReportButton");
@@ -282,12 +312,21 @@ public sealed class NotchQuickMemoUiTests
             }
             finally { report.Close(); }
 
-            var empty = new SessionReportWindow(result with { Memos = [] }, calendar: new DashboardCalendarStore(Path.Combine(folder, "calendar.json")),
+            var empty = new SessionReportWindow(result with { Memos = [], Notifications = [] }, calendar: new DashboardCalendarStore(Path.Combine(folder, "calendar.json")),
                 summaryStatePath: Path.Combine(folder, "state.json"));
             try
             {
                 Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)empty.FindName("MemoSectionBorder")).Visibility);
-                Assert.AreEqual(Visibility.Collapsed, ((Button)empty.FindName("MemoReminderButton")).Visibility);
+                empty.Show();
+                Pump();
+                Assert.AreEqual(Visibility.Collapsed, ((Border)empty.FindName("MemoPresenceBadge")).Visibility);
+                Assert.AreEqual(empty.FindResource("BlackMuted"), ((TextBlock)empty.FindName("BlockedCountText")).Foreground);
+                Assert.AreEqual(empty.FindResource("BlackMuted"), ((TextBlock)empty.FindName("PassedCountText")).Foreground);
+                SavePreview(empty, "report-no-memos-zero-counts.png");
+                empty.DataContext = result with { Memos = [], Notifications = result.Notifications.Select(n => n with { IsPassed = true }).ToArray() };
+                Pump();
+                Assert.AreEqual(empty.FindResource("BlackSuccess"), ((TextBlock)empty.FindName("PassedCountText")).Foreground);
+                Assert.IsNull(empty.FindName("MemoReminderButton"));
             }
             finally { empty.Close(); }
         });

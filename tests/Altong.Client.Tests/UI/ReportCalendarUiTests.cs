@@ -423,35 +423,143 @@ public sealed class ReportCalendarUiTests
         finally { if (File.Exists(calendarPath)) File.Delete(calendarPath); }
     });
 
+    [DataTestMethod]
+    [DataRow(true, false)]
+    [DataRow(false, false)]
+    [DataRow(true, true)]
+    public void ReportWindow_SaveAndSkipButtonsPersistOnlyExplicitlySavedReport(bool animate, bool closeAfterSuccess) => RunSta(() =>
+    {
+        MotionBehavior.AnimationOverride = animate;
+        try
+        {
+            using var db = SqliteDatabase.CreateInMemory();
+            db.Initialize();
+            var sessions = new SqliteFocusSessionRepository(db);
+            var results = new SessionResultsService(db, sessions);
+            var start = DateTime.UtcNow.AddMinutes(-5);
+            Await(sessions.StartSessionAsync(new("ui-save", start, start.AddMinutes(5), IsCompleted: true)));
+            var result = new SessionResult(start, start.AddMinutes(5), Array.Empty<NotificationRecord>(), Array.Empty<SessionAppUsage>(), true) { SessionId = "ui-save" };
+            var report = new SessionReportWindow(result, results.Reports);
+            report.Show();
+            ((Button)report.FindName("SkipSaveButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.IsFalse(report.IsVisible);
+            Assert.IsNull(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult());
+            report = new SessionReportWindow(result, results.Reports);
+            report.Show();
+            var button = (Button)report.FindName("SaveReportButton");
+            var label = (TextBlock)report.FindName("SaveReportLabel");
+            var icon = (System.Windows.Shapes.Path)report.FindName("SaveCompletedIcon");
+            int writes = 0;
+            results.Reports.Changed += (_, _) => Interlocked.Increment(ref writes);
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.AreEqual("저장 중", label.Text);
+            Assert.IsFalse(button.IsEnabled);
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            report.Close();
+            Assert.IsTrue(report.IsVisible, "Closing during the write must not interrupt persistence.");
+            Until(() => label.Text == "저장 완료");
+            Assert.IsTrue(report.IsVisible, "Success must be visible before the automatic close.");
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult());
+            Assert.AreEqual(Visibility.Visible, icon.Visibility);
+            Assert.AreEqual(animate, icon.HasAnimatedProperties);
+            Assert.AreEqual(1, ((Border)button.Template.FindName("Surface", button)).Opacity);
+            Assert.AreEqual("저장 완료", System.Windows.Automation.AutomationProperties.GetName(button));
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (closeAfterSuccess) report.Close();
+            else if (animate && Environment.GetEnvironmentVariable("ALTONG_UI_PREVIEW_DIR") is { Length: > 0 })
+            {
+                Await(Task.Delay(210));
+                report.UpdateLayout();
+                SavePreview(report, "report-save-success-600.png", report.RenderSize);
+                report.Width = 480;
+                report.Height = 380;
+                report.UpdateLayout();
+                var bounds = button.TransformToAncestor(report).TransformBounds(new Rect(button.RenderSize));
+                Assert.IsTrue(bounds.Right <= report.ActualWidth && bounds.Bottom <= report.ActualHeight);
+                SavePreview(report, "report-save-success-480.png", report.RenderSize);
+            }
+            Until(() => !report.IsVisible);
+            Assert.AreEqual(1, writes, "Repeated clicks must not trigger another write.");
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult());
+            var saved = new SessionReportWindow(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult()!, results.Reports, isSaved: true);
+            try
+            {
+                Assert.AreEqual(Visibility.Collapsed, ((Button)saved.FindName("SaveReportButton")).Visibility);
+                Assert.AreEqual("확인", ((Button)saved.FindName("SkipSaveButton")).Content);
+                Assert.AreEqual("저장된 집중 리포트", saved.Title);
+                Assert.AreEqual("보관됨", ((TextBlock)saved.FindName("ReportBadgeText")).Text);
+            }
+            finally { saved.Close(); }
+        }
+        finally { MotionBehavior.AnimationOverride = null; }
+    });
+
     [TestMethod]
-    public void ReportWindow_SaveAndSkipButtonsPersistOnlyExplicitlySavedReport() => RunSta(() =>
+    public void ReportWindow_FeedbackFailureStillClosesWithExactlyOneSavedReport() => RunSta(() =>
     {
         using var db = SqliteDatabase.CreateInMemory();
         db.Initialize();
         var sessions = new SqliteFocusSessionRepository(db);
         var results = new SessionResultsService(db, sessions);
         var start = DateTime.UtcNow.AddMinutes(-5);
-        Await(sessions.StartSessionAsync(new("ui-save", start, start.AddMinutes(5), IsCompleted: true)));
-        var result = new SessionResult(start, start.AddMinutes(5), Array.Empty<NotificationRecord>(), Array.Empty<SessionAppUsage>(), true) { SessionId = "ui-save" };
+        Await(sessions.StartSessionAsync(new("ui-feedback", start, start.AddMinutes(5), IsCompleted: true)));
+        var result = new SessionResult(start, start.AddMinutes(5), [], [], true) { SessionId = "ui-feedback" };
         var report = new SessionReportWindow(result, results.Reports);
-        report.Show();
-        ((Button)report.FindName("SkipSaveButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Assert.IsFalse(report.IsVisible);
-        Assert.IsNull(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult());
-        report = new SessionReportWindow(result, results.Reports);
-        report.Show();
-        ((Button)report.FindName("SaveReportButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Until(() => !report.IsVisible);
-        Assert.IsNotNull(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult());
-        var saved = new SessionReportWindow(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult()!, results.Reports, isSaved: true);
         try
         {
-            Assert.AreEqual(Visibility.Collapsed, ((Button)saved.FindName("SaveReportButton")).Visibility);
-            Assert.AreEqual("확인", ((Button)saved.FindName("SkipSaveButton")).Content);
-            Assert.AreEqual("저장된 집중 리포트", saved.Title);
-            Assert.AreEqual("보관됨", ((TextBlock)saved.FindName("ReportBadgeText")).Text);
+            report.Show();
+            // Simulate a visual resource failure after the database write has succeeded.
+            report.Resources["BlackSuccessSurface"] = "invalid brush";
+            int writes = 0;
+            results.Reports.Changed += (_, _) => Interlocked.Increment(ref writes);
+            ((Button)report.FindName("SaveReportButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => !report.IsVisible);
+            Assert.AreEqual("저장 완료", ((TextBlock)report.FindName("SaveReportLabel")).Text);
+            Assert.AreEqual(1, writes);
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("ui-feedback").GetAwaiter().GetResult());
         }
-        finally { saved.Close(); }
+        finally { report.Close(); }
+    });
+
+    [TestMethod]
+    public void ReportWindow_SaveFailurePreservesReportAndAllowsRetry() => RunSta(() =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var results = new SessionResultsService(db, sessions);
+        var start = DateTime.UtcNow.AddMinutes(-5);
+        Await(sessions.StartSessionAsync(new("ui-retry", start, start.AddMinutes(5), IsCompleted: true)));
+        var result = new SessionResult(start, start.AddMinutes(5), [], [], true) { SessionId = "ui-retry" };
+        using (var connection = db.CreateOpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "DROP TABLE focus_session_reports;";
+            command.ExecuteNonQuery();
+        }
+        var report = new SessionReportWindow(result, results.Reports);
+        try
+        {
+            report.Show();
+            var button = (Button)report.FindName("SaveReportButton");
+            var label = (TextBlock)report.FindName("SaveReportLabel");
+            var data = report.DataContext;
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => button.IsEnabled);
+            Assert.IsTrue(report.IsVisible);
+            Assert.AreSame(data, report.DataContext);
+            Assert.AreEqual("다시 저장", label.Text);
+            Assert.AreEqual(Visibility.Collapsed, ((System.Windows.Shapes.Path)report.FindName("SaveCompletedIcon")).Visibility);
+            Assert.AreEqual("저장 실패 · 다시 시도하세요.", ((TextBlock)report.FindName("SaveStatusText")).Text);
+            Assert.IsTrue(((Button)report.FindName("SkipSaveButton")).IsEnabled);
+            report.UpdateLayout();
+            SavePreview(report, "report-save-failure.png", report.RenderSize);
+            db.Initialize();
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => !report.IsVisible);
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("ui-retry").GetAwaiter().GetResult());
+        }
+        finally { report.Close(); }
     });
 
     [TestMethod]

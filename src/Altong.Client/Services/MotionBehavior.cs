@@ -285,6 +285,31 @@ public static class MotionBehavior
             element.BeginAnimation(UIElement.OpacityProperty, Animation(.85, 1, TransitionDuration));
     }
 
+    internal static void DrawCheck(Path path)
+    {
+        path.BeginAnimation(System.Windows.Shapes.Shape.StrokeDashOffsetProperty, null);
+        path.StrokeDashOffset = 0;
+        if (path.IsLoaded && MotionAllowed)
+            path.BeginAnimation(System.Windows.Shapes.Shape.StrokeDashOffsetProperty,
+                Animation(12, 0, TransitionDuration));
+    }
+
+    internal static async Task FadeOutAsync(FrameworkElement element, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        // Cancel a pending entrance before owning the surface's exit opacity.
+        TransitionUnloaded(element, new RoutedEventArgs());
+        if (!element.IsLoaded || !element.IsVisible || !MotionAllowed) return;
+        double opacity = element.Opacity;
+        element.Opacity = 0;
+        element.BeginAnimation(UIElement.OpacityProperty, Animation(opacity, 0, TransitionDuration));
+        try { await Task.Delay(TransitionDuration.TimeSpan, cancellationToken); }
+        finally
+        {
+            element.BeginAnimation(UIElement.OpacityProperty, null);
+        }
+    }
+
     private static DoubleAnimation Animation(double from, double to, Duration duration) => new(from, to, duration)
     {
         EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },

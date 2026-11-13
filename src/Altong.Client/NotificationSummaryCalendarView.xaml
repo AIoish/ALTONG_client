@@ -5,6 +5,7 @@
              FontFamily="{x:Static services:AppTypography.BodyFont}">
     <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/Altong.Client;component/Themes/BlackTheme.xaml" /></ResourceDictionary.MergedDictionaries>
         <BooleanToVisibilityConverter x:Key="CalendarBoolVisibility" />
+        <SolidColorBrush x:Key="SummaryCardSurface" Color="{StaticResource BlackSurfaceColor}" />
         <services:AppIconConverter x:Key="SummaryAppIcon" />
         <Style TargetType="Expander" BasedOn="{StaticResource BlackExpander}" />
         <Style TargetType="TextBlock">
@@ -47,7 +48,7 @@
     <StackPanel>
         <TextBlock x:Name="SummarySourceText" Style="{StaticResource CalendarMuted}" FontSize="12" Margin="0,8,0,12" />
         <ItemsControl x:Name="SummaryItemsControl"><ItemsControl.ItemTemplate><DataTemplate>
-            <Border Background="{StaticResource BlackSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,12">
+            <Border Background="{DynamicResource SummaryCardSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,12">
                 <StackPanel>
                     <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="42" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>

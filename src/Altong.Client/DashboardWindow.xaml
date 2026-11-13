@@ -241,7 +241,7 @@
                         <TextBlock x:Name="DashboardClockText" HorizontalAlignment="Right" FontSize="18" />
                         <TextBlock x:Name="DashboardDateText" Style="{StaticResource Muted}" FontSize="12" />
                     </StackPanel>
-                    <TextBlock x:Name="PageTitleText" Text="대시보드" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock x:Name="PageTitleText" Text="메인 화면" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" />
                 </DockPanel>
                 <TabControl x:Name="DashboardTabs" Grid.Row="1" SelectedIndex="0" Background="Transparent" BorderThickness="0" SelectionChanged="DashboardTabs_SelectionChanged">
                     <TabControl.Template><ControlTemplate TargetType="TabControl">
