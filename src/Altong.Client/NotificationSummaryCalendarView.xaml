@@ -5,6 +5,7 @@
              FontFamily="{x:Static services:AppTypography.BodyFont}">
     <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/Altong.Client;component/Themes/BlackTheme.xaml" /></ResourceDictionary.MergedDictionaries>
         <BooleanToVisibilityConverter x:Key="CalendarBoolVisibility" />
+        <SolidColorBrush x:Key="SummaryCardSurface" Color="{StaticResource BlackSurfaceColor}" />
         <services:AppIconConverter x:Key="SummaryAppIcon" />
         <Style TargetType="Expander" BasedOn="{StaticResource BlackExpander}" />
         <Style TargetType="TextBlock">
@@ -47,17 +48,17 @@
     <StackPanel>
         <TextBlock x:Name="SummarySourceText" Style="{StaticResource CalendarMuted}" FontSize="12" Margin="0,8,0,12" />
         <ItemsControl x:Name="SummaryItemsControl"><ItemsControl.ItemTemplate><DataTemplate>
-            <Border Background="{StaticResource BlackSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,12">
+            <Border Background="{DynamicResource SummaryCardSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,12">
                 <StackPanel>
                     <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="42" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource BlackInput}" HorizontalAlignment="Left" VerticalAlignment="Top">
-                            <Image Source="{Binding Summary.AppName, Converter={StaticResource SummaryAppIcon}}" Width="24" Height="24" />
+                            <Image Source="{Binding AppName, Converter={StaticResource SummaryAppIcon}}" Width="24" Height="24" />
                         </Border>
                         <StackPanel Grid.Column="1" Margin="0,0,10,0">
-                            <TextBlock Text="{Binding AppDisplayName}" FontSize="14" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding Summary.SourceLabel}" FontSize="12" Margin="0,4,0,0" Foreground="{StaticResource BlackAccentText}">
-                                <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding Summary.SourceLabel}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                            <TextBlock Text="{Binding AppDisplayName}" ToolTip="{Binding AppName}" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding SourceLabel}" FontSize="12" Margin="0,4,0,0" Foreground="{StaticResource BlackAccentText}">
+                                <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}"><Style.Triggers><DataTrigger Binding="{Binding SourceLabel}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
                             </TextBlock>
                             <TextBlock Text="{Binding SourceMetadata}" Style="{StaticResource CalendarMuted}" FontSize="11" />
                         </StackPanel>
@@ -67,7 +68,8 @@
                             </TextBlock>
                         </Border>
                     </Grid>
-                    <TextBlock Text="{Binding Summary.Text}" TextWrapping="Wrap" Foreground="{StaticResource BlackText}" FontSize="14" LineHeight="22" />
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{StaticResource BlackText}" FontSize="14" LineHeight="22" />
+                    <ItemsControl ItemsSource="{Binding Schedules}"><ItemsControl.ItemTemplate><DataTemplate>
                     <StackPanel Visibility="{Binding IsScheduleRelated, Converter={StaticResource CalendarBoolVisibility}}" Margin="0,10,0,0">
                         <Border Background="{StaticResource BlackSuccessSurface}" BorderBrush="{StaticResource BlackSuccessRule}" BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,12">
                             <StackPanel>
@@ -104,8 +106,9 @@
                             <TextBox Text="{Binding Details, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" AutomationProperties.Name="약속 세부사항" />
                             <Button Content="수정 적용" Click="ApplySchedule_Click" HorizontalAlignment="Left" FontSize="12" Padding="10,7" />
                         </StackPanel>
-                        <TextBlock Text="{Binding Status}" Style="{StaticResource CalendarMuted}" FontSize="12" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite" />
+                        <TextBlock Text="{Binding Status}" Style="{StaticResource CalendarMuted}" FontSize="12" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite" services:MotionBehavior.TextFeedback="True" />
                     </StackPanel>
+                    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                 </StackPanel>
             </Border>
         </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>

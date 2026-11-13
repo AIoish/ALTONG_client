@@ -20,7 +20,7 @@ public sealed class TrayIconUiTests
                 using var tray = new TrayIconService(() => opened++);
                 var menu = (ContextMenuStrip)typeof(TrayIconService)
                     .GetField("_contextMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(tray)!;
-                CollectionAssert.AreEqual(new[] { "대시보드 열기", "대시보드 종료" },
+                CollectionAssert.AreEqual(new[] { "열기", "종료" },
                     menu.Items.Cast<ToolStripItem>().Select(item => item.Text).ToArray());
                 Assert.IsFalse(menu.Items[1].Enabled);
                 tray.SetExitAction(() => exited++);

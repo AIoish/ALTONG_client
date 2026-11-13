@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 using Altong.Client.Data.Models;
 using Altong.Client.Services;
@@ -125,8 +127,23 @@ public sealed class TopNotchPresentationTests
                 // 휴식 시작 안내는 노치 아래 말풍선으로 보인다.
                 now = now.AddMinutes(25);
                 phase = FocusRoutinePhase.Break;
-                dock.ShowRoutineReminder("휴식 시간이 시작됐어요.", () => "휴식 중", "가상 안내");
+                dock.ShowRoutineReminder("휴식 시간이 시작됐어요.", () => "휴식 중 · 05:00",
+                    "잠시 쉬어가세요. 방해 금지 모드는 직접 조절할 수 있어요.");
                 Assert.IsTrue(dock.IsReminderVisible);
+                dock.UpdateLayout();
+                var bubble = (FrameworkElement)dock.FindName("ReminderBubble");
+                Assert.IsTrue(((TextBlock)dock.FindName("ReminderTitleText")).FontFamily.Source.Contains("Pretendard"));
+                SaveReminderPreview(bubble, "routine-break.png");
+                now = now.AddMinutes(5);
+                phase = FocusRoutinePhase.Completed;
+                dock.ShowRoutineReminder("설정한 집중 시간이 끝났어요.", () => "집중 완료 · 25분",
+                    "집중 모드는 계속 켜져 있어요. 마치려면 직접 꺼 주세요.");
+                dock.UpdateLayout();
+                var message = (TextBlock)dock.FindName("ReminderMessageText");
+                var bounds = message.TransformToAncestor(bubble).TransformBounds(new Rect(message.RenderSize));
+                SaveReminderPreview(bubble, "routine-completed.png");
+                Assert.IsTrue(bounds.Bottom <= bubble.ActualHeight,
+                    $"Routine guidance must fit: bottom={bounds.Bottom}, height={bubble.ActualHeight}, title={((TextBlock)dock.FindName("ReminderTitleText")).RenderSize}, card={((Border)dock.FindName("ReminderCard")).RenderSize}.");
 
                 // 집중 종료 안내는 띄우지 않고, 이어서 숨기면 바로 사라진다.
                 phase = FocusRoutinePhase.Idle;
@@ -142,6 +159,25 @@ public sealed class TopNotchPresentationTests
     private static NotificationRecord Record(string id, int urgency) => new(
         id, "KakaoTalk", "민준", "배포 확인", "배포 전 설정 확인 부탁해요.",
         new DateTime(2026, 10, 1, 4, 0, 0, DateTimeKind.Utc), true, urgency, 4, "업무", SessionId: "ui");
+
+    private static void SaveReminderPreview(FrameworkElement element, string name)
+    {
+        string? directory = Environment.GetEnvironmentVariable("ALTONG_UI_PREVIEW_DIR");
+        if (string.IsNullOrWhiteSpace(directory)) return;
+        Directory.CreateDirectory(directory);
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+        var host = Window.GetWindow(element);
+        host.UpdateLayout();
+        var bitmap = new RenderTargetBitmap((int)host.ActualWidth, (int)host.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(host);
+        var origin = element.TranslatePoint(new Point(), host);
+        var cropped = new CroppedBitmap(bitmap, new Int32Rect((int)origin.X, (int)origin.Y,
+            (int)element.ActualWidth, (int)element.ActualHeight));
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(cropped));
+        using var stream = File.Create(Path.Combine(directory, name));
+        encoder.Save(stream);
+    }
 
     private static void Click(FrameworkElement root, string name) =>
         ((Button)root.FindName(name)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

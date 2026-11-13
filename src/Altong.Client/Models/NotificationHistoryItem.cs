@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Altong.Client.Data.Models;
+using Altong.Client.Services;
 
 namespace Altong.Client.Models;
 
@@ -7,7 +8,7 @@ public sealed class NotificationHistoryItem(NotificationRecord record) : INotify
 {
     public NotificationRecord Record { get; } = record;
     public string AppName => Record.AppName;
-    public string DisplayName => string.IsNullOrWhiteSpace(AppName) ? "알 수 없는 앱" : AppName;
+    public string DisplayName => AppNameDisplayConverter.Format(AppName);
     public string TimeText => Record.ReceivedAt.ToLocalTime().ToString("yyyy.MM.dd HH:mm");
     public string ShortTimeText => Record.ReceivedAt.ToLocalTime().Date == DateTime.Today
         ? Record.ReceivedAt.ToLocalTime().ToString("HH:mm") : Record.ReceivedAt.ToLocalTime().ToString("M/d HH:mm");

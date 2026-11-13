@@ -42,6 +42,9 @@ public sealed class BlackThemeUiTests
                 ("BlackSuccessRule", "BlackSurface", 3d),
                 ("BlackSuccess", "BlackSurface", 4.5),
                 ("BlackAccentText", "BlackSurface", 4.5),
+                ("BlackText", "ReportSummarySurface", 4.5),
+                ("BlackMuted", "ReportSummarySurface", 4.5),
+                ("BlackAccentText", "ReportSummarySurface", 4.5),
                 ("BlackAction", "BlackSurface", 3d),
                 ("BlackFocus", "BlackSuccessSurface", 3d)
             })

@@ -33,11 +33,13 @@ internal sealed record ReportSnapshot(DateTime StartedAt, DateTime EndedAt,
     string[] NotificationHighlights, QuickReplyDraft[] QuickReplies)
 {
     public NotificationSummaryItem[] SummaryItems { get; init; } = [];
+    public QuickMemoEntry[] Memos { get; init; } = [];
     public static ReportSnapshot Capture(SessionResult result) => new(result.StartedAt, result.EndedAt,
         result.Notifications.ToArray(), result.Apps.ToArray(), result.NotificationSummary,
         result.NotificationHighlights.ToArray(), result.QuickReplies.ToArray())
     {
-        SummaryItems = result.SummaryItems.ToArray()
+        SummaryItems = result.SummaryItems.ToArray(),
+        Memos = result.Memos.ToArray()
     };
 
     public SessionResult Restore(string sessionId) => new(StartedAt, EndedAt, Notifications, Apps, true)
@@ -45,7 +47,8 @@ internal sealed record ReportSnapshot(DateTime StartedAt, DateTime EndedAt,
         SessionId = sessionId, ReportSource = "저장된 리포트",
         StoredNotificationSummary = NotificationSummary,
         StoredNotificationHighlights = NotificationHighlights, StoredQuickReplies = QuickReplies,
-        SummaryItems = SummaryItems ?? []
+        SummaryItems = SummaryItems ?? [],
+        Memos = Memos ?? []
     };
 }
 
@@ -101,14 +104,32 @@ public sealed class SqliteSessionReportRepository(IAltongDatabase database)
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    public async Task DeleteAsync(string sessionId)
+    public async Task DeleteAsync(string sessionId, Action? cleanMemos = null)
     {
         using var connection = database.CreateOpenConnection();
+        using var transaction = connection.BeginTransaction();
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         // Original sessions, notifications and window records remain intact.
         command.CommandText = "DELETE FROM focus_session_reports WHERE session_id = $id;";
         command.Parameters.AddWithValue("$id", sessionId);
         await command.ExecuteNonQueryAsync();
+        cleanMemos?.Invoke();
+        transaction.Commit();
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public async Task DeleteAllAsync(Action? cleanMemos = null)
+    {
+        using var connection = database.CreateOpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        // Only calendar report entries are removed; source activity and notifications remain available.
+        command.CommandText = "DELETE FROM focus_session_reports;";
+        await command.ExecuteNonQueryAsync();
+        cleanMemos?.Invoke();
+        transaction.Commit();
         Changed?.Invoke(this, EventArgs.Empty);
     }
 

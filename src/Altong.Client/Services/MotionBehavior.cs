@@ -6,6 +6,8 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
 using Path = System.Windows.Shapes.Path;
+using Brush = System.Windows.Media.Brush;
+using Color = System.Windows.Media.Color;
 
 namespace Altong.Client.Services;
 
@@ -20,6 +22,91 @@ public static class MotionBehavior
     private static bool MotionAllowed => AnimationOverride ?? SystemParameters.ClientAreaAnimation;
     private static readonly Duration FeedbackDuration = TimeSpan.FromMilliseconds(160);
     private static readonly Duration TransitionDuration = TimeSpan.FromMilliseconds(190);
+    private static readonly DependencyProperty TransitionTransformProperty = DependencyProperty.RegisterAttached(
+        "TransitionTransform", typeof(TranslateTransform), typeof(MotionBehavior));
+    private static readonly DependencyProperty TransitionVersionProperty = DependencyProperty.RegisterAttached(
+        "TransitionVersion", typeof(int), typeof(MotionBehavior), new PropertyMetadata(0));
+    private static readonly DependencyProperty LastRevealVisibilityProperty = DependencyProperty.RegisterAttached(
+        "LastRevealVisibility", typeof(Visibility), typeof(MotionBehavior), new PropertyMetadata(Visibility.Collapsed));
+
+    public static readonly DependencyProperty TransitionKeyProperty = DependencyProperty.RegisterAttached(
+        "TransitionKey", typeof(object), typeof(MotionBehavior), new PropertyMetadata(null, TransitionKeyChanged));
+    public static object? GetTransitionKey(DependencyObject element) => element.GetValue(TransitionKeyProperty);
+    public static void SetTransitionKey(DependencyObject element, object? value) => element.SetValue(TransitionKeyProperty, value);
+
+    private static void TransitionKeyChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        if (sender is FrameworkElement element) Transition(element);
+    }
+
+    /// <summary>Moves only the rendered surface; navigation, focus and scrolling remain immediate.</summary>
+    public static void Transition(FrameworkElement element, double offsetX = 0, double offsetY = 4, bool prominent = false)
+    {
+        int version = (int)element.GetValue(TransitionVersionProperty) + 1;
+        element.SetValue(TransitionVersionProperty, version);
+        var transform = element.GetValue(TransitionTransformProperty) as TranslateTransform;
+        bool interrupted = element.HasAnimatedProperties;
+        double opacity = element.Opacity;
+        double x = transform?.X ?? 0, y = transform?.Y ?? 0;
+        element.BeginAnimation(UIElement.OpacityProperty, null);
+        transform?.BeginAnimation(TranslateTransform.XProperty, null);
+        transform?.BeginAnimation(TranslateTransform.YProperty, null);
+        if (!element.IsLoaded || !element.IsVisible || !MotionAllowed) return;
+
+        if (transform is null)
+        {
+            transform = new TranslateTransform();
+            var transforms = new TransformGroup();
+            transforms.Children.Add(element.RenderTransform);
+            transforms.Children.Add(transform);
+            element.RenderTransform = transforms;
+            element.SetValue(TransitionTransformProperty, transform);
+            element.Unloaded += TransitionUnloaded;
+        }
+        var duration = prominent ? new Duration(TimeSpan.FromMilliseconds(230)) : TransitionDuration;
+        var targetOpacity = (double)element.GetAnimationBaseValue(UIElement.OpacityProperty);
+        var fade = Animation(interrupted ? opacity : targetOpacity * (prominent ? .82 : .94), targetOpacity, duration);
+        fade.Completed += (_, _) =>
+        {
+            if ((int)element.GetValue(TransitionVersionProperty) == version)
+                TransitionUnloaded(element, new RoutedEventArgs());
+        };
+        element.BeginAnimation(UIElement.OpacityProperty, fade);
+        transform.BeginAnimation(TranslateTransform.XProperty, Animation(interrupted ? x : offsetX, 0, duration));
+        transform.BeginAnimation(TranslateTransform.YProperty, Animation(interrupted ? y : offsetY, 0, duration));
+    }
+
+    private static void TransitionUnloaded(object sender, RoutedEventArgs args)
+    {
+        var element = (FrameworkElement)sender;
+        element.SetValue(TransitionVersionProperty, (int)element.GetValue(TransitionVersionProperty) + 1);
+        element.BeginAnimation(UIElement.OpacityProperty, null);
+        if (element.GetValue(TransitionTransformProperty) is not TranslateTransform transform) return;
+        transform.BeginAnimation(TranslateTransform.XProperty, null);
+        transform.BeginAnimation(TranslateTransform.YProperty, null);
+    }
+
+    /// <summary>Each control owns its animated brush; shared theme resources are never modified.</summary>
+    public static void SetBrush(FrameworkElement element, DependencyProperty property, Brush target)
+    {
+        var current = element.GetValue(property) as SolidColorBrush;
+        if (MotionAllowed && current is not null && target is SolidColorBrush color
+            && (Color)current.GetAnimationBaseValue(SolidColorBrush.ColorProperty) == color.Color) return;
+        if (!element.IsLoaded || !MotionAllowed || current is null || target is not SolidColorBrush solid)
+        {
+            element.SetCurrentValue(property, target);
+            return;
+        }
+        var brush = new SolidColorBrush(solid.Color);
+        element.SetCurrentValue(property, brush);
+        var animation = new ColorAnimation(current.Color, solid.Color, FeedbackDuration)
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            FillBehavior = FillBehavior.Stop
+        };
+        animation.Completed += (_, _) => brush.BeginAnimation(SolidColorBrush.ColorProperty, null);
+        brush.BeginAnimation(SolidColorBrush.ColorProperty, animation);
+    }
 
     public static readonly DependencyProperty ButtonFeedbackProperty = DependencyProperty.RegisterAttached(
         "ButtonFeedback", typeof(bool), typeof(MotionBehavior), new PropertyMetadata(false, ButtonFeedbackChanged));
@@ -101,15 +188,22 @@ public static class MotionBehavior
     private static void FadeOnRevealChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
     {
         if (sender is not FrameworkElement element) return;
-        if ((bool)args.NewValue) element.IsVisibleChanged += RevealVisibilityChanged;
+        if ((bool)args.NewValue)
+        {
+            element.SetValue(LastRevealVisibilityProperty, element.Visibility);
+            element.IsVisibleChanged += RevealVisibilityChanged;
+        }
         else element.IsVisibleChanged -= RevealVisibilityChanged;
     }
 
     private static void RevealVisibilityChanged(object sender, DependencyPropertyChangedEventArgs args)
     {
         var element = (FrameworkElement)sender;
+        var previous = (Visibility)element.GetValue(LastRevealVisibilityProperty);
+        element.SetValue(LastRevealVisibilityProperty, element.Visibility);
         element.BeginAnimation(UIElement.OpacityProperty, null);
-        if ((bool)args.NewValue && element.IsLoaded && MotionAllowed)
+        if ((bool)args.NewValue && previous != Visibility.Visible && element.Visibility == Visibility.Visible
+            && element.IsLoaded && MotionAllowed)
             element.BeginAnimation(UIElement.OpacityProperty, Animation(.82, 1, TransitionDuration));
     }
 
@@ -189,6 +283,31 @@ public static class MotionBehavior
         element.BeginAnimation(UIElement.OpacityProperty, null);
         if (element.IsLoaded && MotionAllowed)
             element.BeginAnimation(UIElement.OpacityProperty, Animation(.85, 1, TransitionDuration));
+    }
+
+    internal static void DrawCheck(Path path)
+    {
+        path.BeginAnimation(System.Windows.Shapes.Shape.StrokeDashOffsetProperty, null);
+        path.StrokeDashOffset = 0;
+        if (path.IsLoaded && MotionAllowed)
+            path.BeginAnimation(System.Windows.Shapes.Shape.StrokeDashOffsetProperty,
+                Animation(12, 0, TransitionDuration));
+    }
+
+    internal static async Task FadeOutAsync(FrameworkElement element, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        // Cancel a pending entrance before owning the surface's exit opacity.
+        TransitionUnloaded(element, new RoutedEventArgs());
+        if (!element.IsLoaded || !element.IsVisible || !MotionAllowed) return;
+        double opacity = element.Opacity;
+        element.Opacity = 0;
+        element.BeginAnimation(UIElement.OpacityProperty, Animation(opacity, 0, TransitionDuration));
+        try { await Task.Delay(TransitionDuration.TimeSpan, cancellationToken); }
+        finally
+        {
+            element.BeginAnimation(UIElement.OpacityProperty, null);
+        }
     }
 
     private static DoubleAnimation Animation(double from, double to, Duration duration) => new(from, to, duration)

@@ -109,7 +109,7 @@ public sealed class SqliteNotificationRepository : INotificationRepository
                        is_passed, urgency_score, relevance_score, category, ai_summary_reason, session_id, created_at
                 FROM notifications
                 WHERE is_passed = 0
-                ORDER BY received_at DESC
+                ORDER BY received_at DESC, id DESC
                 LIMIT $limit;
                 """;
         }
@@ -120,7 +120,7 @@ public sealed class SqliteNotificationRepository : INotificationRepository
                        is_passed, urgency_score, relevance_score, category, ai_summary_reason, session_id, created_at
                 FROM notifications
                 WHERE is_passed = 0 AND session_id = $session_id
-                ORDER BY received_at DESC
+                ORDER BY received_at DESC, id DESC
                 LIMIT $limit;
                 """;
             command.Parameters.AddWithValue("$session_id", sessionId);

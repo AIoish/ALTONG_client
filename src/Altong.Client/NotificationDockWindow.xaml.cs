@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -58,6 +59,7 @@ public partial class NotificationDockWindow : Window
     private double _panelHeight = TopNotchLayout.PanelMaxHeight;
     /// <summary>창 안에서 노치 가운데의 x(DIP).</summary>
     private double _centerX = TopNotchLayout.WindowWidth / 2;
+    private nint _memoReturnWindow;
 
     /// <summary>
     /// 패널 열림 진행값(0 닫힘 ~ 1 열림). 앞부분에서 노치 바닥이 패널 폭까지 넓어지고, 이어서 패널이 내려온다
@@ -93,14 +95,16 @@ public partial class NotificationDockWindow : Window
 
     public NotificationDockWindow() : this(new DockNotificationState()) { }
 
-    public NotificationDockWindow(DockNotificationState notifications)
+    public NotificationDockWindow(DockNotificationState notifications, QuickMemoStore? memos = null)
     {
         _notifications = notifications;
         InitializeComponent();
         _panel = new NotificationPanel(notifications);
+        if (memos is not null) _panel.SetMemoStore(memos);
         _panel.SetBandStyle(_topBandStyle);
         _panel.ShowDashboardRequested += Panel_ShowDashboardRequested;
         _panel.BandStyleRequested += Panel_BandStyleRequested;
+        _panel.MemoModeChanged += Panel_MemoModeChanged;
         _panel.MouseEnter += Pointer_Changed;
         _panel.MouseLeave += Pointer_Changed;
         PanelHost.Content = _panel;
@@ -114,6 +118,7 @@ public partial class NotificationDockWindow : Window
         SystemParameters.StaticPropertyChanged += SystemParameters_StaticPropertyChanged;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
         Closed += NotificationDockWindow_Closed;
+        Closing += (_, _) => _panel.TryFlushMemoDraft();
         IsVisibleChanged += Dock_IsVisibleChanged;
         ApplyNotchFaceSize();
         ApplyLayout();
@@ -123,6 +128,42 @@ public partial class NotificationDockWindow : Window
     private void Panel_ShowDashboardRequested(object? sender, EventArgs e) => ShowDashboardRequested?.Invoke(this, e);
 
     private void Panel_BandStyleRequested(object? sender, TopBandStyle style) => SetTopBandStyle(style);
+
+    private void Panel_MemoModeChanged(object? sender, EventArgs e)
+    {
+        if (_panel.IsMemoOpen)
+        {
+            _leaveTimer.Stop();
+            _memoReturnWindow = GetForegroundWindow();
+            Focusable = true;
+            Activate();
+            // Visibility and arrangement must finish before WPF can focus a formerly collapsed editor.
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+            {
+                if (_isClosed || !_panel.IsMemoOpen || !IsActive) return;
+                _panel.UpdateLayout();
+                _panel.MemoEditor.Focus();
+                Keyboard.Focus(_panel.MemoEditor);
+            });
+        }
+        else
+        {
+            Focusable = false;
+            var own = new WindowInteropHelper(this).Handle;
+            // Never steal focus back after the user has deliberately selected another application.
+            if (GetForegroundWindow() == own && _memoReturnWindow != 0 && _memoReturnWindow != own &&
+                IsWindow(_memoReturnWindow) && IsWindowVisible(_memoReturnWindow) && !IsIconic(_memoReturnWindow))
+                SetForegroundWindow(_memoReturnWindow);
+            _memoReturnWindow = 0;
+            UpdatePointerState();
+        }
+    }
+
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint hwnd);
+    [DllImport("user32.dll")] private static extern bool IsWindow(nint hwnd);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hwnd);
+    [DllImport("user32.dll")] private static extern bool IsIconic(nint hwnd);
 
     /// <summary>노치 표시면(일렁임·렌즈)을 지금 노치 크기에 맞춘다. 표시면은 닫힌 노치 모양으로 잘라 그린다.</summary>
     private void ApplyNotchFaceSize()
@@ -727,7 +768,7 @@ public partial class NotificationDockWindow : Window
         else
         {
             _hoverTimer.Stop();
-            if (open && !_notifications.IsPinned && !_leaveTimer.IsEnabled) _leaveTimer.Start();
+            if (open && !_notifications.IsPinned && !_panel.IsMemoOpen && !_leaveTimer.IsEnabled) _leaveTimer.Start();
         }
     }
 
@@ -743,7 +784,7 @@ public partial class NotificationDockWindow : Window
 
     private void LeaveTimer_Tick(object? sender, EventArgs e)
     {
-        if (_notifications.IsPinned || !_notifications.IsPanelOpen)
+        if (_notifications.IsPinned || _panel.IsMemoOpen || !_notifications.IsPanelOpen)
         {
             _leaveTimer.Stop();
             return;
@@ -950,7 +991,7 @@ public partial class NotificationDockWindow : Window
         // 노치의 z-순서가 바뀌면(다른 알통 창 활성화 등) 띠가 노치 위로 올라오지 않았는지 확인한다.
         if (message == 0x0047) _topBand?.ScheduleKeepBelowNotch(); // WM_WINDOWPOSCHANGED
         // 클릭 순간 노치가 활성 창을 가로채지 않아 작업 중인 앱과 대시보드의 활성 상태를 유지한다.
-        if (message == 0x0021) // WM_MOUSEACTIVATE
+        if (message == 0x0021 && !_panel.IsMemoOpen) // WM_MOUSEACTIVATE
         {
             handled = true;
             return 3; // MA_NOACTIVATE
@@ -997,6 +1038,7 @@ public partial class NotificationDockWindow : Window
         _notifications.Changed -= Notifications_Changed;
         _panel.ShowDashboardRequested -= Panel_ShowDashboardRequested;
         _panel.BandStyleRequested -= Panel_BandStyleRequested;
+        _panel.MemoModeChanged -= Panel_MemoModeChanged;
         _panel.MouseEnter -= Pointer_Changed;
         _panel.MouseLeave -= Pointer_Changed;
         IsVisibleChanged -= Dock_IsVisibleChanged;

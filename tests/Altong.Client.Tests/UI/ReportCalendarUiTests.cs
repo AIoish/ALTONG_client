@@ -18,6 +18,217 @@ namespace Altong.Client.Tests;
 public sealed class ReportCalendarUiTests
 {
     [TestMethod]
+    public void Calendar_ConsecutiveDeleteOpenAndFailureRecoveryWorkWithoutLeavingThePage() => RunSta(() =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var results = new SessionResultsService(db, sessions);
+        var start = new DateTime(2026, 10, 5, 3, 0, 0, DateTimeKind.Utc);
+        for (int i = 0; i < 3; i++) SeedResetReport(results, sessions, "consecutive-" + i, start.AddMinutes(i * 10));
+        string path = Path.Combine(Path.GetTempPath(), "altong-consecutive-" + Guid.NewGuid().ToString("N") + ".json");
+        var calendar = new DashboardCalendarStore(path);
+        calendar.Save(ResetTestSchedule("consecutive-0", start));
+        calendar.Save(ResetTestSchedule("consecutive-1", start));
+        var view = new ReportCalendarView(results, calendar);
+        var owner = new Window { Content = view, Width = 960, Height = 760, Left = -10000, Top = -10000,
+            ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            owner.Show();
+            Pump();
+            Await(view.SelectDateAsync(start.ToLocalTime().Date));
+            var reports = (ListBox)view.FindName("ReportList");
+            var schedules = (ListBox)view.FindName("ScheduleList");
+            var card = (Border)view.FindName("ListCard");
+            var reset = (Button)view.FindName("ResetHistoryButton");
+            var status = (TextBlock)view.FindName("HistoryStatusText");
+            Until(() => reports.Items.Count == 3 && reset.IsEnabled);
+            owner.UpdateLayout();
+            Button Action(string name) => Descendants(view).OfType<Button>().First(button => Equals(button.Content, name));
+            Action("삭제").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => status.Text == "리포트와 메모를 삭제했습니다.");
+            Assert.IsTrue(card.IsEnabled, "Deleting a report must restore its parent list's enabled state.");
+            Assert.AreEqual(2, reports.Items.Count);
+            owner.UpdateLayout();
+            var open = Action("리포트 열기");
+            Assert.IsTrue(open.IsEnabled);
+            open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => owner.OwnedWindows.OfType<SessionReportWindow>().Any());
+            owner.OwnedWindows.OfType<SessionReportWindow>().Single().Close();
+            Until(() => open.IsEnabled);
+
+            Action("일정 삭제").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => status.Text == "대시보드에서 일정을 삭제했습니다.");
+            Assert.IsTrue(card.IsEnabled && reset.IsEnabled);
+            Assert.AreEqual(1, schedules.Items.Count);
+            owner.UpdateLayout();
+            Assert.IsTrue(Action("리포트 열기").IsEnabled);
+
+            using var connection = db.CreateOpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TRIGGER fail_consecutive_delete BEFORE DELETE ON focus_session_reports BEGIN SELECT RAISE(ABORT, 'controlled failure'); END;";
+            command.ExecuteNonQuery();
+            Await(view.DeleteReportAsync(((ReportListEntry)reports.Items[0]).SessionId));
+            Assert.AreEqual("삭제하지 못했습니다. 다시 시도해 주세요.", status.Text);
+            Assert.IsTrue(card.IsEnabled && reset.IsEnabled, "A failed deletion must also unlock the list.");
+            command.CommandText = "DROP TRIGGER fail_consecutive_delete;";
+            command.ExecuteNonQuery();
+            Action("삭제").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => status.Text == "리포트와 메모를 삭제했습니다.");
+            Assert.AreEqual(1, reports.Items.Count);
+            Assert.IsTrue(card.IsEnabled);
+            owner.UpdateLayout();
+            Assert.IsTrue(Action("리포트 열기").IsEnabled && Action("일정 삭제").IsEnabled);
+        }
+        finally
+        {
+            foreach (Window child in owner.OwnedWindows.Cast<Window>().ToArray()) child.Close();
+            owner.Close();
+            if (File.Exists(path)) File.Delete(path);
+        }
+    });
+
+    [TestMethod]
+    public void ResetAll_RequiresConfirmation_ClearsEveryDate_AndPreservesSourceRecords() => RunSta(() =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var memos = new QuickMemoStore();
+        var results = new SessionResultsService(db, sessions, memos);
+        memos.Save("리포트와 함께 초기화할 메모", "reset-first");
+        memos.SaveDraft("입력 중이던 메모", "reset-second");
+        var first = new DateTime(2026, 10, 5, 3, 0, 0, DateTimeKind.Utc);
+        var second = first.AddDays(45);
+        SeedResetReport(results, sessions, "reset-first", first);
+        SeedResetReport(results, sessions, "reset-second", second);
+        Await(new SqliteNotificationRepository(db).InsertAsync(new("original", "Slack", "사용자", "원본", "원본 본문", first, false, SessionId: "reset-first")));
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".calendar.json");
+        try
+        {
+            var calendar = new DashboardCalendarStore(path);
+            var a = ResetTestSchedule("reset-first", first);
+            var b = ResetTestSchedule("reset-second", second);
+            calendar.Save(a);
+            calendar.Save(b);
+            var view = new ReportCalendarView(results, calendar);
+            Await(view.SelectDateAsync(a.LocalDate));
+            var reset = (Button)view.FindName("ResetHistoryButton");
+            var confirm = (Button)view.FindName("ConfirmResetButton");
+            var panel = (Border)view.FindName("ResetConfirmationPanel");
+            var status = (TextBlock)view.FindName("HistoryStatusText");
+            reset.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.AreEqual(Visibility.Visible, panel.Visibility);
+            ((Button)view.FindName("CancelResetButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+            Assert.AreEqual(1, calendar.GetDay(a.LocalDate).Count);
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("reset-first").GetAwaiter().GetResult());
+
+            reset.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var size = new Size(568, 330);
+            view.Measure(size); view.Arrange(new Rect(size)); view.UpdateLayout();
+            var bounds = confirm.TransformToAncestor(view).TransformBounds(new Rect(confirm.RenderSize));
+            Assert.IsTrue(bounds.Left >= 0 && bounds.Right <= size.Width && bounds.Bottom <= size.Height);
+            SavePreview(view, "calendar-reset-confirmation.png", size);
+            int deletes = 0;
+            results.Reports.Changed += (_, _) => deletes++;
+            confirm.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            confirm.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => status.Text == "저장된 리포트·메모·일정을 모두 초기화했습니다.");
+            Assert.AreEqual(1, deletes);
+            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+            Assert.AreEqual(0, ((ListBox)view.FindName("ReportList")).Items.Count);
+            Assert.AreEqual(0, ((ListBox)view.FindName("ScheduleList")).Items.Count);
+            Assert.AreEqual(0, memos.Entries.Count);
+            Assert.AreEqual("", memos.GetDraftForSession("reset-second"));
+            Assert.AreEqual(0, new DashboardCalendarStore(path).GetDay(b.LocalDate).Count);
+            Assert.IsNull(results.OpenReportAsync("reset-first").GetAwaiter().GetResult());
+            Assert.IsNull(results.OpenReportAsync("reset-second").GetAwaiter().GetResult());
+            db.Initialize();
+            Assert.IsNull(results.OpenReportAsync("reset-first").GetAwaiter().GetResult(), "다시 초기화해도 원본 기록에서 삭제한 리포트가 재생성되면 안 됩니다.");
+            using var connection = db.CreateOpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT (SELECT count(*) FROM focus_sessions), (SELECT count(*) FROM notifications);";
+            using var reader = command.ExecuteReader();
+            Assert.IsTrue(reader.Read());
+            Assert.AreEqual(2, reader.GetInt32(0));
+            Assert.AreEqual(1, reader.GetInt32(1));
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    });
+
+    [TestMethod]
+    public void ResetAll_PartialFailureIsReported_AndRetryCanFinish() => RunSta(() =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var results = new SessionResultsService(db, sessions);
+        var start = new DateTime(2026, 10, 5, 3, 0, 0, DateTimeKind.Utc);
+        SeedResetReport(results, sessions, "reset-failure", start);
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".calendar.json");
+        try
+        {
+            var calendar = new DashboardCalendarStore(path);
+            var schedule = ResetTestSchedule("reset-failure", start);
+            calendar.Save(schedule);
+            var view = new ReportCalendarView(results, calendar);
+            Await(view.SelectDateAsync(schedule.LocalDate));
+            using var connection = db.CreateOpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TRIGGER fail_reset BEFORE DELETE ON focus_session_reports BEGIN SELECT RAISE(ABORT, 'controlled failure'); END;";
+            command.ExecuteNonQuery();
+            Await(view.ResetAllAsync());
+            StringAssert.Contains(((TextBlock)view.FindName("HistoryStatusText")).Text, "리포트·메모 정리를 완료하지 못했습니다");
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("reset-failure").GetAwaiter().GetResult());
+            Assert.AreEqual(0, calendar.GetDay(schedule.LocalDate).Count);
+            Assert.IsTrue(((Button)view.FindName("ResetHistoryButton")).IsEnabled);
+            command.CommandText = "DROP TRIGGER fail_reset;";
+            command.ExecuteNonQuery();
+            Await(view.ResetAllAsync());
+            Assert.AreEqual("저장된 리포트·메모·일정을 모두 초기화했습니다.", ((TextBlock)view.FindName("HistoryStatusText")).Text);
+            Assert.IsNull(results.OpenReportAsync("reset-failure").GetAwaiter().GetResult());
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    });
+
+    [TestMethod]
+    public void ResetAll_UnreadableCalendarDoesNotDeleteReportsOrOverwriteFile() => RunSta(() =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var results = new SessionResultsService(db, sessions);
+        var start = new DateTime(2026, 10, 5, 3, 0, 0, DateTimeKind.Utc);
+        SeedResetReport(results, sessions, "reset-invalid", start);
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".calendar.json");
+        File.WriteAllText(path, "{invalid");
+        try
+        {
+            var view = new ReportCalendarView(results, new DashboardCalendarStore(path));
+            Await(view.SelectDateAsync(start.ToLocalTime().Date));
+            Await(view.ResetAllAsync());
+            StringAssert.Contains(((TextBlock)view.FindName("HistoryStatusText")).Text, "초기화하지 못했습니다");
+            Assert.AreEqual("{invalid", File.ReadAllText(path));
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("reset-invalid").GetAwaiter().GetResult());
+        }
+        finally { File.Delete(path); }
+    });
+
+    private static void SeedResetReport(SessionResultsService results, SqliteFocusSessionRepository sessions, string id, DateTime start)
+    {
+        Await(sessions.StartSessionAsync(new(id, start, start.AddMinutes(25), IsCompleted: true)));
+        Await(results.Reports.SaveAsync(new(start, start.AddMinutes(25), [], [], true) { SessionId = id }));
+    }
+
+    private static DashboardCalendarEntry ResetTestSchedule(string session, DateTime day)
+    {
+        var start = new DateTimeOffset(DateTime.SpecifyKind(day.Date.AddHours(12), DateTimeKind.Unspecified), TimeSpan.FromHours(9));
+        return new(session, "summary", "Slack", new("event", "일정", start, start.AddHours(1), "Asia/Seoul", null, null));
+    }
+
+    [TestMethod]
     public void Dashboard_CalendarPageRendersWithinWindow_AndOpensExistingReport() => RunSta(() =>
     {
         using var db = SqliteDatabase.CreateInMemory();
@@ -122,7 +333,8 @@ public sealed class ReportCalendarUiTests
             using var db = SqliteDatabase.CreateInMemory();
             db.Initialize();
             var sessions = new SqliteFocusSessionRepository(db);
-            var results = new SessionResultsService(db, sessions);
+            var memos = new QuickMemoStore();
+            var results = new SessionResultsService(db, sessions, memos);
             var localDay = new DateTime(2026, 10, 2);
             var start = DateTime.SpecifyKind(localDay.AddHours(10), DateTimeKind.Local).ToUniversalTime();
             var calendar = new DashboardCalendarStore(calendarPath);
@@ -185,12 +397,14 @@ public sealed class ReportCalendarUiTests
                 pageScroll.ScrollToTop();
             }
             var lastId = ((ReportListEntry)list.Items[0]).SessionId;
+            memos.Save("삭제할 리포트의 메모", lastId);
             view.UpdateLayout();
             var deleteButton = Descendants(list).OfType<Button>()
                 .First(button => Equals(button.Content, "삭제") && button.Tag is ReportListEntry entry && entry.SessionId == lastId);
             deleteButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Until(() => ((TextBlock)view.FindName("HistoryStatusText")).Text == "리포트를 삭제했습니다.");
+            Until(() => ((TextBlock)view.FindName("HistoryStatusText")).Text == "리포트와 메모를 삭제했습니다.");
             Assert.IsNull(results.OpenReportAsync(lastId).GetAwaiter().GetResult());
+            Assert.AreEqual(0, memos.GetSavedForSession(lastId).Count);
             Assert.IsTrue(((TextBlock)view.FindName("ReportCountText")).Text.Contains("64개"));
             Await(view.SelectDateAsync(localDay.AddDays(1)));
             Assert.AreEqual(0, list.Items.Count);
@@ -209,35 +423,143 @@ public sealed class ReportCalendarUiTests
         finally { if (File.Exists(calendarPath)) File.Delete(calendarPath); }
     });
 
+    [DataTestMethod]
+    [DataRow(true, false)]
+    [DataRow(false, false)]
+    [DataRow(true, true)]
+    public void ReportWindow_SaveAndSkipButtonsPersistOnlyExplicitlySavedReport(bool animate, bool closeAfterSuccess) => RunSta(() =>
+    {
+        MotionBehavior.AnimationOverride = animate;
+        try
+        {
+            using var db = SqliteDatabase.CreateInMemory();
+            db.Initialize();
+            var sessions = new SqliteFocusSessionRepository(db);
+            var results = new SessionResultsService(db, sessions);
+            var start = DateTime.UtcNow.AddMinutes(-5);
+            Await(sessions.StartSessionAsync(new("ui-save", start, start.AddMinutes(5), IsCompleted: true)));
+            var result = new SessionResult(start, start.AddMinutes(5), Array.Empty<NotificationRecord>(), Array.Empty<SessionAppUsage>(), true) { SessionId = "ui-save" };
+            var report = new SessionReportWindow(result, results.Reports);
+            report.Show();
+            ((Button)report.FindName("SkipSaveButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.IsFalse(report.IsVisible);
+            Assert.IsNull(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult());
+            report = new SessionReportWindow(result, results.Reports);
+            report.Show();
+            var button = (Button)report.FindName("SaveReportButton");
+            var label = (TextBlock)report.FindName("SaveReportLabel");
+            var icon = (System.Windows.Shapes.Path)report.FindName("SaveCompletedIcon");
+            int writes = 0;
+            results.Reports.Changed += (_, _) => Interlocked.Increment(ref writes);
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.AreEqual("저장 중", label.Text);
+            Assert.IsFalse(button.IsEnabled);
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            report.Close();
+            Assert.IsTrue(report.IsVisible, "Closing during the write must not interrupt persistence.");
+            Until(() => label.Text == "저장 완료");
+            Assert.IsTrue(report.IsVisible, "Success must be visible before the automatic close.");
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult());
+            Assert.AreEqual(Visibility.Visible, icon.Visibility);
+            Assert.AreEqual(animate, icon.HasAnimatedProperties);
+            Assert.AreEqual(1, ((Border)button.Template.FindName("Surface", button)).Opacity);
+            Assert.AreEqual("저장 완료", System.Windows.Automation.AutomationProperties.GetName(button));
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (closeAfterSuccess) report.Close();
+            else if (animate && Environment.GetEnvironmentVariable("ALTONG_UI_PREVIEW_DIR") is { Length: > 0 })
+            {
+                Await(Task.Delay(210));
+                report.UpdateLayout();
+                SavePreview(report, "report-save-success-600.png", report.RenderSize);
+                report.Width = 480;
+                report.Height = 380;
+                report.UpdateLayout();
+                var bounds = button.TransformToAncestor(report).TransformBounds(new Rect(button.RenderSize));
+                Assert.IsTrue(bounds.Right <= report.ActualWidth && bounds.Bottom <= report.ActualHeight);
+                SavePreview(report, "report-save-success-480.png", report.RenderSize);
+            }
+            Until(() => !report.IsVisible);
+            Assert.AreEqual(1, writes, "Repeated clicks must not trigger another write.");
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult());
+            var saved = new SessionReportWindow(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult()!, results.Reports, isSaved: true);
+            try
+            {
+                Assert.AreEqual(Visibility.Collapsed, ((Button)saved.FindName("SaveReportButton")).Visibility);
+                Assert.AreEqual("확인", ((Button)saved.FindName("SkipSaveButton")).Content);
+                Assert.AreEqual("저장된 집중 리포트", saved.Title);
+                Assert.AreEqual("보관됨", ((TextBlock)saved.FindName("ReportBadgeText")).Text);
+            }
+            finally { saved.Close(); }
+        }
+        finally { MotionBehavior.AnimationOverride = null; }
+    });
+
     [TestMethod]
-    public void ReportWindow_SaveAndSkipButtonsPersistOnlyExplicitlySavedReport() => RunSta(() =>
+    public void ReportWindow_FeedbackFailureStillClosesWithExactlyOneSavedReport() => RunSta(() =>
     {
         using var db = SqliteDatabase.CreateInMemory();
         db.Initialize();
         var sessions = new SqliteFocusSessionRepository(db);
         var results = new SessionResultsService(db, sessions);
         var start = DateTime.UtcNow.AddMinutes(-5);
-        Await(sessions.StartSessionAsync(new("ui-save", start, start.AddMinutes(5), IsCompleted: true)));
-        var result = new SessionResult(start, start.AddMinutes(5), Array.Empty<NotificationRecord>(), Array.Empty<SessionAppUsage>(), true) { SessionId = "ui-save" };
+        Await(sessions.StartSessionAsync(new("ui-feedback", start, start.AddMinutes(5), IsCompleted: true)));
+        var result = new SessionResult(start, start.AddMinutes(5), [], [], true) { SessionId = "ui-feedback" };
         var report = new SessionReportWindow(result, results.Reports);
-        report.Show();
-        ((Button)report.FindName("SkipSaveButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Assert.IsFalse(report.IsVisible);
-        Assert.IsNull(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult());
-        report = new SessionReportWindow(result, results.Reports);
-        report.Show();
-        ((Button)report.FindName("SaveReportButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Until(() => !report.IsVisible);
-        Assert.IsNotNull(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult());
-        var saved = new SessionReportWindow(results.Reports.GetSnapshotAsync("ui-save").GetAwaiter().GetResult()!, results.Reports, isSaved: true);
         try
         {
-            Assert.AreEqual(Visibility.Collapsed, ((Button)saved.FindName("SaveReportButton")).Visibility);
-            Assert.AreEqual("확인", ((Button)saved.FindName("SkipSaveButton")).Content);
-            Assert.AreEqual("저장된 집중 리포트", saved.Title);
-            Assert.AreEqual("보관됨", ((TextBlock)saved.FindName("ReportBadgeText")).Text);
+            report.Show();
+            // Simulate a visual resource failure after the database write has succeeded.
+            report.Resources["BlackSuccessSurface"] = "invalid brush";
+            int writes = 0;
+            results.Reports.Changed += (_, _) => Interlocked.Increment(ref writes);
+            ((Button)report.FindName("SaveReportButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => !report.IsVisible);
+            Assert.AreEqual("저장 완료", ((TextBlock)report.FindName("SaveReportLabel")).Text);
+            Assert.AreEqual(1, writes);
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("ui-feedback").GetAwaiter().GetResult());
         }
-        finally { saved.Close(); }
+        finally { report.Close(); }
+    });
+
+    [TestMethod]
+    public void ReportWindow_SaveFailurePreservesReportAndAllowsRetry() => RunSta(() =>
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var results = new SessionResultsService(db, sessions);
+        var start = DateTime.UtcNow.AddMinutes(-5);
+        Await(sessions.StartSessionAsync(new("ui-retry", start, start.AddMinutes(5), IsCompleted: true)));
+        var result = new SessionResult(start, start.AddMinutes(5), [], [], true) { SessionId = "ui-retry" };
+        using (var connection = db.CreateOpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "DROP TABLE focus_session_reports;";
+            command.ExecuteNonQuery();
+        }
+        var report = new SessionReportWindow(result, results.Reports);
+        try
+        {
+            report.Show();
+            var button = (Button)report.FindName("SaveReportButton");
+            var label = (TextBlock)report.FindName("SaveReportLabel");
+            var data = report.DataContext;
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => button.IsEnabled);
+            Assert.IsTrue(report.IsVisible);
+            Assert.AreSame(data, report.DataContext);
+            Assert.AreEqual("다시 저장", label.Text);
+            Assert.AreEqual(Visibility.Collapsed, ((System.Windows.Shapes.Path)report.FindName("SaveCompletedIcon")).Visibility);
+            Assert.AreEqual("저장 실패 · 다시 시도하세요.", ((TextBlock)report.FindName("SaveStatusText")).Text);
+            Assert.IsTrue(((Button)report.FindName("SkipSaveButton")).IsEnabled);
+            report.UpdateLayout();
+            SavePreview(report, "report-save-failure.png", report.RenderSize);
+            db.Initialize();
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => !report.IsVisible);
+            Assert.IsNotNull(results.Reports.GetSnapshotAsync("ui-retry").GetAwaiter().GetResult());
+        }
+        finally { report.Close(); }
     });
 
     [TestMethod]

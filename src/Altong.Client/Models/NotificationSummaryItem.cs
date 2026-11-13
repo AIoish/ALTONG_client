@@ -17,6 +17,10 @@ public sealed record NotificationSummaryItem(
     [property: JsonPropertyName("is_schedule_related")] bool IsScheduleRelated,
     [property: JsonPropertyName("schedule")] CalendarSchedule? Schedule)
 {
+    /// <summary>모델 입력을 나누기 전 원본 대화 그룹. 같은 값의 요약은 리포트에서 함께 표시한다.</summary>
+    [JsonPropertyName("group_id")]
+    public string? GroupId { get; init; }
+
     [JsonPropertyName("app_name")]
     public string? AppName { get; init; }
 

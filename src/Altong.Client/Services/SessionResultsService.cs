@@ -35,6 +35,7 @@ public sealed record SessionResult(
     public IReadOnlyList<string>? StoredNotificationHighlights { get; init; }
     public IReadOnlyList<QuickReplyDraft>? StoredQuickReplies { get; init; }
     public IReadOnlyList<NotificationSummaryItem> SummaryItems { get; init; } = [];
+    public IReadOnlyList<QuickMemoEntry> Memos { get; init; } = [];
     public string DurationLabel => "집중모드 사용 시간";
     public int BlockedCount => Notifications.Count(n => n.IsPassed == false);
     public int PassedCount => Notifications.Count(n => n.IsPassed == true);
@@ -60,7 +61,8 @@ public sealed record SessionResult(
 }
 
 /// <summary>종료된 세션의 저장 작업이 끝나면 저장된 기록과 처리 실패 안내로 결과를 공개한다.</summary>
-public sealed class SessionResultsService(IAltongDatabase database, IFocusSessionRepository sessions) : INotifyPropertyChanged
+public sealed class SessionResultsService(IAltongDatabase database, IFocusSessionRepository sessions,
+    QuickMemoStore? memos = null) : INotifyPropertyChanged
 {
     public SqliteSessionReportRepository Reports { get; } = new(database);
     public SqliteDashboardNotificationRepository DashboardNotifications { get; } = new(database);
@@ -86,6 +88,23 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
         }
     }
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public async Task DeleteReportAsync(string sessionId)
+    {
+        if (sessionId == CurrentSessionId) throw new InvalidOperationException("진행 중인 집중은 삭제할 수 없습니다.");
+        var snapshot = await Reports.GetSnapshotAsync(sessionId);
+        var focus = await sessions.GetByIdAsync(sessionId);
+        var ids = new HashSet<string>(snapshot?.Memos.Select(memo => memo.Id) ?? [], StringComparer.Ordinal);
+        if (focus?.EndedAt is { } end && memos is not null)
+            ids.UnionWith(memos.GetForSession(sessionId, focus.StartedAt, end).Select(memo => memo.Id));
+        // A failed memo cleanup rolls back the report deletion, leaving the same entry available for retry.
+        await Reports.DeleteAsync(sessionId, () => memos?.DeleteSession(sessionId, ids));
+    }
+
+    public async Task DeleteAllReportsAsync()
+    {
+        await Reports.DeleteAllAsync(() => memos?.ClearExceptSession(CurrentSessionId));
+    }
 
     public void Begin(DateTime startedAt, int targetMinutes)
     {
@@ -124,6 +143,8 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
         if (_session is not { EndedAt: null } active) return null;
         int generation = ++_generation;
         var completed = active with { EndedAt = endedAt };
+        // Freeze before awaiting I/O so a newly started focus session cannot change this report's notes.
+        var sessionMemos = memos?.GetForSession(active.SessionId, active.StartedAt, endedAt) ?? [];
         var started = _saveStarted;
         _session = completed;
         // 기존 타이머 기반 집계와 별도로 완료하여 빠른 ON/OFF에도 각 결과를 유지한다.
@@ -157,7 +178,7 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
             await Task.WhenAll(notificationsTask, appsTask);
             await sessions.EndSessionAsync(active.SessionId, endedAt, true);
             var result = new SessionResult(active.StartedAt, endedAt, await notificationsTask,
-                await appsTask, IsFocusSessionReport: true) { SessionId = active.SessionId };
+                await appsTask, IsFocusSessionReport: true) { SessionId = active.SessionId, Memos = sessionMemos };
             return notificationFailure ? result with
             {
                 StoredNotificationSummary = result.NotificationSummary + " · 일부 알림 처리가 실패했습니다. 저장된 알림 기준입니다."
@@ -224,7 +245,10 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
                 if (notifications.Any(n => n.IsPassed is null)) return null;
                 var apps = await ReadAppsAsync(session.StartedAt, end, context);
                 await sessions.EndSessionAsync(session.SessionId, end, true);
-                return new SessionResult(session.StartedAt, end, notifications, apps);
+                return new SessionResult(session.StartedAt, end, notifications, apps)
+                {
+                    Memos = memos?.GetForSession(session.SessionId, session.StartedAt, end) ?? []
+                };
             });
             if (generation != _generation) return;
             Latest = result;
@@ -264,6 +288,7 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
         return new SessionResult(focus.StartedAt, end, notifications, apps, true)
         {
             SessionId = sessionId,
+            Memos = memos?.GetForSession(sessionId, focus.StartedAt, end) ?? [],
             ReportSource = "과거 기록으로 재구성 · 종료 당시 저장본이 아닙니다"
         };
     }

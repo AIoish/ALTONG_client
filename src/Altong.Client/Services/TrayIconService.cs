@@ -24,8 +24,8 @@ public sealed class TrayIconService : IDisposable
         Action openApplication)
     {
         _contextMenu = new ContextMenuStrip();
-        _contextMenu.Items.Add("대시보드 열기", null, (_, _) => openApplication());
-        _exitApplicationItem = _contextMenu.Items.Add("대시보드 종료", null, (_, _) => _exitApplication?.Invoke());
+        _contextMenu.Items.Add("열기", null, (_, _) => openApplication());
+        _exitApplicationItem = _contextMenu.Items.Add("종료", null, (_, _) => _exitApplication?.Invoke());
         _exitApplicationItem.Enabled = false;
 
         _idleIcon = LoadTrayIcon(IdleIconResource);

@@ -109,23 +109,30 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
         //    모델 학습 범위(그룹당 7개)나 문맥을 넘는 그룹은 시간 순서대로 고르게 나눈다.
         using var session = await _engine.OpenSessionAsync(cancellationToken).ConfigureAwait(false);
         var chunks = BriefingGrouping.Group(blocked)
-            .SelectMany(group => BriefingGrouping.SplitEvenly(group, BriefingGrouping.MaxNotificationsPerChunk,
-                session is null ? null : chunk => session.Fits(
-                    NormalizeDisplayAppName(chunk[0].AppName), BriefingGrouping.ModelSender(chunk[0]), chunk)))
+            .SelectMany(group =>
+            {
+                var groupId = ComputeDeterministicId("grp", sessionId, SummaryGroupResolver.GroupKey(group[0]),
+                    group.Select(notification => notification.Id));
+                return BriefingGrouping.SplitEvenly(group, BriefingGrouping.MaxNotificationsPerChunk,
+                        session is null ? null : chunk => session.Fits(
+                            NormalizeDisplayAppName(chunk[0].AppName), BriefingGrouping.ModelSender(chunk[0]), chunk))
+                    .Select(notifications => (Notifications: notifications, GroupId: groupId));
+            })
             .ToList();
 
         var summaryItems = new List<NotificationSummaryItem>();
         var referenceNow = _nowProvider();
 
-        foreach (var groupNotifications in chunks)
+        foreach (var chunk in chunks)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            var groupNotifications = chunk.Notifications;
             var first = groupNotifications[0];
             var appName = NormalizeDisplayAppName(first.AppName);
             var sender = NotificationSenderResolver.Resolve(first.AppName, first.Sender, first.Title) ?? "";
             var room = BriefingGrouping.KakaoRoom(first)?.Trim();
-            var groupKey = $"{BriefingGrouping.AppIdentity(first.AppName)}|{BriefingGrouping.NormalizeIdentity(BriefingGrouping.ModelSender(first))}|{room}";
+            var groupKey = SummaryGroupResolver.GroupKey(first);
 
             string summaryText;
             string primaryCategory;
@@ -172,6 +179,7 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
                 IsScheduleRelated: isScheduleRelated,
                 Schedule: schedule)
             {
+                GroupId = chunk.GroupId,
                 AppName = appName,
                 Sender = string.IsNullOrEmpty(sender) ? null : sender,
                 Room = string.IsNullOrEmpty(room) ? null : room
