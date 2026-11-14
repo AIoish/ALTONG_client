@@ -18,9 +18,8 @@ public sealed class NativeNotificationControlIntegrationTests
         Assert.IsNull(settings.CompatibilityError, settings.CompatibilityError);
         var rows = settings.Enumerate();
         Assert.IsTrue(rows.Count > 0);
-        foreach (var row in rows) Console.WriteLine($"{(row.IsEligible ? "APP" : "EXCLUDED")} {row.Id}: {row.Name} {row.ExclusionReason}");
+        Console.WriteLine($"Registered={rows.Count}, eligible={rows.Count(r => r.IsEligible)}");
         Assert.IsTrue(rows.Any(r => r.IsEligible), "COM metadata must resolve at least one real app.");
-        Assert.IsTrue(rows.Any(r => r.Id == "Chrome" && r.IsEligible));
         Assert.IsTrue(rows.Where(r => r.Id.StartsWith("Windows.", StringComparison.OrdinalIgnoreCase)).All(r => !r.IsEligible));
     }
 
@@ -33,6 +32,8 @@ public sealed class NativeNotificationControlIntegrationTests
         var original = settings.Read(id);
         var banner = settings.ReadRegistry(id, false); var sound = settings.ReadRegistry(id, true);
         var transaction = new NotificationSuppressionTransaction(settings);
+        Assert.IsFalse(transaction.HasPendingRecovery,
+            "Finish the existing focus/recovery operation before running the owned mock write test.");
         using var guardian = new NotificationRecoveryGuardian();
         try
         {
@@ -77,6 +78,15 @@ public sealed class NativeNotificationControlIntegrationTests
         Assert.IsFalse(File.Exists(NotificationSuppressionTransaction.DefaultJournalPath));
     }
 
-    private static string GetMockId(WindowsNotificationSenderSettings settings) => settings.Enumerate().Single(r => r.IsEligible
-        && r.Id.Replace('\\', '/').Equals("C:/Altong/tools/Altong.MockGenerator/bin/Debug/net9.0-windows10.0.17763.0/Altong.MockGenerator.exe", StringComparison.OrdinalIgnoreCase)).Id;
+    private static string GetMockId(WindowsNotificationSenderSettings settings)
+    {
+        string? path = Environment.GetEnvironmentVariable("ALTONG_NOTIFICATION_MOCK_PATH");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(path), "Set ALTONG_NOTIFICATION_MOCK_PATH to the owned test generator executable.");
+        string fullPath = Path.GetFullPath(path!);
+        Assert.AreEqual("Altong.MockGenerator.exe", Path.GetFileName(fullPath), true,
+            "Write tests may only target the owned mock generator.");
+        Assert.IsTrue(File.Exists(fullPath), "Build and register the mock generator before running write tests.");
+        return settings.Enumerate().Single(r => r.IsEligible
+            && r.Id.Replace('\\', '/').Equals(fullPath.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)).Id;
+    }
 }

@@ -1,0 +1,538 @@
+[
+  {
+    "Sha256": "4F0EC58023C469A9BA199FC371C70F811EFE363E6D80F8E50EB001FF7D5561B0",
+    "FileVersion": "10.0.26100.9444",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "26300.9457"
+    ],
+    "Updates": [
+      "KB5121794"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/50D0E03426d000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/C873E64B23648C5A2D6085E6804D231D1/NotificationController.pdb",
+    "PdbGuid": "C873E64B-2364-8C5A-2D60-85E6804D231D",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "2E426E31806F622DF3BEE59E5034110672C95A2EF9AD6DEA6B0456DE681F9E6A",
+    "FileVersion": "10.0.26100.9549",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "26300.9550"
+    ],
+    "Updates": [
+      "KB5124010"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/0477D7F8271000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/0ADD5B769AABC2F27C6373296117EC8D1/NotificationController.pdb",
+    "PdbGuid": "0ADD5B76-9AAB-C2F2-7C63-73296117EC8D",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "5E25D962F68CC1E229E77FC5C79D1713D714D5B9CB0CFDBC045AD780B0864CAB",
+    "FileVersion": "10.0.26100.9711",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "26300.9711",
+      "26300.9725"
+    ],
+    "Updates": [
+      "KB5127648",
+      "KB5134133"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/368EE92A271000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/FDC75DAB20617C33D2ED3649BE513EBD1/NotificationController.pdb",
+    "PdbGuid": "FDC75DAB-2061-7C33-D2ED-3649BE513EBD",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "07B5BBBCC1A0399A4CFC488D17D5C7D3A7782D4EAFDE853A383FAE2CA43A2E27",
+    "FileVersion": "10.0.26100.9818",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "26200.9818",
+      "26200.9974",
+      "26300.9818",
+      "26300.9974"
+    ],
+    "Updates": [
+      "KB5127936",
+      "KB5132061"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/94FA740B26f000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/10F0D0673A34F8080E6B4A59D8DEA6311/NotificationController.pdb",
+    "PdbGuid": "10F0D067-3A34-F808-0E6B-4A59D8DEA631",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "21B2AFF5C65DAE4C24A5E551CBD09489694A0CCD47085A67CCCD1C9757499E20",
+    "FileVersion": "10.0.28000.1516",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.1575"
+    ],
+    "Updates": [
+      "KB5077179"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/1C10D59E26c000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/2F56024B8A07C94090B30734489E74ED1/NotificationController.pdb",
+    "PdbGuid": "2F56024B-8A07-C940-90B3-0734489E74ED",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "1B0DB8C3F3BC60579314EB4E2DD4AA7653D80AE690F5BDBBA6051BE4A599704E",
+    "FileVersion": "10.0.28000.1643",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.1643",
+      "28000.1719"
+    ],
+    "Updates": [
+      "KB5077239",
+      "KB5079466"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/E392A5B526c000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/2B978F695CC64BB7D29D016857A216F61/NotificationController.pdb",
+    "PdbGuid": "2B978F69-5CC6-4BB7-D29D-016857A216F6",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "B731A02E3EF1CD3D44FD466A810CB7086ACB542099D4530E77207F933C6B7D4D",
+    "FileVersion": "10.0.28000.1761",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.1764"
+    ],
+    "Updates": [
+      "KB5079489"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/FED508A226a000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/772CE27835DAD22DAA040C70148643351/NotificationController.pdb",
+    "PdbGuid": "772CE278-35DA-D22D-AA04-0C7014864335",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "E79D60A50F0BBD67E7D446288A0ACCD67E7D1C004174368DA9F3FAD01C8B2639",
+    "FileVersion": "10.0.28000.1830",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.1836"
+    ],
+    "Updates": [
+      "KB5083768"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/3E9DBA4E26a000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/4A98D12172518F0BB12DB00AB48F2F0E1/NotificationController.pdb",
+    "PdbGuid": "4A98D121-7251-8F0B-B12D-B00AB48F2F0E",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "F0E20FAAEF674132D8906277B66773F3106FFEC52FD71D9E6C1F21CC14A29B54",
+    "FileVersion": "10.0.28000.1896",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.1896",
+      "28000.2113"
+    ],
+    "Updates": [
+      "KB5083806",
+      "KB5089548"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/77BB45EF26d000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/1384F491A58D94A1620E778F51ADB9791/NotificationController.pdb",
+    "PdbGuid": "1384F491-A58D-94A1-620E-778F51ADB979",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "D386A84071C5860D451B01B4EA9A23197D9526679CD7B5A982A5AFBCBDA5069B",
+    "FileVersion": "10.0.28000.2179",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.2179",
+      "28000.2269"
+    ],
+    "Updates": [
+      "KB5089570",
+      "KB5095051"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/1E6EF2FB26c000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/59EF86BBB49E9466A6C2032ADC876BBE1/NotificationController.pdb",
+    "PdbGuid": "59EF86BB-B49E-9466-A6C2-032ADC876BBE",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "AE4B7201D219C4EBF378DAFEF2E45DB0279E3A5857518D665CB03F9F95391BDF",
+    "FileVersion": "10.0.28000.2336",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.2340",
+      "28000.2525"
+    ],
+    "Updates": [
+      "KB5095091",
+      "KB5101649"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/B955F10226c000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/494DC86AAB8217B79512417C7D848AC61/NotificationController.pdb",
+    "PdbGuid": "494DC86A-AB82-17B7-9512-417C7D848AC6",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "3A9FF08FBE7FF801F90C29BB609E1DEF1CDB0565B42F3581648BA587344AD6C0",
+    "FileVersion": "10.0.28000.2605",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.2608",
+      "28000.2704"
+    ],
+    "Updates": [
+      "KB5101681",
+      "KB5121000"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/7BE2140826a000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/7C3B90901C21D7C11D5DBC03D03A08FD1/NotificationController.pdb",
+    "PdbGuid": "7C3B9090-1C21-D7C1-1D5D-BC03D03A08FD",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "2DC07BFCC21E7EB5A1D396340D5F9E848323EFB0D0FB59F28DC2379A89C5282D",
+    "FileVersion": "10.0.28000.2804",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.2804"
+    ],
+    "Updates": [
+      "KB5120996"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/A805543E26c000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/EEEC6A29BF538B8081B316553EF159741/NotificationController.pdb",
+    "PdbGuid": "EEEC6A29-BF53-8B80-81B3-16553EF15974",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "A9F11F7016B3B3A0BC81AC04CA245506AAD3A15019A33F2915CBED341A6CEBA7",
+    "FileVersion": "10.0.28000.2952",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.2954",
+      "28000.2956"
+    ],
+    "Updates": [
+      "KB5124012",
+      "KB5129194"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/31670B1826e000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/A63099110DFA8972FE3B731A05803C4C1/NotificationController.pdb",
+    "PdbGuid": "A6309911-0DFA-8972-FE3B-731A05803C4C",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "527DE2BB74E85F336588A48207749E3FE8D58E347C43A93687BA3A77EF6B8664",
+    "FileVersion": "10.0.28000.3086",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.3086"
+    ],
+    "Updates": [
+      "KB5124006"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/B6E9AB4E270000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/8187164931CDD63B82FB3F02712586F91/NotificationController.pdb",
+    "PdbGuid": "81871649-31CD-D63B-82FB-3F02712586F9",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "9AA51FCD949F8E25D4E950B992B05245B3B3C9163C4F141AE92B1B744BE99AEB",
+    "FileVersion": "10.0.28000.3231",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.3231",
+      "28000.3237"
+    ],
+    "Updates": [
+      "KB5127646",
+      "KB5134134"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/30DE9395270000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/3689A5E79C2321D13C1DD63CB76613841/NotificationController.pdb",
+    "PdbGuid": "3689A5E7-9C23-21D1-3C1D-D63CB7661384",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "7231FAE99137A870FAB9DC9D8EE5866D5ED5BFBA76D87986D524BFCF9169508D",
+    "FileVersion": "10.0.28000.3365",
+    "Architecture": "arm64",
+    "WindowsBuilds": [
+      "28000.3365",
+      "28000.3501"
+    ],
+    "Updates": [
+      "KB5127653",
+      "KB5132059"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/5FC7E8FA275000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/BDD5ED4CC9ED710064EE963B834D423C1/NotificationController.pdb",
+    "PdbGuid": "BDD5ED4C-C9ED-7100-64EE-963B834D423C",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "6E4670B545B39398E5A806415883B0912EC04F435BB03D1560ED28D1C9009101",
+    "FileVersion": "10.0.26100.9444",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "26300.9457"
+    ],
+    "Updates": [
+      "KB5121794"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/9C95480314a000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/3683FD43C05E094204A28B819D7496B71/NotificationController.pdb",
+    "PdbGuid": "3683FD43-C05E-0942-04A2-8B819D7496B7",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "21DFC6F1E63E3615ACA0486B90C02D759A535E0ED3795E2751551B10247057D2",
+    "FileVersion": "10.0.26100.9549",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "26300.9550"
+    ],
+    "Updates": [
+      "KB5124010"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/FE65393214c000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/65E43001268E9B18B57DB0B3152891711/NotificationController.pdb",
+    "PdbGuid": "65E43001-268E-9B18-B57D-B0B315289171",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "3242604B327A90314F88F044FFA4E3B8B2DD28F7D9E7009AB38793ABFE6FFC2D",
+    "FileVersion": "10.0.26100.9711",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "26200.9711",
+      "26300.9711",
+      "26300.9725"
+    ],
+    "Updates": [
+      "KB5127648",
+      "KB5134133"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/959FC0D414d000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/D10688D75E9EE0A02E30D05CB2CA89F41/NotificationController.pdb",
+    "PdbGuid": "D10688D7-5E9E-E0A0-2E30-D05CB2CA89F4",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "4BC537B3C70F87C1BDD1EC8919F38FBBE2077EB283A8CCE7C98280867CE345C6",
+    "FileVersion": "10.0.26100.9818",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "26200.9818",
+      "26200.9974",
+      "26300.9818",
+      "26300.9974"
+    ],
+    "Updates": [
+      "KB5127936",
+      "KB5132061"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/172BF15D14c000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/68747AD22295274023FC81E3930B04FB1/NotificationController.pdb",
+    "PdbGuid": "68747AD2-2295-2740-23FC-81E3930B04FB",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "3B3F227FDF3A9214F06AA5A959FA82F1A966A9A2CDC89398F63CD22C8273AB36",
+    "FileVersion": "10.0.28000.1516",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.1575"
+    ],
+    "Updates": [
+      "KB5077179"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/AE491771135000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/053C650EFDD4DFC1D1B3AD36F0B693C01/NotificationController.pdb",
+    "PdbGuid": "053C650E-FDD4-DFC1-D1B3-AD36F0B693C0",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "DA15D7C2D4399E9577336C17A9AB42429F170DA3E8A39FB2AAD111A5D9A4FB7E",
+    "FileVersion": "10.0.28000.1643",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.1643",
+      "28000.1719"
+    ],
+    "Updates": [
+      "KB5077239",
+      "KB5079466"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/0D032C46135000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/C1D17CB8475673FA80258D1AEE0981751/NotificationController.pdb",
+    "PdbGuid": "C1D17CB8-4756-73FA-8025-8D1AEE098175",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "F6E1DCA17C18036AB00C93279C2F6F0BE0B6F1038E97FD48FC79A6816D36EF2E",
+    "FileVersion": "10.0.28000.1761",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.1764"
+    ],
+    "Updates": [
+      "KB5079489"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/E89A5C76134000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/8F83E39A8B8452A650A0329F2593D18C1/NotificationController.pdb",
+    "PdbGuid": "8F83E39A-8B84-52A6-50A0-329F2593D18C",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "6AD4A955AF8D0EA5CD0096AA5C544FFF4123E82F23B226FECA3EA555B3E8E594",
+    "FileVersion": "10.0.28000.1830",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.1836"
+    ],
+    "Updates": [
+      "KB5083768"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/DE8F08B3134000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/9AFC54ACDC52F87DEB6D6885FA7D130D1/NotificationController.pdb",
+    "PdbGuid": "9AFC54AC-DC52-F87D-EB6D-6885FA7D130D",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "6373AFE5ECF305028BBFE49D127ACC03B203FEFEFFA3B8AC16F8B21607A68DA3",
+    "FileVersion": "10.0.28000.2179",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.2179",
+      "28000.2269"
+    ],
+    "Updates": [
+      "KB5089570",
+      "KB5095051"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/7A5D229F136000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/FF7B608AEB4BA306B0626AC5F6EF48971/NotificationController.pdb",
+    "PdbGuid": "FF7B608A-EB4B-A306-B062-6AC5F6EF4897",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "2BBFC0CF1E8316BAF97AC2592BA1C79A630A7CF11C014DE789D363F935C9981B",
+    "FileVersion": "10.0.28000.2336",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.2340",
+      "28000.2525"
+    ],
+    "Updates": [
+      "KB5095091",
+      "KB5101649"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/9D1A44F6135000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/26A186F95C07272C0B45BF68A26946391/NotificationController.pdb",
+    "PdbGuid": "26A186F9-5C07-272C-0B45-BF68A2694639",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "E9C1AB859B132DB48DC2CDDE5CBA7FDBC3075E0F315896B82257433AE30F98AE",
+    "FileVersion": "10.0.28000.2605",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.2608",
+      "28000.2704"
+    ],
+    "Updates": [
+      "KB5101681",
+      "KB5121000"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/9D6BC32B135000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/9ACEED6DD40898D0AFE34425669D9A421/NotificationController.pdb",
+    "PdbGuid": "9ACEED6D-D408-98D0-AFE3-4425669D9A42",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "78B2DFF58FFE8084AFA9B44339E5FECADA7E356C91CC0495CB951B6B878049C0",
+    "FileVersion": "10.0.28000.2804",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.2804"
+    ],
+    "Updates": [
+      "KB5120996"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/45BDCDB6135000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/E422E817EA0A0B2EB43574B5568AB35F1/NotificationController.pdb",
+    "PdbGuid": "E422E817-EA0A-0B2E-B435-74B5568AB35F",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "812956BFB0E512404B8E794D9EC0D309907844E580359E031FAB58E2DF6B2EC9",
+    "FileVersion": "10.0.28000.2952",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.2954",
+      "28000.2956"
+    ],
+    "Updates": [
+      "KB5124012",
+      "KB5129194"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/8921F756136000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/9C698CEC95B689309BE5E2F13D1FC24A1/NotificationController.pdb",
+    "PdbGuid": "9C698CEC-95B6-8930-9BE5-E2F13D1FC24A",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "0C42625F551398671E600CA6F55132DF63D8F8DB772B95E8BCA595B1BAC32213",
+    "FileVersion": "10.0.28000.3086",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.3086"
+    ],
+    "Updates": [
+      "KB5124006"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/C1CFA4C1136000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/D80E434DE3B4C8E2EA28D318620D3A5A1/NotificationController.pdb",
+    "PdbGuid": "D80E434D-E3B4-C8E2-EA28-D318620D3A5A",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "DAD130AFC0F53CFF24FB26C689E67BC0701FF14D42312DC3B968256C775461CC",
+    "FileVersion": "10.0.28000.3231",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.3231"
+    ],
+    "Updates": [
+      "KB5127646"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/7E9779BC136000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/7F2F201C44F948CF41E32C3AA694FB891/NotificationController.pdb",
+    "PdbGuid": "7F2F201C-44F9-48CF-41E3-2C3AA694FB89",
+    "PdbAge": 1
+  },
+  {
+    "Sha256": "800DA001B2D438DD692A5AF825E3212EC9A47B0C3C2BAD746061B04E338F653C",
+    "FileVersion": "10.0.28000.3365",
+    "Architecture": "x64",
+    "WindowsBuilds": [
+      "28000.3365",
+      "28000.3501"
+    ],
+    "Updates": [
+      "KB5127653",
+      "KB5132059"
+    ],
+    "BinaryUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.dll/B1236304132000/NotificationController.dll",
+    "PdbUrl": "https://msdl.microsoft.com/download/symbols/NotificationController.pdb/FBE23B26E730172E22BD98F5F6697E401/NotificationController.pdb",
+    "PdbGuid": "FBE23B26-E730-172E-22BD-98F5F6697E40",
+    "PdbAge": 1
+  }
+]

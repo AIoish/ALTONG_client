@@ -1,32 +1,23 @@
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Win32;
 
 namespace Altong.Client.Services.NotificationControl;
 
 /// <summary>
-/// Build-pinned adapter for the private NotificationController COM ABI.
+/// Hash-selected adapter for the private NotificationController COM ABI.
 /// This is not a supported/public Windows API. Refuse writes on an unknown DLL, including after Windows updates.
 /// Slot signatures were checked against the matching Microsoft symbols for each validated DLL; unused slots are never invoked.
 /// </summary>
 public sealed class WindowsNotificationSenderSettings : INotificationSenderSettings
 {
     /// <summary>
-    /// 검증한 <c>NotificationController.dll</c> SHA256별 앱 설정 인터페이스 ID와 vtable 순번.
+    /// 분석한 <c>NotificationController.dll</c> SHA256별 앱 설정 인터페이스 ID와 vtable 순번.
     /// factory 3(GetSettingsForAumid)과 앱 설정 5(알림 켜짐)·7/8(배너)·9(알림센터 보관)은 모든 검증 빌드에서 같다.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, NotificationControllerLayout> ValidatedLayouts =
-        new Dictionary<string, NotificationControllerLayout>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["3242604B327A90314F88F044FFA4E3B8B2DD28F7D9E7009AB38793ABFE6FFC2D"] = new(
-                "Windows 11 25H2 build 26200.9711", new("9DCA8F00-CB98-434B-9473-5A0691200DC4"),
-                SoundFile: 33, SetSoundFile: 34, Title: 37, HasValidAppInfo: 43),
-            ["C2C4693C3204BA7FB1D2BA1D78D8E4705CCA76BBA5C7D368D43C7A05CB599F97"] = new(
-                "Windows 10 22H2 build 19045.6466", new("266DE187-1DE7-4021-A421-806ABA49A99E"),
-                SoundFile: 21, SetSoundFile: 22, Title: 25, HasValidAppInfo: 30),
-        };
+        NotificationControllerCompatibility.Layouts;
 
     private const string SettingsPath = @"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings";
     private static readonly Guid ClassId = new("D18705BE-FC2F-44C8-AEFF-1CD49AEA8FC1");
@@ -40,8 +31,8 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
         {
             var dll = Path.Combine(Environment.SystemDirectory, "NotificationController.dll");
             using var file = File.OpenRead(dll);
-            string hash = Convert.ToHexString(SHA256.HashData(file));
-            if (!Environment.Is64BitProcess || !ValidatedLayouts.TryGetValue(hash, out var layout))
+            var layout = NotificationControllerCompatibility.Resolve(file, RuntimeInformation.ProcessArchitecture);
+            if (layout is null)
                 CompatibilityError = "현재 Windows의 알림 제어 모듈은 검증되지 않아 Windows 방해 금지 방식을 사용합니다.";
             else
                 _layout = layout;
@@ -246,6 +237,6 @@ public sealed class WindowsNotificationSenderSettings : INotificationSenderSetti
     private delegate int PutString(IntPtr self, [MarshalAs(UnmanagedType.LPWStr)] string value);
 }
 
-/// <summary>검증한 Windows 빌드 하나의 앱 설정 인터페이스 ID와, 빌드마다 다른 vtable 순번.</summary>
+/// <summary>같은 DLL을 사용하는 Windows 빌드들이 공유하는 앱 설정 인터페이스와 vtable 순번.</summary>
 public sealed record NotificationControllerLayout(
     string Build, Guid SenderId, int SoundFile, int SetSoundFile, int Title, int HasValidAppInfo);
