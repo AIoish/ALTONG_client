@@ -9,52 +9,29 @@
 3. [클래스·인터페이스 ID와 호출 순서](#3-클래스인터페이스-id와-호출-순서)
 4. [빌드별 DLL 버전·SHA256 전체 목록](#4-빌드별-dll-버전sha256-전체-목록)
 5. [새 DLL 추가 순서](#5-새-dll-추가-순서)
-6. [근거와 재현 도구](#6-근거와-재현-도구)
+6. [근거](#6-근거)
 
 ## 1. 실기기 검사 순서
 
-실기기에 저장소와 .NET 9 SDK, PowerShell 7이 준비돼 있다는 기준이다. 관리자 권한 없이 실행한다.
+실기기에서 작업 브랜치로 전환한 뒤 평소처럼 빌드·실행한다. 기존 알통은 먼저 집중 모드를 끄고 트레이에서 종료한다. 아래는 .NET 9 SDK가 설치된 개발 환경에서 실행하는 예시다.
 
 ```powershell
 git fetch origin
 git switch feature/windows11-notification-compatibility
 git pull --ff-only
-pwsh -ExecutionPolicy Bypass -File .\tools\Test-NotificationControl.ps1 -ExpectedWindowsVersion 26H2
+dotnet run --project .\src\Altong.Client\Altong.Client.csproj --configuration Release
 ```
 
-26H1 기기에서는 마지막 인자를 `-ExpectedWindowsVersion 26H1`로 바꾼다. 실제 버전이 다르면 쓰기 검사를 시작하지 않는다.
-
-### 자동 검사
-
-1. 기존 알통의 집중 모드를 종료하고 남은 설정 복구를 마친다. 복구 파일이 있으면 스크립트가 보존하고 중단한다.
-2. 스크립트가 실제 OS 버전·세부 빌드·DLL SHA256·아키텍처·권한을 기록한다.
-3. 현재 브랜치의 Release 테스트·모의 앱을 빌드한다.
-4. 소유한 모의 알림 앱을 등록한다.
-5. `ReadRegisteredSendersOnValidatedWindows`: COM 앱 목록·제어 가능 여부를 읽는다.
-6. `SuppressAndRestoreOnlyOwnedMockSender`: 모의 앱 하나의 배너·알림음을 변경하고 원래 COM 값과 레지스트리 상태로 복구한다.
-
-결과는 `verify-build/native-notification-control/<세부빌드>-<시각>/`에 남는다.
-
-| 파일 | 확인할 내용 |
-|---|---|
-| `environment.json` | 실제 Windows 버전·빌드·DLL 해시·아키텍처, `Elevated=false` |
-| `result.json` | `Outcome=Passed`, `Executed=2`, `Passed=2` |
-| `notification-control.trx` | 실행 2개·통과 2개·실패/건너뜀 0개 |
-
-실패한 결과를 다른 빌드의 통과 결과로 대신하지 않는다. 이 검사는 기존 앱의 알림 내용·이름을 로그에 출력하지 않는다.
-
-### 앱에서 직접 확인할 순서
-
-자동 검사 후 기존 알통을 트레이에서 종료하고, 빌드된 `src/Altong.Client/bin/Release/net9.0-windows10.0.26100.0/Altong.Client.exe`를 실행한다.
+Visual Studio에서 기존 방식으로 실행해도 된다. 검증 스크립트나 별도 패키지는 사용하지 않는다.
 
 1. 설정의 알통 자체 제어 카드에서 앱 조회·선택이 되는지 확인한다.
 2. 테스트할 앱만 선택하고 집중을 켠다. 배너·알림음이 억제되는지 실제로 관찰한다.
 3. 알림센터 보관과 알림 수신 허용은 유지되는지 확인한다.
 4. 집중을 끄고 원래 배너·알림음·레지스트리 상태가 복원되는지 확인한다.
 5. 테스트 대상만 선택한 별도 집중에서 알통 강제 종료 후 복구 감시가 원상복구하는지 확인한다.
-6. 실패했다면 빌드 번호와 위 결과 폴더를 함께 보존한다. 원래 복구 파일은 삭제하지 않는다.
+6. 실패했다면 실제 Windows 세부 빌드와 증상을 기록한다. 원래 복구 파일은 삭제하지 않는다.
 
-자동 검사는 설정 읽기·쓰기·복구의 확인이다. 모든 외부 앱의 팝업, 실제 스피커 소리, WinRT 수집 권한·AI 품질까지 통과했다는 뜻은 아니다. 자체 팝업을 쓰는 앱의 연동은 별도 확인한다.
+배너·소리는 실제로 관찰하고, 자체 팝업을 쓰는 앱의 연동은 별도 확인한다. WinRT 수집 권한·AI 품질은 이 DLL 호환성 분석과 구분한다.
 
 ## 2. 검증 상태와 지원 범위
 
@@ -168,21 +145,17 @@ pwsh -ExecutionPolicy Bypass -File .\tools\Test-NotificationControl.ps1 -Expecte
 
 ## 5. 새 DLL 추가 순서
 
-1. 실기기의 `environment.json`에서 실제 빌드·DLL 해시를 확인한다.
+1. 실기기의 실제 Windows 세부 빌드와 `NotificationController.dll` SHA256을 확인한다.
 2. 새 해시면 Microsoft DLL과 정확히 대응하는 PDB를 확보한다. 빌드 번호만 보고 기존 프로필을 허용하지 않는다.
 3. PDB GUID/age, CLSID·IID와 위 9개 함수의 슬롯·인자 형식을 확인한다.
 4. 구조가 같으면 호환성 JSON에 해시·DLL 버전·해당 빌드·출처를 추가해 기존 어댑터를 공유한다.
 5. IID·슬롯·시그니처가 다르면 어댑터를 수정하고 별도 레이아웃으로 분리한다. 해시만 바꾸어 허용하지 않는다.
 6. 관련 테스트와 대상 실기기의 위 검사를 통과한 뒤 실행 검증 상태를 갱신한다. 대응 자료가 부족하면 허용 목록 밖에 둔다.
 
-## 6. 근거와 재현 도구
+## 6. 근거
 
 - [Microsoft 26H2 KB5132061](https://support.microsoft.com/en-us/servicing/os/windows-11/2026/11/kb5132061-windows-11-24h2-25h2-26h2-security-update), [공식 파일 목록](https://download.microsoft.com/download/d2b8ce92-7b1b-413d-83e3-f6c5cef48d05/5132061.csv)
 - [Microsoft 26H1 KB5132059](https://support.microsoft.com/en-us/servicing/os/windows-11/2026/11/kb5132059-windows-11-26h1-security-update), [공식 파일 목록](https://download.microsoft.com/download/d2b8ce92-7b1b-413d-83e3-f6c5cef48d05/5132059.csv)
 - [Microsoft 공개 심볼 서버](https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/microsoft-public-symbols). Winbindex는 Microsoft 다운로드 주소 구성용 보조 인덱스로 사용했다.
-- `tools/NotificationControl/Get-ModuleMetadata.ps1`: PE 해시·PDB GUID/age·섹션 읽기.
-- `tools/NotificationControl/Read-PdbSymbols.cpp`: Microsoft DIA SDK로 정확히 대응하는 PDB 읽기.
-- `tools/NotificationControl/Verify-ModuleAbi.ps1`: DLL/PDB GUID·해시, 실제 vtable 9개 슬롯과 GUID 3개를 정적으로 대조한다. 대상 DLL을 로드하지 않는다.
-- `tools/Test-NotificationControl.ps1`: 브랜치에서 빌드하고 실기기의 읽기·소유 모의 앱 차단·복구 2개 검사를 실행한다.
 
 원시 DLL·PDB·검사 결과·이전 VM 작업 기록은 Git 제외 경로 `verify-build`에 보존한다. 제품과 Git에는 Windows DLL·PDB를 포함하지 않는다. 패키지 생성·VM 준비는 현재 실기기 검사 절차에 포함하지 않는다.
