@@ -13,6 +13,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Altong.Client.Tests" />
+    <EmbeddedResource Include="Services\NotificationControl\NotificationControllerModules.json"
+                      LogicalName="Altong.Client.NotificationControllerModules.json" />
   </ItemGroup>
 
   <ItemGroup>
