@@ -1,0 +1,30 @@
+{
+  "name": "altong-slack-local",
+  "main": "../src/index.js",
+  "compatibility_date": "2026-11-18",
+  "workers_dev": false,
+  "dev": { "ip": "127.0.0.1", "port": 8793 },
+  "durable_objects": {
+    "bindings": [
+      { "name": "RELAY", "class_name": "SlackRelay" },
+      { "name": "INBOX", "class_name": "SlackInbox" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["SlackRelay"] },
+    { "tag": "v2", "new_sqlite_classes": ["SlackInbox"] }
+  ],
+  "services": [{ "binding": "SLACK_API", "service": "altong-slack-test-slack" }],
+  "vars": {
+    "DEV_LOOPBACK": "1",
+    "PUBLIC_URL": "http://127.0.0.1:8793",
+    "SLACK_APP_ID": "A_TEST",
+    "SLACK_CLIENT_ID": "synthetic-client",
+    "SLACK_CLIENT_SECRET": "synthetic-client-secret",
+    "SLACK_SIGNING_SECRET": "synthetic-signing-key",
+    "SLACK_APP_TOKEN": "synthetic-app-token",
+    "TOKEN_ENCRYPTION_KEY": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "TOKEN_ENCRYPTION_KEY_VERSION": "1",
+    "RETENTION_HOURS": "1"
+  }
+}

@@ -28,6 +28,18 @@ public sealed class BriefingGroupingTests
     }
 
     [TestMethod]
+    public void SlackApiGrouping_UsesConversationIdentityAcrossRenamesAndSameNames()
+    {
+        var first = N("slack:T_ONE:D_ONE:1794910000.000001", sender: "같은 이름");
+        var renamed = N("slack:T_ONE:D_ONE:1794910001.000002", sender: "변경 이름");
+        var otherPerson = N("slack:T_ONE:D_TWO:1794910002.000003", sender: "같은 이름");
+        var otherWorkspace = N("slack:T_TWO:D_ONE:1794910003.000004", sender: "같은 이름");
+        AssertGroups(Ids(first, renamed, otherPerson, otherWorkspace),
+            [first.Id, renamed.Id], [otherPerson.Id], [otherWorkspace.Id]);
+        Assert.AreEqual("변경 이름", BriefingGrouping.ModelSender(renamed));
+    }
+
+    [TestMethod]
     public void GroupingUsesAppSenderTimeSpanAndText()
     {
         var groups = Ids(

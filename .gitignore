@@ -62,3 +62,15 @@ Thumbs.db
 *.zip
 integration/csharp/Verification/bin/
 integration/csharp/Verification/obj/
+
+# Slack runtime credentials and durable relay data
+**/slack.db*
+**/receiver.lock
+**/slack-relay-session.dat
+**/slack-relay-session.dat.workspaces/
+**/slack-tokens.dat*
+/src/Altong.Client/slack-service.json
+**/node_modules/
+**/.wrangler/
+**/.dev.vars
+**/.dev.vars.*

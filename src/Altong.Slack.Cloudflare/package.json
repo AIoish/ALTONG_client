@@ -1,0 +1,12 @@
+{
+  "name": "altong-slack-relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dev": "wrangler dev",
+    "check": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": { "miniflare": "5.20261117.0-beta", "wrangler": "4.164.0" }
+}

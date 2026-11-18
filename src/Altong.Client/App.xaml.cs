@@ -41,6 +41,7 @@ public partial class App : System.Windows.Application
     public IWindowSessionRepository WindowSessionRepository { get; private set; } = null!;
     public IFocusSessionRepository FocusSessionRepository { get; private set; } = null!;
     public NotificationPipelineCoordinator NotificationPipeline { get; private set; } = null!;
+    private ISlackConnectionController? _slackConnection;
     // 카카오톡 연동이 꺼져 있으면(KakaoIntegration) 둘 다 null이다.
     public KakaoNotificationInterceptor? KakaoInterceptor { get; private set; }
     public IKakaoAudioOperator? KakaoAudioOperator { get; private set; }
@@ -170,6 +171,10 @@ public partial class App : System.Windows.Application
                 leftover.Unmute();
             }
         }
+
+        var slackConnection = SlackConnectionFactory.Create();
+        _slackConnection = slackConnection;
+        notificationListener = new SlackNotificationMerger(notificationListener, slackConnection);
 
         var modelDir = Path.Combine(AppContext.BaseDirectory,
             "models", "filtering", "klue-base-safety-v1");
@@ -394,7 +399,8 @@ public partial class App : System.Windows.Application
                 summaryProvider: _reportSummaryProvider,
                 autoDndSettings: AutoDndSettings,
                 startupRegistration: StartupRegistration,
-                calendar: _calendar);
+                calendar: _calendar,
+                slackConnection: _slackConnection);
             _dashboardWindow.Closed += DashboardWindow_Closed;
             MainWindow = _dashboardWindow;
         }

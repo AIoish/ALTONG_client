@@ -42,6 +42,8 @@ public sealed class NotificationPipelineCoordinator : IDisposable
         _getCurrentSessionId = getCurrentSessionId ?? throw new ArgumentNullException(nameof(getCurrentSessionId));
 
         _listener.NotificationReceived += OnNotificationReceived;
+        if (_listener is IPendingNotificationListener pending)
+            pending.NotificationPending += OnNotificationPending;
     }
 
     public async Task<bool> StartAsync()
@@ -54,7 +56,13 @@ public sealed class NotificationPipelineCoordinator : IDisposable
         _listener.Stop();
     }
 
-    private async void OnNotificationReceived(object? sender, RawNotification notification)
+    private async void OnNotificationReceived(object? sender, RawNotification notification) =>
+        await ProcessAsync(notification, null).ConfigureAwait(false);
+
+    private async void OnNotificationPending(object? sender, PendingNotification pending) =>
+        await ProcessAsync(pending.Notification, pending.PrepareAsync).ConfigureAwait(false);
+
+    private async Task ProcessAsync(RawNotification notification, Func<Task<RawNotification?>>? prepare)
     {
         TaskCompletionSource? completion = null;
         try
@@ -79,6 +87,23 @@ public sealed class NotificationPipelineCoordinator : IDisposable
                     writes.Add(completion.Task);
                     _ = completion.Task.ContinueWith(task => { _ = task.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
                 }
+            }
+
+            // Register this receipt with the original session BEFORE profile lookup, access checks,
+            // or toast coalescing. Session drain must include notifications still being prepared.
+            if (prepare is not null)
+            {
+                var prepared = await prepare().ConfigureAwait(false);
+                if (prepared is null) { completion?.TrySetResult(); return; }
+                notification = prepared;
+            }
+            // Slack can retry an already-persisted event after the app restarts. Preserve its
+            // original session instead of scoring it again or failing on the primary key.
+            if (notification.Id.StartsWith("slack:", StringComparison.Ordinal)
+                && await _notificationRepository.GetByIdAsync(notification.Id).ConfigureAwait(false) is not null)
+            {
+                completion?.TrySetResult();
+                return;
             }
 
             // 3. AI 필터 엔진 평가
@@ -118,8 +143,13 @@ public sealed class NotificationPipelineCoordinator : IDisposable
             string activeApp = string.IsNullOrEmpty(context.ActiveProcess) ? "None" : context.ActiveProcess;
             string dbStatus = isFocusMode ? "DB 저장 완료" : "일반 수신 (집중 모드 OFF, 미저장)";
 
-            string logMsg = $"[NotificationPipeline] {modeTag,-7} {notification.AppName}{senderPart}: " +
-                $"'{Truncate(notification.Title, 30)}' | 현재: {activeApp} ({context.DurationSeconds}s) -> {dbStatus}";
+            // Slack DMs may contain personal names and message fragments in the title.
+            bool isSlack = notification.AppName.Equals("Slack", StringComparison.OrdinalIgnoreCase)
+                || notification.AppName.Equals("Slack.exe", StringComparison.OrdinalIgnoreCase);
+            string logMsg = isSlack
+                ? $"[NotificationPipeline] {modeTag,-7} [{SlackSource(notification.Id)}] Slack -> {dbStatus}"
+                : $"[NotificationPipeline] {modeTag,-7} {notification.AppName}{senderPart}: " +
+                    $"'{Truncate(notification.Title, 30)}' | 현재: {activeApp} ({context.DurationSeconds}s) -> {dbStatus}";
             AppLogger.Info(logMsg);
 
             // 6. UI 구독자에게 이벤트 발행
@@ -128,7 +158,11 @@ public sealed class NotificationPipelineCoordinator : IDisposable
         catch (Exception ex)
         {
             completion?.TrySetException(ex);
-            AppLogger.Error($"[NotificationPipeline] 알림 파이프라인 처리 오류: {ex.Message}", ex);
+            if (notification.AppName.Equals("Slack", StringComparison.OrdinalIgnoreCase)
+                || notification.AppName.Equals("Slack.exe", StringComparison.OrdinalIgnoreCase))
+                AppLogger.Error($"[NotificationPipeline] Slack 처리 오류 ({ex.GetType().Name})");
+            else
+                AppLogger.Error($"[NotificationPipeline] 알림 파이프라인 처리 오류: {ex.Message}", ex);
         }
     }
 
@@ -152,6 +186,11 @@ public sealed class NotificationPipelineCoordinator : IDisposable
         return text.Length <= maxLength ? text : text[..maxLength] + "...";
     }
 
+    private static string SlackSource(string id) =>
+        id.StartsWith("slack:", StringComparison.Ordinal) ? "Slack API"
+        : id.StartsWith("win_", StringComparison.Ordinal) ? "Windows 알림"
+        : "기타 수집";
+
     public void Dispose()
     {
         lock (_syncRoot)
@@ -165,6 +204,8 @@ public sealed class NotificationPipelineCoordinator : IDisposable
         }
 
         _listener.NotificationReceived -= OnNotificationReceived;
+        if (_listener is IPendingNotificationListener pending)
+            pending.NotificationPending -= OnNotificationPending;
         _listener.Dispose();
     }
 }

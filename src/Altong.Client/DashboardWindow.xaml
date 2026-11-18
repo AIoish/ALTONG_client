@@ -57,6 +57,7 @@
                                 <Setter Property="Text" Value="&#xE916;" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding}" Value="자동 집중 관리"><Setter Property="Text" Value="&#xEB44;" /></DataTrigger>
+                                    <DataTrigger Binding="{Binding}" Value="앱 연결"><Setter Property="Text" Value="&#xE71B;" /></DataTrigger>
                                     <DataTrigger Binding="{Binding}" Value="시스템 설정"><Setter Property="Text" Value="&#xEA8F;" /></DataTrigger>
                                     <DataTrigger Binding="{Binding}" Value="앱별 알림 제어"><Setter Property="Text" Value="&#xED35;" /></DataTrigger>
                                 </Style.Triggers>
@@ -444,6 +445,58 @@
                                 <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,0,1" Margin="0,0,0,12" />
                                 <CheckBox x:Name="AutoDndEnabledCheckBox" Content="자동 집중 관리 사용" Click="AutoDndEnabledCheckBox_Click" />
                                 <TextBlock x:Name="AutoDndStatusText" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.LiveSetting="Polite" />
+                               </StackPanel>
+                              </Expander>
+                            </Border>
+                            <Border x:Name="AppConnectionsSettingsCard" Style="{StaticResource SettingsCard}" Tag="{Binding ElementName=AppConnectionsExpander}" AutomationProperties.Name="앱 연결">
+                              <Expander x:Name="AppConnectionsExpander" Header="앱 연결" Tag="외부 서비스 계정 연결 관리" Style="{StaticResource BlackExpander}" HeaderTemplate="{StaticResource SettingsAccordionHeader}">
+                               <StackPanel Margin="40,0,0,10">
+                                <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,0,1" Margin="0,0,0,16" />
+                                <Border Background="{StaticResource BlackInput}" CornerRadius="12" Padding="16">
+                                 <StackPanel>
+                                  <Grid>
+                                   <Grid.ColumnDefinitions><ColumnDefinition Width="44" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                   <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource BlackRaised}" VerticalAlignment="Top" HorizontalAlignment="Left">
+                                    <TextBlock Text="#" FontSize="25" FontWeight="Bold" Foreground="{StaticResource BlackSoft}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0" />
+                                   </Border>
+                                   <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Slack" FontSize="15" FontWeight="SemiBold" />
+                                    <TextBlock Text="개인 DM을 연결해 알통에서 알림을 확인하세요." Style="{StaticResource Muted}" FontSize="12" Margin="0,5,8,0" />
+                                   </StackPanel>
+                                   <Border Grid.Column="2" x:Name="SlackConnectionBadge" Background="{StaticResource BlackRaised}" CornerRadius="5" Padding="8,4" VerticalAlignment="Top">
+                                    <TextBlock x:Name="SlackConnectionStatusText" Text="미연결" FontSize="11" Foreground="{StaticResource BlackMuted}" AutomationProperties.LiveSetting="Polite" />
+                                   </Border>
+                                  </Grid>
+                                  <Border x:Name="SlackAccountPanel" BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,13,0,0" Visibility="Collapsed">
+                                   <StackPanel>
+                                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="88" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                     <TextBlock Text="연결 계정" Style="{StaticResource Muted}" FontSize="12" />
+                                     <TextBlock Grid.Column="1" x:Name="SlackAccountText" FontSize="12" />
+                                    </Grid>
+                                    <Grid Margin="0,8,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="88" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                     <TextBlock Text="워크스페이스" Style="{StaticResource Muted}" FontSize="12" />
+                                     <TextBlock Grid.Column="1" x:Name="SlackWorkspaceText" FontSize="12" />
+                                    </Grid>
+                                   </StackPanel>
+                                  </Border>
+                                  <TextBlock x:Name="SlackConnectionHintText" Text="연결하면 새로 도착하는 1:1 DM을 수신합니다." Style="{StaticResource Muted}" FontSize="12" Margin="0,16,0,0" />
+                                  <WrapPanel Margin="0,14,0,0">
+                                   <Button x:Name="SlackConnectButton" Content="Slack 연결" Style="{StaticResource PrimaryButton}" Click="SlackConnectButton_Click" AutomationProperties.HelpText="Slack 계정 연결" Margin="0,0,8,0" />
+                                   <Button x:Name="SlackDisconnectButton" Content="수신 중지" Visibility="Collapsed" Click="SlackDisconnectButton_Click" />
+                                  </WrapPanel>
+                                  <Border x:Name="SlackDisconnectConfirmation" BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,14,0,0" Visibility="Collapsed">
+                                   <StackPanel>
+                                    <TextBlock x:Name="SlackDisconnectTitleText" Text="이 PC의 Slack DM 수신을 중지할까요?" FontWeight="SemiBold" FontSize="12" />
+                                    <TextBlock x:Name="SlackDisconnectDetailText" Text="앱을 다시 실행해도 수신하지 않습니다. 암호화된 연결 정보는 보관하며 ‘다시 연결’로 재개할 수 있어요. Slack 앱의 권한 승인은 유지됩니다." Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,12" />
+                                    <WrapPanel>
+                                     <Button x:Name="SlackConfirmDisconnectButton" Content="수신 중지하기" Click="SlackConfirmDisconnectButton_Click" Margin="0,0,8,0" />
+                                     <Button Content="취소" Click="SlackCancelDisconnectButton_Click" />
+                                    </WrapPanel>
+                                   </StackPanel>
+                                  </Border>
+                                  <TextBlock x:Name="SlackConnectionFeedbackText" Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+                                 </StackPanel>
+                                </Border>
                                </StackPanel>
                               </Expander>
                             </Border>

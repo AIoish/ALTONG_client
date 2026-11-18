@@ -169,7 +169,11 @@ public sealed class WinRtNotificationListener : IWindowsNotificationListener
             }
 
             RawNotification raw = ExtractRawNotification(userNotification);
-            AppLogger.Info($"[WinRtNotificationListener] WinRT 알림 수신: {raw.AppName} - '{raw.Title}': '{raw.Body}'");
+            if (raw.AppName.Equals("Slack", StringComparison.OrdinalIgnoreCase)
+                || raw.AppName.Equals("Slack.exe", StringComparison.OrdinalIgnoreCase))
+                AppLogger.Info("[WinRtNotificationListener] [Windows 알림] Slack 토스트 수신");
+            else
+                AppLogger.Info($"[WinRtNotificationListener] WinRT 알림 수신: {raw.AppName} - '{raw.Title}': '{raw.Body}'");
             NotificationReceived?.Invoke(this, raw);
         }
         catch (Exception ex)

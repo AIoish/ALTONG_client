@@ -1,0 +1,6 @@
+{
+  "name": "altong-slack-test-slack",
+  "main": "./mock-slack.js",
+  "compatibility_date": "2026-11-18",
+  "workers_dev": false
+}

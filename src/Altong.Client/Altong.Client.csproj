@@ -22,12 +22,14 @@
     <EmbeddedResource Include="Assets\TrayIdle.ico" LogicalName="Altong.Client.Assets.TrayIdle.ico" />
     <EmbeddedResource Include="Assets\TrayFocus.ico" LogicalName="Altong.Client.Assets.TrayFocus.ico" />
     <None Include="Fonts\Pretendard-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="slack-service.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageReference Include="LLamaSharp" Version="0.27.0" />
     <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.27.0" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Altong.Slack.Contracts\Altong.Slack.Contracts.csproj" />
     <ProjectReference Include="..\..\integration\csharp\Altong.Filtering\Altong.Filtering.csproj" />
     <Compile Include="..\..\integration\csharp\ClientAdapter\KlueFilterEngine.cs"
              Link="Services\AI\Filtering\KlueFilterEngine.cs" />

@@ -1,4 +1,5 @@
 using Altong.Client.Data.Models;
+using Altong.Client.Models;
 using Altong.Client.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -12,6 +13,16 @@ public sealed class DockNotificationStateTests
         bool? passed = true, string? session = "current") => new(
         id, "KakaoTalk", "팀원", "회의 안내", "10분 뒤 회의를 시작합니다.", Received.AddMinutes(minute),
         passed, urgency, 4, "일정/회의", SessionId: session);
+
+    [TestMethod]
+    public void UrgencyBadge_DistinguishesUnassessedMessagesFromNormalScores()
+    {
+        foreach (int? score in new int?[] { null, 0, -1, 6 })
+            Assert.AreEqual("미평가", new DockNotificationItem(Record("unscored") with { UrgencyScore = score }).UrgencyText);
+        Assert.AreEqual("알림", new DockNotificationItem(Record("normal", urgency: 1)).UrgencyText);
+        Assert.AreEqual("중요", new DockNotificationItem(Record("important", urgency: 4)).UrgencyText);
+        Assert.AreEqual("긴급", new DockNotificationItem(Record("urgent", urgency: 5)).UrgencyText);
+    }
 
     [TestMethod]
     public void Receive_OnlyAcceptsUniquePassedRecordsForActiveSession()

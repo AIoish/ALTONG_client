@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Altong.Client\Altong.Client.csproj" />
+    <ProjectReference Include="..\..\src\Altong.Slack.Server\Altong.Slack.Server.csproj" />
   </ItemGroup>
 
 </Project>

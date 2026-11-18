@@ -71,7 +71,7 @@ public static class BriefingGrouping
             {
                 matching = new RuleGroup(
                     AppIdentity(notification.AppName),
-                    NormalizeIdentity(ModelSender(notification)),
+                    SenderKey(notification),
                     KakaoRoomKey(notification));
                 groups.Add(matching);
             }
@@ -107,6 +107,19 @@ public static class BriefingGrouping
     private static string? KakaoRoomKey(NotificationRecord notification) =>
         KakaoRoom(notification) is { } room ? NormalizeIdentity(room) : null;
 
+    private static string SenderKey(NotificationRecord notification)
+    {
+        // API identities survive profile renames and distinguish people with identical names.
+        // Keep human-readable names in the model input; this key is only for grouping.
+        if (AppIdentity(notification.AppName) == "slack")
+        {
+            var parts = notification.Id.Split(':');
+            if (parts.Length == 4 && parts[0] == "slack" && parts[1].Length > 0 && parts[2].Length > 0)
+                return string.Join(':', parts.Take(3));
+        }
+        return NormalizeIdentity(ModelSender(notification));
+    }
+
     private static HashSet<string> TextTokens(NotificationRecord notification)
     {
         var text = (KakaoRoomKey(notification) is not null
@@ -140,7 +153,7 @@ public static class BriefingGrouping
         public bool Accepts(NotificationRecord notification, HashSet<string> tokens)
         {
             if (AppIdentity(notification.AppName) != appKey) return false;
-            if (NormalizeIdentity(ModelSender(notification)) != senderKey) return false;
+            if (SenderKey(notification) != senderKey) return false;
             if (KakaoRoomKey(notification) != roomKey) return false;
             if (Items.Count == 0) return false;
             if (notification.ReceivedAt - Items[0].ReceivedAt > MaxGroupSpan) return false;

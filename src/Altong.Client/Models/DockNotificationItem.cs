@@ -20,7 +20,8 @@ public sealed class DockNotificationItem(NotificationRecord notification) : INot
     public string TimeText => Notification.ReceivedAt.ToLocalTime().ToString("HH:mm");
     public string ReceivedText => Notification.ReceivedAt.ToLocalTime().ToString("M월 d일 HH:mm");
     public int Urgency => Math.Clamp(Notification.UrgencyScore ?? 1, 1, 5);
-    public string UrgencyText => Urgency >= 5 ? "긴급" : Urgency >= 4 ? "중요" : "알림";
+    public string UrgencyText => Notification.UrgencyScore is not (>= 1 and <= 5) ? "미평가"
+        : Urgency >= 5 ? "긴급" : Urgency >= 4 ? "중요" : "알림";
     public bool IsRead { get; private set; }
     public string ReadText => IsRead ? "읽음" : "미확인";
 

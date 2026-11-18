@@ -10,7 +10,9 @@ using Altong.Client.Services;
 using Altong.Client.Services.Calendar;
 using Altong.Client.Services.Focus;
 using Altong.Client.Services.NotificationControl;
+using Altong.Client.Services.Notifications;
 using Color = System.Windows.Media.Color;
+using Brush = System.Windows.Media.Brush;
 
 namespace Altong.Client;
 
@@ -26,6 +28,9 @@ public partial class DashboardWindow : Window
     private readonly Action? _shutdownApplication;
     private readonly AutoDndSettingsStore? _autoDndSettings;
     private readonly StartupRegistration? _startupRegistration;
+    private readonly ISlackConnectionController? _slackConnection;
+    private bool _slackActionInProgress;
+    private (SlackConnectionPhase Phase, string Message)? _slackActionFeedback;
     private bool _settingsReady;
     public SessionResultsService Results { get; }
     private bool _dashboardDataLoading;
@@ -52,11 +57,13 @@ public partial class DashboardWindow : Window
         Action<string>? openCalendar = null,
         AutoDndSettingsStore? autoDndSettings = null,
         StartupRegistration? startupRegistration = null,
-        DashboardCalendarStore? calendar = null)
+        DashboardCalendarStore? calendar = null,
+        ISlackConnectionController? slackConnection = null)
     {
         Results = results;
         _autoDndSettings = autoDndSettings;
         _startupRegistration = startupRegistration;
+        _slackConnection = slackConnection;
         _focusSettings = focusSettings;
         _focusRoutine = focusRoutine;
         _activeWindowTracker = activeWindowTracker;
@@ -90,6 +97,7 @@ public partial class DashboardWindow : Window
         UpdateClock();
         AppVersionText.Text = $"ALTONG · {typeof(DashboardWindow).Assembly.GetName().Version}";
         UpdateLaunchAtStartupView();
+        UpdateSlackConnectionView();
         UpdateFocusModeView();
         SourceInitialized += (_, _) => FitToWorkArea();
         StateChanged += (_, _) =>
@@ -136,6 +144,7 @@ public partial class DashboardWindow : Window
     // Only presentation concerns belong here; session/DB/AI contracts remain unchanged.
     private void UpdateClock()
     {
+        UpdateSlackConnectionView();
         DashboardClockText.Text = DateTime.Now.ToString("HH:mm");
         DashboardDateText.Text = DateTime.Now.ToString("M월 d일 dddd");
         UpdateFocusTimerView();
@@ -157,6 +166,119 @@ public partial class DashboardWindow : Window
             DashboardTabs.SelectedIndex == 2 &&
             DateTime.UtcNow - _lastDashboardRefresh >= TimeSpan.FromSeconds(5))
             _ = RefreshDashboardDataAsync();
+    }
+
+    private void UpdateSlackConnectionView()
+    {
+        var connection = _slackConnection?.Current ?? new(SlackConnectionPhase.NotConnected);
+        bool connected = connection.Phase == SlackConnectionPhase.Connected;
+        bool approving = connection.Phase == SlackConnectionPhase.AwaitingApproval;
+        bool connecting = connection.Phase == SlackConnectionPhase.Connecting || approving;
+        bool oauth = _slackConnection?.UsesOAuth == true;
+        bool attention = connection.Phase == SlackConnectionPhase.NeedsAttention;
+        bool paused = connection.Phase == SlackConnectionPhase.Paused;
+        string status = connected ? "연결됨" : approving ? "승인 대기" : connecting ? "연결 중" : attention ? "연결 확인 필요" : paused ? "수신 중지" : "미연결";
+        SlackConnectionStatusText.Text = status;
+        System.Windows.Automation.AutomationProperties.SetItemStatus(AppConnectionsExpander,
+            connected ? "Slack 연결됨" : connecting ? "Slack 연결 중" : attention ? "연결 확인 필요" : paused ? "Slack 수신 중지" : "연결된 앱 없음");
+        SlackConnectionBadge.Background = (Brush)FindResource(connected ? "BlackSuccessSurface" : "BlackRaised");
+        SlackConnectionStatusText.Foreground = (Brush)FindResource(connected ? "BlackSuccess" : attention ? "BlackError" : "BlackMuted");
+        bool showAccount = !string.IsNullOrEmpty(connection.Account) || !string.IsNullOrEmpty(connection.Workspace);
+        SlackAccountPanel.Visibility = showAccount ? Visibility.Visible : Visibility.Collapsed;
+        SlackAccountText.Text = string.IsNullOrEmpty(connection.Account) ? "확인 중" : connection.Account;
+        SlackWorkspaceText.Text = string.IsNullOrEmpty(connection.Workspace) ? "확인 중" : connection.Workspace;
+        SlackConnectionHintText.Text = connected ? "새로 도착하는 1:1 DM을 수신합니다."
+            : approving ? "브라우저에서 Slack 승인을 마치면 자동으로 연결됩니다."
+            : connecting ? "Slack에 연결하고 있어요. 잠시만 기다려 주세요."
+            : attention ? "Slack 수신이 중지됐어요. 연결을 다시 확인해 주세요."
+            : paused ? "이 PC의 DM 수신을 중지했어요. 저장된 연결 정보로 다시 연결할 수 있습니다."
+            : "연결하면 새로 도착하는 1:1 DM을 수신합니다.";
+        SlackConnectButton.Content = attention || paused ? "다시 연결" : connecting ? "연결 중…" : "Slack 연결";
+        SlackConnectButton.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
+        SlackConnectButton.IsEnabled = !connecting && !_slackActionInProgress;
+        SlackDisconnectButton.Visibility = connected || connecting || attention ? Visibility.Visible : Visibility.Collapsed;
+        SlackDisconnectButton.IsEnabled = !_slackActionInProgress;
+        SlackConfirmDisconnectButton.IsEnabled = !_slackActionInProgress;
+        SlackDisconnectButton.Content = oauth ? approving ? "연결 취소" : "연결 해제" : "수신 중지";
+        SlackConfirmDisconnectButton.Content = oauth ? approving ? "승인 요청 취소" : "연결 해제하기" : "수신 중지하기";
+        SlackDisconnectTitleText.Text = oauth
+            ? approving ? "Slack 승인 요청을 취소할까요?" : "이 PC의 Slack 연결을 해제할까요?"
+            : "이 PC의 Slack DM 수신을 중지할까요?";
+        SlackDisconnectDetailText.Text = oauth
+            ? approving ? "브라우저에서 진행 중인 Slack 승인을 취소합니다."
+                : "이 PC의 Slack DM 수신을 중지합니다. 다시 연결하려면 Slack에서 승인해 주세요."
+            : "앱을 다시 실행해도 수신하지 않습니다. 암호화된 연결 정보는 보관하며 ‘다시 연결’로 재개할 수 있어요. Slack 앱의 권한 승인은 유지됩니다.";
+        if (connection.Phase is SlackConnectionPhase.NotConnected or SlackConnectionPhase.Paused)
+            SlackDisconnectConfirmation.Visibility = Visibility.Collapsed;
+        if (_slackActionFeedback is { } actionFeedback && actionFeedback.Phase != connection.Phase)
+            _slackActionFeedback = null;
+        var feedback = _slackActionFeedback?.Message
+            ?? (connected || _slackActionInProgress || SlackDisconnectConfirmation.Visibility == Visibility.Visible
+                ? null : _slackConnection?.Feedback);
+        SlackConnectionFeedbackText.Text = feedback ?? "";
+        SlackConnectionFeedbackText.Visibility = string.IsNullOrEmpty(feedback) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private async void SlackConnectButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_slackActionInProgress) return;
+        _slackActionInProgress = true;
+        _slackActionFeedback = null;
+        SlackDisconnectConfirmation.Visibility = Visibility.Collapsed;
+        UpdateSlackConnectionView();
+        try
+        {
+            if (_slackConnection is null || !await _slackConnection.ConnectAsync())
+                SetSlackActionFeedback(_slackConnection?.Feedback ?? "Slack 연결 서비스를 사용할 수 없어요. 잠시 후 다시 시도해 주세요.");
+        }
+        catch { SetSlackActionFeedback("Slack 연결을 시작하지 못했어요. 잠시 후 다시 시도해 주세요."); }
+        finally
+        {
+            _slackActionInProgress = false;
+            if (!_isClosed) UpdateSlackConnectionView();
+        }
+    }
+
+    private void SlackDisconnectButton_Click(object sender, RoutedEventArgs e)
+    {
+        _slackActionFeedback = null;
+        SlackDisconnectConfirmation.Visibility = Visibility.Visible;
+        UpdateSlackConnectionView();
+    }
+
+    private void SlackCancelDisconnectButton_Click(object sender, RoutedEventArgs e)
+    {
+        SlackDisconnectConfirmation.Visibility = Visibility.Collapsed;
+        UpdateSlackConnectionView();
+    }
+
+    private async void SlackConfirmDisconnectButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_slackActionInProgress || _slackConnection is null) return;
+        _slackActionInProgress = true;
+        _slackActionFeedback = null;
+        UpdateSlackConnectionView();
+        bool wasApproving = _slackConnection.Current.Phase == SlackConnectionPhase.AwaitingApproval;
+        try
+        {
+            await _slackConnection.DisconnectAsync();
+            SlackDisconnectConfirmation.Visibility = Visibility.Collapsed;
+            SetSlackActionFeedback(_slackConnection.UsesOAuth
+                ? wasApproving ? "Slack 승인 요청을 취소했어요." : "이 PC의 Slack 연결을 해제했어요."
+                : "이 PC의 Slack DM 수신을 중지했어요. 다시 연결하면 수신을 재개합니다.");
+        }
+        catch { SetSlackActionFeedback("수신을 중지하지 못했어요. 다시 시도해 주세요."); }
+        finally
+        {
+            _slackActionInProgress = false;
+            if (!_isClosed) UpdateSlackConnectionView();
+        }
+    }
+
+    private void SetSlackActionFeedback(string message)
+    {
+        if (_isClosed) return;
+        _slackActionFeedback = (_slackConnection?.Current.Phase ?? SlackConnectionPhase.NotConnected, message);
     }
 
     private void UpdateFocusTimerView()
