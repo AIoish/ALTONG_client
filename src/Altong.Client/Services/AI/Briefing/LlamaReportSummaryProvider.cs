@@ -19,19 +19,16 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
 {
     private readonly INotificationRepository _notifications;
     private readonly LlamaBriefingEngine _engine;
-    private readonly GemmaBriefingClient? _gemma;
     private readonly Func<DateTime> _nowProvider;
     private readonly ConcurrentDictionary<string, Lazy<Task<ReportSummarySupply>>> _sessionTaskCache = new(StringComparer.Ordinal);
 
     public LlamaReportSummaryProvider(
         INotificationRepository notifications,
         string modelPath,
-        Func<DateTime>? nowProvider = null,
-        int? gemmaPort = null)
+        Func<DateTime>? nowProvider = null)
     {
         _notifications = notifications;
         _engine = new LlamaBriefingEngine(modelPath);
-        _gemma = gemmaPort is int port ? new GemmaBriefingClient(port) : null;
         _nowProvider = nowProvider ?? (() => DateTime.Now);
     }
 
@@ -110,7 +107,7 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
 
         // 2. AI 레포와 같은 규칙(앱·발신자·카카오톡 방·30분·대화 연결)으로 묶고,
         //    모델 학습 범위(그룹당 7개)나 문맥을 넘는 그룹은 시간 순서대로 고르게 나눈다.
-        using var session = _gemma is null ? await _engine.OpenSessionAsync(cancellationToken).ConfigureAwait(false) : null;
+        using var session = await _engine.OpenSessionAsync(cancellationToken).ConfigureAwait(false);
         var chunks = BriefingGrouping.Group(blocked)
             .SelectMany(group =>
             {
@@ -141,9 +138,7 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
             string primaryCategory;
 
             // 3. AI 모델 호출 (가능한 경우) 또는 Fallback
-            var aiOutput = _gemma is not null
-                ? await _gemma.SummarizeAsync(appName, BriefingGrouping.ModelSender(first), groupNotifications, cancellationToken).ConfigureAwait(false)
-                : session is null
+            var aiOutput = session is null
                 ? null
                 : await session.SummarizeAsync(appName, BriefingGrouping.ModelSender(first), groupNotifications,
                     maxSummaryLines: 3, cancellationToken).ConfigureAwait(false);
@@ -203,9 +198,5 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
         return $"{prefix}-{Convert.ToHexString(hash)[..12].ToLowerInvariant()}";
     }
 
-    public void Dispose()
-    {
-        _gemma?.Dispose();
-        _engine.Dispose();
-    }
+    public void Dispose() => _engine.Dispose();
 }
