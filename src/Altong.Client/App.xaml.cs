@@ -183,9 +183,13 @@ public partial class App : System.Windows.Application
 
         var briefingModelPath = Path.Combine(AppContext.BaseDirectory,
             "models", "briefing", "qwen_briefing_v8_q8_0.gguf");
+        int? gemmaPort = int.TryParse(Environment.GetEnvironmentVariable("ALTONG_GEMMA_PORT"), out var port)
+            && port is > 0 and <= 65535 ? port : null;
+        if (gemmaPort is not null)
+            AppLogger.Info($"[Briefing] Gemma local server configured on port {gemmaPort}");
         _reportSummaryProvider = new LlamaReportSummaryProvider(
             NotificationRepository,
-            briefingModelPath);
+            briefingModelPath, gemmaPort: gemmaPort);
 
         IFilterEngine filterEngine = _klueFilterEngine;
         NotificationPipeline = new NotificationPipelineCoordinator(

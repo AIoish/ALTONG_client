@@ -31,7 +31,7 @@ public static class BriefingScheduleExtractor
         RegexOptions.Compiled);
 
     private static readonly Regex TimeRangePattern = new(
-        @"(?:(?<startAmpm>오전|오후|낮|밤|새벽)\s*)?(?<startHour>\d{1,2})(?:시(?:\s*(?<startMin>\d{1,2})분)?|:(?<startMin>\d{2}))\s*(?:~|-|부터)\s*(?:(?<endAmpm>오전|오후|낮|밤|새벽)\s*)?(?<endHour>\d{1,2})(?:시(?:\s*(?<endMin>\d{1,2})분)?|:(?<endMin>\d{2}))(?:까지)?",
+        @"(?:(?<startAmpm>오전|오후|낮|밤|새벽)\s*)?(?<startHour>\d{1,2})(?:시(?:\s*(?:(?<startMin>\d{1,2})분|(?<startHalf>반)))?|:(?<startMin>\d{2}))\s*(?:~|-|부터)\s*(?:(?<endAmpm>오전|오후|낮|밤|새벽)\s*)?(?<endHour>\d{1,2})(?:시(?:\s*(?:(?<endMin>\d{1,2})분|(?<endHalf>반)))?|:(?<endMin>\d{2}))(?:까지)?",
         RegexOptions.Compiled);
 
     private static readonly Regex LeadingModifierTokenPattern = new(
@@ -159,7 +159,7 @@ public static class BriefingScheduleExtractor
 
         for (int i = 0; i < prioritizedSources.Count; i++)
         {
-            var (start, end, isExplicitRange) = TryParseTimeOnDate(prioritizedSources[i], resolvedDate);
+            var (start, end, isExplicitRange) = TryParseTimeOnDate(prioritizedSources[i], resolvedDate, refLocalDate);
             if (start.HasValue)
             {
                 if (!isExplicitRange)
@@ -167,7 +167,7 @@ public static class BriefingScheduleExtractor
                     // 요약문에 시작 시각("오후 2시")만 축약되어 있고 원문 알림에 범위("오후 2시~4시")가 있는 경우 보완
                     for (int j = i + 1; j < prioritizedSources.Count; j++)
                     {
-                        var (rangeStart, rangeEnd, hasRange) = TryParseTimeOnDate(prioritizedSources[j], resolvedDate);
+                        var (rangeStart, rangeEnd, hasRange) = TryParseTimeOnDate(prioritizedSources[j], resolvedDate, refLocalDate);
                         if (hasRange && rangeStart == start)
                         {
                             return (rangeStart, rangeEnd);
@@ -243,13 +243,15 @@ public static class BriefingScheduleExtractor
         return null;
     }
 
-    private static (DateTime? Start, DateTime? End, bool IsExplicitRange) TryParseTimeOnDate(string text, DateTime baseDate)
+    private static (DateTime? Start, DateTime? End, bool IsExplicitRange) TryParseTimeOnDate(string text, DateTime baseDate, DateTime referenceDate)
     {
         // 4. 시간 범위 파싱 (오후 2시~4시, 오전 10:00~11:30, 14시~16시 등)
         var rangeMatches = TimeRangePattern.Matches(text);
         if (rangeMatches.Count > 0)
         {
             var rangeMatch = rangeMatches[^1];
+            // Bind the date preceding this range before considering dates mentioned later.
+            baseDate = TryParseDate(text[..rangeMatch.Index], referenceDate) ?? baseDate;
             int startH = int.Parse(rangeMatch.Groups["startHour"].Value, CultureInfo.InvariantCulture);
             int startM = rangeMatch.Groups["startMin"].Success && !string.IsNullOrEmpty(rangeMatch.Groups["startMin"].Value)
                 ? int.Parse(rangeMatch.Groups["startMin"].Value, CultureInfo.InvariantCulture)
@@ -258,6 +260,9 @@ public static class BriefingScheduleExtractor
             int endM = rangeMatch.Groups["endMin"].Success && !string.IsNullOrEmpty(rangeMatch.Groups["endMin"].Value)
                 ? int.Parse(rangeMatch.Groups["endMin"].Value, CultureInfo.InvariantCulture)
                 : 0;
+
+            if (rangeMatch.Groups["startHalf"].Success) startM = 30;
+            if (rangeMatch.Groups["endHalf"].Success) endM = 30;
 
             string startAmpm = rangeMatch.Groups["startAmpm"].Value;
             string endAmpm = rangeMatch.Groups["endAmpm"].Value;
