@@ -15,8 +15,8 @@ public sealed record BriefingRawOutput(
     [property: JsonPropertyName("summary_lines")] IReadOnlyList<string> SummaryLines);
 
 /// <summary>
-/// Qwen 0.6B Q8_0 GGUF 모델을 구동하는 C# 세션 브리핑 추론 엔진.
-/// BriefingPromptBuilder를 통해 AI 레포와 동일한 ChatML 규격으로 추론하고,
+/// GGUF 요약 모델(현재 Gemma 4 E2B)을 구동하는 C# 세션 브리핑 추론 엔진.
+/// 대화 형식은 모델의 general.architecture로 고르고(BriefingPromptBuilder),
 /// 응답은 AI 레포 category_prompt.parse_response와 같은 기준으로만 받아들인다.
 /// </summary>
 public sealed class LlamaBriefingEngine : IDisposable
@@ -26,17 +26,37 @@ public sealed class LlamaBriefingEngine : IDisposable
     public const int MaxNewTokens = 256;
 
     private readonly string _modelPath;
+    private readonly int _gpuLayerCount;
     private LLamaWeights? _weights;
     private ModelParams? _parameters;
     private readonly SemaphoreSlim _inferenceGate = new(1, 1);
     private bool _disposed;
 
-    public LlamaBriefingEngine(string modelPath)
+    /// <param name="gpuLayerCount">GPU로 올릴 층 수. 0이면 CPU만 쓴다. GPU 백엔드가 없거나 장치가 없으면 CPU로 돈다.</param>
+    public LlamaBriefingEngine(string modelPath, int gpuLayerCount = 0)
     {
         _modelPath = modelPath;
+        _gpuLayerCount = gpuLayerCount;
     }
 
     public bool IsModelAvailable => File.Exists(_modelPath);
+
+    /// <summary>
+    /// 네이티브 llama.cpp 라이브러리를 고른다. 첫 LLama 호출 전에 한 번 부른다.
+    /// GPU를 쓰면 Vulkan 라이브러리, 아니면 CPU 라이브러리를 쓰고, Vulkan을 불러오지 못하면 CPU로 넘어간다.
+    /// </summary>
+    public static void ConfigureNativeLibrary(bool useGpu)
+    {
+        try
+        {
+            NativeLibraryConfig.All.WithCuda(false).WithVulkan(useGpu).WithAutoFallback(true);
+        }
+        catch (Exception ex)
+        {
+            // 이미 라이브러리를 불러온 뒤라면 설정을 바꿀 수 없다. 요약은 불러온 라이브러리로 계속한다.
+            AppLogger.Warn($"[LlamaBriefingEngine] 네이티브 라이브러리 설정을 건너뜁니다: {ex.Message}");
+        }
+    }
 
     public Task<BriefingRawOutput?> SummarizeNotificationGroupAsync(
         string appName,
@@ -79,11 +99,14 @@ public sealed class LlamaBriefingEngine : IDisposable
             _parameters ??= new ModelParams(ResolveNativeModelPath(_modelPath))
             {
                 ContextSize = ContextSize,
-                GpuLayerCount = 0 // CPU 고속 구동 기본
+                GpuLayerCount = _gpuLayerCount
             };
             _weights ??= LLamaWeights.LoadFromFile(_parameters);
+            var template = BriefingPromptBuilder.TemplateForArchitecture(
+                _weights.Metadata.TryGetValue("general.architecture", out var architecture) ? architecture : null);
+            AppLogger.Info($"[LlamaBriefingEngine] 요약 모델 준비: {Path.GetFileName(_modelPath)}, 형식 {template}, GPU 층 {_gpuLayerCount}");
 
-            var session = await BriefingSession.CreateAsync(_weights, _parameters, CloseSession, ct).ConfigureAwait(false);
+            var session = await BriefingSession.CreateAsync(_weights, _parameters, template, CloseSession, ct).ConfigureAwait(false);
             handedOver = true;
             return session;
         }
@@ -222,37 +245,40 @@ public sealed class BriefingSession : IDisposable
     private readonly Conversation _root;
     private readonly int _prefixTokenCount;
     private readonly HashSet<LLamaToken> _stopTokens;
+    private readonly BriefingChatTemplate _template;
     private readonly Action _onClosed;
     private bool _disposed;
 
     private BriefingSession(BatchedExecutor executor, Conversation root, int prefixTokenCount,
-        HashSet<LLamaToken> stopTokens, Action onClosed)
+        HashSet<LLamaToken> stopTokens, BriefingChatTemplate template, Action onClosed)
     {
         _executor = executor;
         _root = root;
         _prefixTokenCount = prefixTokenCount;
         _stopTokens = stopTokens;
+        _template = template;
         _onClosed = onClosed;
     }
 
     internal static async Task<BriefingSession> CreateAsync(
-        LLamaWeights weights, ModelParams parameters, Action onClosed, CancellationToken ct)
+        LLamaWeights weights, ModelParams parameters, BriefingChatTemplate template, Action onClosed, CancellationToken ct)
     {
         var executor = new BatchedExecutor(weights, parameters);
         Conversation? root = null;
         try
         {
             var prefix = executor.Context.Tokenize(
-                BriefingPromptBuilder.RenderChatMlPrefix(BriefingPromptBuilder.SystemPrompt), false, true);
+                BriefingPromptBuilder.RenderPrefix(template, BriefingPromptBuilder.SystemPrompt),
+                BriefingPromptBuilder.AddBos(template), true);
             root = executor.Create();
             root.Prompt(prefix);
             await DrainAsync(executor, ct).ConfigureAwait(false);
 
             var stopTokens = new HashSet<LLamaToken>();
-            foreach (var marker in new[] { "<|im_end|>", "<|endoftext|>", "<|im_start|>" })
+            foreach (var marker in BriefingPromptBuilder.StopMarkers(template))
                 stopTokens.UnionWith(executor.Context.Tokenize(marker, false, true));
 
-            return new BriefingSession(executor, root, prefix.Length, stopTokens, onClosed);
+            return new BriefingSession(executor, root, prefix.Length, stopTokens, template, onClosed);
         }
         catch
         {
@@ -330,7 +356,7 @@ public sealed class BriefingSession : IDisposable
                 Body: n.Body ?? string.Empty))
             .ToList();
         var userPrompt = BriefingPromptBuilder.BuildUserPrompt(appName, sender, promptItems, maxSummaryLines);
-        return _executor.Context.Tokenize(BriefingPromptBuilder.RenderChatMlSuffix(userPrompt), false, true);
+        return _executor.Context.Tokenize(BriefingPromptBuilder.RenderSuffix(_template, userPrompt), false, true);
     }
 
     private static async Task DrainAsync(BatchedExecutor executor, CancellationToken ct)

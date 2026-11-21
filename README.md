@@ -18,7 +18,7 @@
 - **맥락 기반 알림 필터링**: 활성 창(프로세스·제목)과 알림을 KLUE 판별 모델로 함께 평가합니다. 긴급도(1~5)가 4 이상이거나 관련도(1~3)가 3(지금 작업과 관련 있음)이면 통과합니다.
 - **카카오톡 알림 처리**: Windows 알림 외에 카카오톡 팝업도 숨긴 뒤 OCR로 내용을 읽어 같은 방식으로 판단합니다.
 - **상단 노치 + 알림 패널**: 화면 맨 위 띠 가운데 노치에 상태를 표시하고, 마우스를 올리면 노치가 아래로 늘어나 알림 목록이 펼쳐집니다.
-- **세션 리포트·브리핑**: 집중을 마치면 로컬 Qwen 모델이 차단된 알림을 요약하고 일정을 뽑습니다. 일정은 구글 캘린더 등록 링크로 연결됩니다.
+- **세션 리포트·브리핑**: 집중을 마치면 로컬 Gemma 4 E2B 모델이 차단된 알림을 요약하고 일정을 뽑습니다. 메모리가 넉넉한 PC에서는 그래픽칩(GPU)으로 더 빠르게 돌립니다. 일정은 구글 캘린더 등록 링크로 연결됩니다.
 - **대시보드**: 알림 기록(통과/차단), 시간대별 활동 일지, 앱별 집중 시간, 리포트 캘린더, 집중·휴식 루틴 설정을 제공합니다.
 - **로컬 실행**: 알림 내용과 창 제목을 외부로 보내지 않습니다. Python 없이 C# 프로세스 안에서 모델을 실행합니다.
 
@@ -31,7 +31,7 @@ flowchart LR
     P --> F["KLUE 필터<br/>ONNX Runtime"]
     F -->|통과| UI["상단 노치 · 알림 패널"]
     F -->|차단| DB[(SQLite)]
-    DB --> B["브리핑<br/>Qwen GGUF · LLamaSharp"]
+    DB --> B["브리핑<br/>Gemma 4 GGUF · LLamaSharp"]
     B --> R["세션 리포트 · 대시보드"]
 ```
 
@@ -45,7 +45,7 @@ flowchart LR
 | UI | WPF (+ WinForms 트레이) |
 | OS 연동 | Win32 `User32`, WinRT `UserNotificationListener`, Windows OCR |
 | 실시간 필터 | KLUE base 판별 모델, `Microsoft.ML.OnnxRuntime` |
-| 브리핑 | Qwen LoRA (GGUF Q8_0), `LLamaSharp` |
+| 브리핑 | Gemma 4 E2B (GGUF Q4_0), `LLamaSharp` (CPU, Vulkan GPU) |
 | 저장소 | SQLite (`Microsoft.Data.Sqlite`, WAL) |
 | 테스트 / CI | xUnit, GitHub Actions (Windows) |
 
@@ -65,7 +65,7 @@ powershell -ExecutionPolicy Bypass -File tools/download-models.ps1
 | 모델 | 위치 | 출처 |
 | :--- | :--- | :--- |
 | 필터 (KLUE, filtering-v3, 약 440MB) | `models/filtering/klue-base-safety-v1/model-fp32.onnx` | ALTONG_ai 릴리즈 `filtering-v3` |
-| 요약 (Qwen v8 Q8, 약 640MB) | `models/briefing/qwen_briefing_v8_q8_0.gguf` | ALTONG_ai 릴리즈 `briefing-v8-q8-mvp` |
+| 요약 (Gemma 4 E2B Q4_0, 약 2.8GB) | `models/briefing/gemma-4-E2B-it-Q4_0.gguf` | ggml-org [gemma-4-E2B-it-GGUF](https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF), Apache 2.0 |
 | 카카오톡 팝업 OCR (13MB) | `models/ocr/ppocr-v5-ko/korean_PP-OCRv5_mobile_rec.onnx` | PaddlePaddle 공식 [korean_PP-OCRv5_mobile_rec_onnx](https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx), Apache 2.0 |
 
 - 필터 모델이 `manifest.json`의 해시와 다르면 앱은 필터를 끄고 모든 알림을 통과시킵니다. 화면에는 오류가 보이지 않으니 모델 변경 공지가 오면 꼭 다시 실행하세요.
@@ -115,7 +115,7 @@ powershell -ExecutionPolicy Bypass -File tools/build-installer.ps1 -Version 1.0.
 ALTONG_client/
 ├── src/Altong.Client/          # WPF 메인 앱 (Services, Data, Models, 화면)
 ├── integration/csharp/         # KLUE 필터 추론 라이브러리와 앱 어댑터
-├── models/                     # filtering(KLUE ONNX), briefing(Qwen GGUF, gitignore)
+├── models/                     # filtering(KLUE ONNX), briefing(Gemma GGUF), ocr — 모델 파일은 gitignore
 ├── tests/Altong.Client.Tests/  # xUnit 테스트
 ├── tools/                      # MockGenerator, 패키징·캘린더 테스트 스크립트
 ├── packaging/                  # Sparse package (알림 권한용)

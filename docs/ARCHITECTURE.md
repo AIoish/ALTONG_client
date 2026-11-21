@@ -16,7 +16,7 @@
 | 통과 규칙 | 긴급도 1순위 → 보통이면 연관도 2순위 | 한 모델로 긴급도(1~5)와 관련도를 낸 뒤 긴급도 4 이상이거나 관련도가 가장 높은 단계면 통과. 관련도 단계는 manifest의 `relevance_score_to_app`을 따르며 filtering-v3는 1~3(통과 3), 대응표가 없는 예전 모델은 1~5(통과 4). 그 이전에 저장된 기록의 관련도는 1~5 | `KlueFilter.cs` (`RelevanceScale`) |
 | 모델 실패 시 | (언급 없음) | 로딩 실패·2초 시간 초과 시 알림을 통과시킴 (fail-open, 점수 0 = 미평가) | `KlueFilterEngine.cs` |
 | 필터 결과 `category` | "긴급 업무" 등 분류 | 항상 `"미분류"` 또는 `"판정 실패"` | `KlueFilterEngine.cs` |
-| 요약·브리핑 모델 | 클라우드 LLM (Gemini 2.0 Flash / GPT-4o-mini) | 로컬 Qwen GGUF (`qwen_briefing_v8_q8_0.gguf`), `LLamaSharp` 0.27.0. 클라우드 호출 없음 | `Services/AI/Briefing/` |
+| 요약·브리핑 모델 | 클라우드 LLM (Gemini 2.0 Flash / GPT-4o-mini) | 로컬 Gemma 4 E2B GGUF (`gemma-4-E2B-it-Q4_0.gguf`, ggml-org), `LLamaSharp` 0.27.0. 대화 형식은 모델의 `general.architecture`로 고르고(gemma4 → Gemma 4, 그 밖 → Qwen ChatML), RAM 12GB 이상이면 Vulkan GPU 사용(`ALTONG_BRIEFING_GPU=0/1`로 강제). 클라우드 호출 없음 | `Services/AI/Briefing/` |
 | 알림 수집 | WinRT `UserNotificationListener` | WinRT + 카카오톡 인터셉터(Win32 창 숨김 + 팝업 그림에서 글자 줄을 픽셀로 찾아 PP-OCR로 읽기, 모델이 없으면 Windows OCR, 개발 빌드 전용)를 `CompositeNotificationListener`로 결합. Mock용 `LocalPipeNotificationListener` 별도 | `Services/Notifications/` |
 | Windows 방해 금지 | 집중 시작 시 앱이 켬 | 앱이 직접 켜지 않음. 설정 화면을 열어 안내하고, 관찰한 DND 상태를 앱 상태에 반영 | `FocusModeCoordinator.cs`, `WindowsNotificationModeObserver.cs` |
 | 집중 OFF일 때 | (언급 없음) | 필터는 실행하지만 `IsPassed = null`, DB에 저장하지 않음 | `NotificationPipelineCoordinator.cs` |
@@ -37,7 +37,7 @@ flowchart LR
     F -->|"집중 ON · 차단"| DB[(SQLite)]
     F -->|"집중 OFF"| N["일반 수신 · 미저장"]
     UI --> DB
-    DB --> B["LlamaReportSummaryProvider<br/>Qwen GGUF · LLamaSharp"]
+    DB --> B["LlamaReportSummaryProvider<br/>Gemma 4 GGUF · LLamaSharp"]
     B --> R["SessionReportWindow · 대시보드"]
     FC[FocusModeCoordinator] <-->|DND 상태 관찰| OS[Windows 방해 금지]
     FC --> FS[FocusModeService]

@@ -12,7 +12,7 @@ using Altong.Client.Services.Notifications;
 namespace Altong.Client.Services.AI.Briefing;
 
 /// <summary>
-/// Qwen GGUF 온디바이스 SLM 엔진을 이용해 세션 차단 알림의 핵심 요약과 추천 일정을 제공하는 IReportSummaryProvider 구현체.
+/// GGUF 온디바이스 요약 모델(현재 Gemma 4 E2B)로 세션 중 놓친 알림의 핵심 요약과 추천 일정을 제공하는 IReportSummaryProvider 구현체.
 /// 결정론적 ID(Deterministic SHA256) 생성과 세션별 비동기 작업 캐싱을 통해 안정성을 보장합니다.
 /// </summary>
 public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDisposable
@@ -25,10 +25,11 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
     public LlamaReportSummaryProvider(
         INotificationRepository notifications,
         string modelPath,
-        Func<DateTime>? nowProvider = null)
+        Func<DateTime>? nowProvider = null,
+        int gpuLayerCount = 0)
     {
         _notifications = notifications;
-        _engine = new LlamaBriefingEngine(modelPath);
+        _engine = new LlamaBriefingEngine(modelPath, gpuLayerCount);
         _nowProvider = nowProvider ?? (() => DateTime.Now);
     }
 

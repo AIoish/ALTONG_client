@@ -25,6 +25,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageReference Include="LLamaSharp" Version="0.27.0" />
     <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.27.0" />
+    <PackageReference Include="LLamaSharp.Backend.Vulkan" Version="0.27.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -36,8 +37,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
-    <Content Include="..\..\models\briefing\**\*">
-      <Link>models\briefing\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    <!-- 요약 모델은 앱이 쓰는 파일 하나만 복사한다. 예전 모델이 폴더에 남아 있어도 설치 파일에 묶이지 않는다. -->
+    <Content Include="..\..\models\briefing\gemma-4-E2B-it-Q4_0.gguf"
+             Condition="Exists('..\..\models\briefing\gemma-4-E2B-it-Q4_0.gguf')">
+      <Link>models\briefing\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

@@ -13,7 +13,7 @@ using LLama.Sampling;
 
 // 요약 모델(GGUF)을 앱과 같은 조건(LLamaSharp, 앱 프롬프트, 앱 묶기·나누기, 앱 응답 검사)으로 평가한다.
 // 사용법: dotnet run --project tools/Altong.BriefingBench -- <model.gguf> [<model2.gguf> ...] [--template app|gemma4] [--cases <cases.json>] [--out <dir>]
-//   --template app    (기본) 앱의 LlamaBriefingEngine을 그대로 사용한다 (Qwen ChatML 형식).
+//   --template app    (기본) 앱의 LlamaBriefingEngine을 그대로 사용한다 (대화 형식은 모델 정보로 자동 선택, CPU).
 //   --template gemma4 바탕 모델 비교용. 앱과 같은 지시문·입력을 Gemma 4 대화 형식으로만 바꿔 넣는다.
 // 모델 경로는 저장소 루트 기준 상대 경로 또는 한글이 없는 절대 경로를 쓴다. 한글 경로는 llama.cpp가 열지 못할 수 있다.
 // 메모리는 프로세스 최대 사용량이라, 모델별로 정확히 재려면 모델 하나씩 따로 실행한다.

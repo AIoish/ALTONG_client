@@ -7,9 +7,11 @@
 
 | 트랙 | 모델 | 런타임 | 파일 위치 | 비고 |
 | :--- | :--- | :--- | :--- | :--- |
-| Track 1 실시간 필터 | KLUE base 안전 보강 판별 모델 (FP32 ONNX, 약 440MB) | `Microsoft.ML.OnnxRuntime` 1.31.0 (`Altong.Filtering`) | `models/filtering/klue-base-safety-v1/` | manifest의 SHA256으로 확인 후 로딩 |
-| Track 2 세션 브리핑 | Qwen LoRA 병합 GGUF (`qwen_briefing_v8_q8_0.gguf`) | `LLamaSharp` 0.27.0 (CPU) | `models/briefing/` (gitignore) | GitHub Release `briefing-v8-q8-mvp`에서 받음 |
-| 카카오톡 팝업 OCR (개발 빌드 전용) | PP-OCRv5 한국어 모바일 인식 모델 (ONNX, 13MB, Apache 2.0) | `Microsoft.ML.OnnxRuntime` (`PaddleOcrLineRecognizer`) | `models/ocr/ppocr-v5-ko/` (onnx는 gitignore, 사전은 포함) | Hugging Face `PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx`의 `inference.onnx`. 받는 명령은 README '모델 준비' 참고. 없으면 Windows OCR로 대신 읽음 |
+| Track 1 실시간 필터 | KLUE 판별 모델 filtering-v3 (FP32 ONNX, 약 440MB, 긴급도 1~5·관련도 1~3) | `Microsoft.ML.OnnxRuntime` 1.31.0 (`Altong.Filtering`) | `models/filtering/klue-base-safety-v1/` | manifest의 SHA256으로 확인 후 로딩, 관련도 단계는 manifest 대응표를 따름 |
+| Track 2 세션 브리핑 | Gemma 4 E2B Q4_0 GGUF (`gemma-4-E2B-it-Q4_0.gguf`, ggml-org, Apache 2.0, 약 2.8GB) | `LLamaSharp` 0.27.0 (CPU, RAM 12GB 이상이면 Vulkan GPU) | `models/briefing/` (gitignore) | 학습 없이 앱 지시문으로 사용. 대화 형식은 모델 정보로 고름 |
+| 카카오톡 팝업 OCR (개발 빌드 전용) | PP-OCRv5 한국어 모바일 인식 모델 (ONNX, 13MB, Apache 2.0) | `Microsoft.ML.OnnxRuntime` (`PaddleOcrLineRecognizer`) | `models/ocr/ppocr-v5-ko/` (onnx는 gitignore, 사전은 포함) | Hugging Face `PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx`의 `inference.onnx`. 없으면 Windows OCR로 대신 읽음 |
+
+모델 파일은 저장소 루트에서 `powershell -ExecutionPolicy Bypass -File tools/download-models.ps1`로 받습니다 (README '모델 준비').
 
 > [!WARNING]
 > 아래 원문 중 현재 구현과 다른 부분:
@@ -352,8 +354,8 @@ public sealed class LlamaBriefingService : IDisposable
 > - **3단계 (P1 - 일정 추출기): 대기 ⏳**
 >
 > ⚠️ **노트북 이전 시 주의사항:**
-> `models/briefing/qwen_briefing_v8_q8_0.gguf` 모델 파일은 `.gitignore` 대상이므로 Git으로 넘어가지 않습니다.  
-> 노트북에서 `git pull` 후 `models/briefing/` 폴더에 모델 파일을 수동 복사하거나 GitHub Release(`briefing-v8-q8-mvp`)에서 다운로드해 넣어야 실 모델 테스트가 동작합니다.
+> 모델 파일은 `.gitignore` 대상이므로 Git으로 넘어가지 않습니다.  
+> 다른 PC에서는 `git pull` 후 `tools/download-models.ps1`을 실행해야 실 모델 테스트가 동작합니다.
 
 ### 목표
 [검토 리포트](file:///C:/Users/kdjkd/.gemini/antigravity-ide/brain/ba8cbeb4-dcb4-4f3c-9cd7-08c7ad59d1f9/ai_integration_review.md)에서 찾은 P0·P1 이슈를 고칩니다. **각 단계는 따로 끝낼 수 있고**, 단계가 끝날 때마다 `dotnet build`와 `dotnet test`가 통과해야 다음으로 넘어갑니다.
