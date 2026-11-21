@@ -79,8 +79,9 @@ public sealed class SingleInstanceServiceTests
         })!;
         try
         {
+            // 깨끗한 CI 서버에서는 PowerShell 첫 실행이 10초를 넘기도 한다. 준비되면 바로 진행하므로 넉넉히 기다린다.
             Assert.AreEqual("ready", process.StandardOutput.ReadLineAsync()
-                .WaitAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult());
+                .WaitAsync(TimeSpan.FromSeconds(60)).GetAwaiter().GetResult());
             using (var secondary = new SingleInstanceService(key))
             {
                 Assert.IsFalse(secondary.IsPrimary);
