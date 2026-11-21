@@ -181,11 +181,17 @@ public partial class App : System.Windows.Application
             observe: d => AppLogger.Info(
                 $"[KLUE] {d.Status}: U={d.UrgencyScore}, R={d.RelevanceScore}/{d.RelevanceLevels}, modelPass={d.ModelPassed}"));
 
+        // 요약 모델: Gemma 4 E2B. GPU(Vulkan)는 메모리가 넉넉한 PC에서만 쓴다 (BriefingGpuPolicy).
+        bool briefingGpu = BriefingGpuPolicy.ShouldUseGpu(
+            BriefingGpuPolicy.TotalPhysicalMemoryBytes(),
+            Environment.GetEnvironmentVariable(BriefingGpuPolicy.OverrideVariable));
+        LlamaBriefingEngine.ConfigureNativeLibrary(briefingGpu);
         var briefingModelPath = Path.Combine(AppContext.BaseDirectory,
-            "models", "briefing", "qwen_briefing_v8_q8_0.gguf");
+            "models", "briefing", "gemma-4-E2B-it-Q4_0.gguf");
         _reportSummaryProvider = new LlamaReportSummaryProvider(
             NotificationRepository,
-            briefingModelPath);
+            briefingModelPath,
+            gpuLayerCount: briefingGpu ? BriefingGpuPolicy.AllLayers : 0);
 
         IFilterEngine filterEngine = _klueFilterEngine;
         NotificationPipeline = new NotificationPipelineCoordinator(

@@ -16,8 +16,8 @@ public sealed record GroupPromptContext(
     [property: JsonPropertyName("notifications_oldest_to_newest")] IReadOnlyList<NotificationPromptItem> NotificationsOldestToNewest);
 
 /// <summary>
-/// Qwen Briefing AI 모델과 100% 바이트 단위 일치를 보장하는 프롬프트 및 ChatML 생성기.
-/// Python AI 레포의 category_prompt.build_messages와 동일한 규격을 생성합니다.
+/// 요약 모델에 넣는 지시문·입력과 대화 형식(Gemma 4 / Qwen ChatML) 생성기.
+/// 입력(사용자 부분)은 Python AI 레포의 category_prompt.build_messages와 같은 규격을 생성합니다.
 /// </summary>
 public static class BriefingPromptBuilder
 {
@@ -48,7 +48,7 @@ public static class BriefingPromptBuilder
         "1. 입력 알림에 명시된 사실만 사용하고 추측하거나 새로운 사실을 만들지 마세요.\n" +
         "2. notifications_oldest_to_newest 배열은 오래된 알림부터 정렬되어 있으며 마지막 항목이 가장 최신입니다.\n" +
         "3. 동일한 사건의 반복 알림은 하나의 흐름으로 합치세요.\n" +
-        "4. 변경, 취소, 복구, 완료처럼 상태가 달라졌다면 마지막 알림의 상태를 우선하세요.\n" +
+        "4. 변경, 취소, 복구, 완료처럼 상태가 달라졌다면 해당 사건에서 마지막으로 확인된 상태를 우선하세요.\n" +
         "   이미 취소되거나 바뀐 이전 일정과 상태는 최종 요약에서 제외하세요.\n" +
         "5. 뒤 알림이 앞 알림을 취소하거나 변경한 것이 아니라 새로운 정보를 보탠 경우에는 두 알림의 핵심 사실을 모두 보존하세요.\n" +
         "6. 사용자가 알아야 할 핵심 사실과 최신 상태를 우선해서 쓰세요.\n" +
@@ -81,7 +81,20 @@ public static class BriefingPromptBuilder
         "원문에 없는 날짜·시간·마감·장소·이유는 덧붙이지 말고, 있는 대상·제출물·위치·행동은 보존하세요.\n" +
         "timestamp는 수신 시각입니다. 원문에 없는 일정 시각을 수신 시각에서 만들어 내지 마세요.\n" +
         "출력은 primary_category와 summary_lines 두 필드만 있는 JSON 객체입니다.\n" +
-        "예: {\"primary_category\":\"일정/회의\",\"summary_lines\":[\"회의가 내일 오후 1시에 진행됩니다.\"]}\n";
+        "예: {\"primary_category\":\"일정/회의\",\"summary_lines\":[\"회의가 내일 오후 1시에 진행됩니다.\"]}\n" +
+        "\n\n" +
+        "추가 요약 지침:\n" +
+        "- 마지막 알림이 웃음, 인사, 감탄 또는 단순 확인이라면\n" +
+        "  그 메시지만으로 사건의 결론을 만들지 마세요.\n" +
+        "- 대화 전체에서 사건의 마지막으로 확인된 상태를 찾고,\n" +
+        "  이후에 추가된 중요한 사실이 있으면 함께 반영하세요.\n" +
+        "- 요청, 접수, 확인 중, 완료, 취소, 변경을 구분하세요.\n" +
+        "  요청이나 접수만으로 완료됐다고 쓰지 마세요.\n" +
+        "- 누가 말했는지와 누가 행동하는지를 구분하세요.\n" +
+        "  행동 주체가 불분명하면 특정인을 추측하지 마세요.\n" +
+        "- 웃음과 의미 없는 반복 문자는 핵심이 아니면 생략하세요.\n" +
+        "  잡담만 있다면 주제를 간단히 설명하고,\n" +
+        "  없는 일정이나 해야 할 일을 만들지 마세요.\n";
 
     public static string NormalizeAppIdentity(string? value)
     {
@@ -128,4 +141,44 @@ public static class BriefingPromptBuilder
     /// <summary>그룹마다 달라지는 사용자 부분과 비사고 모드 assistant 시작.</summary>
     public static string RenderChatMlSuffix(string userPrompt) =>
         $"<|im_start|>user\n{userPrompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
+
+    /// <summary>
+    /// GGUF의 general.architecture로 대화 형식을 고른다. gemma4는 Gemma 4 형식, 나머지는 Qwen ChatML.
+    /// (Gemma 3 이전은 형식이 달라 지원하지 않는다.)
+    /// </summary>
+    public static BriefingChatTemplate TemplateForArchitecture(string? architecture) =>
+        string.Equals(architecture, "gemma4", StringComparison.OrdinalIgnoreCase)
+            ? BriefingChatTemplate.Gemma4
+            : BriefingChatTemplate.QwenChatMl;
+
+    /// <summary>모든 그룹에 공통인 시스템 부분. Gemma 4는 모델 공식 템플릿처럼 앞뒤 공백을 지우고 사고 모드를 켜지 않는다.</summary>
+    public static string RenderPrefix(BriefingChatTemplate template, string systemPrompt) => template switch
+    {
+        BriefingChatTemplate.Gemma4 => $"<|turn>system\n{systemPrompt.Trim()}<turn|>\n",
+        _ => RenderChatMlPrefix(systemPrompt),
+    };
+
+    /// <summary>그룹마다 달라지는 사용자 부분과 모델 응답 시작.</summary>
+    public static string RenderSuffix(BriefingChatTemplate template, string userPrompt) => template switch
+    {
+        BriefingChatTemplate.Gemma4 => $"<|turn>user\n{userPrompt.Trim()}<turn|>\n<|turn>model\n",
+        _ => RenderChatMlSuffix(userPrompt),
+    };
+
+    /// <summary>응답을 멈출 표시. 이 표시가 나오면 그 앞까지만 응답으로 본다.</summary>
+    public static IReadOnlyList<string> StopMarkers(BriefingChatTemplate template) => template switch
+    {
+        BriefingChatTemplate.Gemma4 => ["<turn|>", "<|turn>"],
+        _ => ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+    };
+
+    /// <summary>Gemma 4는 시작 토큰(BOS)으로 시작해야 한다. Qwen ChatML은 쓰지 않는다.</summary>
+    public static bool AddBos(BriefingChatTemplate template) => template == BriefingChatTemplate.Gemma4;
+}
+
+/// <summary>요약 모델의 대화 형식.</summary>
+public enum BriefingChatTemplate
+{
+    QwenChatMl,
+    Gemma4,
 }

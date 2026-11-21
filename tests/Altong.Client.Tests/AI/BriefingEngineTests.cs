@@ -305,7 +305,7 @@ public sealed class BriefingEngineTests
     [TestMethod]
     public async Task LlamaBriefingEngine_RealModelInference_Succeeds()
     {
-        var modelPath = Path.Combine(AppContext.BaseDirectory, "models", "briefing", "qwen_briefing_v8_q8_0.gguf");
+        var modelPath = Path.Combine(AppContext.BaseDirectory, "models", "briefing", "gemma-4-E2B-it-Q4_0.gguf");
         if (!File.Exists(modelPath))
         {
             Assert.Inconclusive("Model file not found.");
@@ -329,7 +329,7 @@ public sealed class BriefingEngineTests
         Assert.IsTrue(output.SummaryLines.Count > 0);
 
         Console.WriteLine("\n================ [실시간 온디바이스 AI 추론 결과] ================");
-        Console.WriteLine($"▶ 모델: Qwen 0.6B Q8_0 GGUF (In-Process CPU C++)");
+        Console.WriteLine($"▶ 모델: Gemma 4 E2B Q4_0 GGUF (In-Process CPU C++)");
         Console.WriteLine($"▶ 분류 카테고리: {output.PrimaryCategory}");
         for (int i = 0; i < output.SummaryLines.Count; i++)
         {

@@ -24,10 +24,11 @@ $models = @(
         ZipEntry       = "models/filtering/klue-base-safety-v1/model-fp32.onnx"
     },
     [pscustomobject]@{
-        Name           = "요약 모델 (briefing-v8-q8-mvp)"
-        Path           = "models\briefing\qwen_briefing_v8_q8_0.gguf"
-        Sha256         = "C3C5DCD7F9EC297838FF553950DE5074929A0167E14FE8EF187808FC36AD75AF"
-        Url            = "https://github.com/AIoish/ALTONG_ai/releases/download/briefing-v8-q8-mvp/qwen_briefing_v8_q8_0.gguf"
+        # ggml-org(llama.cpp 개발팀) Gemma 4 E2B Q4_0, Apache 2.0. 주소는 특정 커밋으로 고정한다.
+        Name           = "요약 모델 (Gemma 4 E2B Q4_0)"
+        Path           = "models\briefing\gemma-4-E2B-it-Q4_0.gguf"
+        Sha256         = "8E30DFF3AC4C8434C49A7036FA15564BDBB6044E42BF04550BF1A096AD7E6A52"
+        Url            = "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/2a8538c2e2d4687953a86c422c7c623cfd022880/gemma-4-E2B-it-Q4_0.gguf"
         DownloadSha256 = $null
         ZipEntry       = $null
     },
