@@ -1,0 +1,107 @@
+[
+  {"id":"01_일정변경","expect":"회의 3시로 변경, 장소 301호 유지. 웃음으로 결론 내지 않음",
+   "mustInclude":["3시","301호"],"mustNotInclude":["2시"],"categories":["일정/회의"],"msgs":[
+    {"app":"Discord","sender":"지훈","body":"내일 팀 회의 오후 2시에 공학관 301호에서 해요","min":0},
+    {"app":"Discord","sender":"지훈","body":"아 잠깐 교수님 일정 때문에 3시로 바뀌었어요","min":1},
+    {"app":"Discord","sender":"지훈","body":"장소는 그대로 301호!","min":2},
+    {"app":"Discord","sender":"지훈","body":"ㅋㅋㅋㅋ","min":3}]},
+  {"id":"02_일정취소","expect":"목요일 중간점검 취소, 새 날짜는 다음 주 공지",
+   "mustInclude":["취소"],"categories":["일정/회의"],"msgs":[
+    {"app":"KakaoTalk","sender":"민지","title":"캡스톤 4조","body":"목요일 오후 5시에 중간점검 있어요","min":0},
+    {"app":"KakaoTalk","sender":"민지","title":"캡스톤 4조","body":"방금 공지 떴는데 교수님 사정으로 중간점검 취소됐대요","min":2},
+    {"app":"KakaoTalk","sender":"민지","title":"캡스톤 4조","body":"새 날짜는 다음 주에 다시 공지한대요","min":3}]},
+  {"id":"03_요청미완료","expect":"PPT 오늘 밤 11시까지 업로드 요청(아직 안 함), 서연이 표지·목차 담당",
+   "mustInclude":["11시"],"mustNotInclude":["제가","올렸습니다","완료"],"categories":["일반 업무","일정/회의"],"msgs":[
+    {"app":"Slack","sender":"서연","body":"발표 자료 PPT 오늘 밤 11시까지 드라이브에 올려주세요","min":0},
+    {"app":"Slack","sender":"서연","body":"제가 표지랑 목차는 만들어둘게요","min":1},
+    {"app":"Slack","sender":"서연","body":"확인 부탁드려요~","min":2}]},
+  {"id":"04_요청후완료","expect":"보고서 검토 완료, 수정사항은 문서 코멘트",
+   "mustInclude":["완료"],"categories":["일반 업무"],"msgs":[
+    {"app":"Slack","sender":"박과장","body":"분기 보고서 초안 검토 부탁드립니다","min":0},
+    {"app":"Slack","sender":"박과장","body":"검토 완료했고 수정할 부분은 문서에 코멘트로 남겼습니다","min":25}]},
+  {"id":"05_잡담웃음","expect":"점심 메뉴 잡담. 할 일·일정을 만들지 않음",
+   "mustNotInclude":["일정","해야"],"categories":["개인 일반"],"msgs":[
+    {"app":"KakaoTalk","sender":"민호","title":"민호","body":"오늘 점심 뭐 먹었어?","min":0},
+    {"app":"KakaoTalk","sender":"민호","title":"민호","body":"학식 돈까스 맛있더라","min":1},
+    {"app":"KakaoTalk","sender":"민호","title":"민호","body":"ㅎㅎㅎ","min":1}]},
+  {"id":"06_장애복구","expect":"결제 API 장애 후 롤백 완료·정상화. 긴급 업무",
+   "mustInclude":["롤백","정상"],"categories":["긴급 업무"],"msgs":[
+    {"app":"Slack","sender":"Datadog","body":"[ALERT] 결제 API 5xx 에러율 12% 초과","min":0},
+    {"app":"Slack","sender":"Datadog","body":"결제 API 직전 배포 롤백 진행 중","min":3},
+    {"app":"Slack","sender":"Datadog","body":"[RECOVERED] 롤백 완료, 결제 API 에러율 정상화","min":9}]},
+  {"id":"07_보안로그인","expect":"새 기기 로그인 감지, 본인 아니면 비밀번호 변경",
+   "mustInclude":["비밀번호"],"categories":["시스템/보안"],"msgs":[
+    {"app":"Gmail","sender":"Google","title":"보안 알림","body":"Windows 기기의 Chrome에서 계정에 새로 로그인했습니다. 본인이 아니라면 비밀번호를 변경하세요.","min":0}]},
+  {"id":"08_배송","expect":"무선 마우스 배송 완료(문 앞)",
+   "mustInclude":["완료"],"categories":["개인 중요"],"msgs":[
+    {"app":"쿠팡","sender":null,"title":"배송 출발","body":"주문하신 무선 마우스가 배송을 시작했습니다","min":0},
+    {"app":"쿠팡","sender":null,"title":"배송 완료","body":"무선 마우스 배송이 완료되었습니다. 문 앞에 두었습니다.","min":40}]},
+  {"id":"09_환불진행","expect":"환불 처리 중(3~5영업일). 완료로 단정하지 않음",
+   "mustInclude":["3~5"],"mustNotInclude":["환불되었","환불이 완료","환불 완료"],"categories":["개인 중요"],"msgs":[
+    {"app":"토스","sender":null,"title":"환불 접수","body":"운동화 주문 건 환불 요청이 접수되었습니다","min":0},
+    {"app":"토스","sender":null,"title":"환불 진행","body":"환불이 처리 중이며 영업일 기준 3~5일 내 카드사로 반영됩니다","min":10}]},
+  {"id":"10_광고","expect":"20% 쿠폰 오늘 자정까지",
+   "categories":["광고/홍보"],"msgs":[
+    {"app":"올리브영","sender":null,"title":"오늘만 특가","body":"전 상품 20% 할인 쿠폰이 도착했어요! 오늘 자정까지 사용 가능","min":0}]},
+  {"id":"11_병원예약","expect":"11월 20일 오전 10시 30분 정형외과 예약 확정",
+   "mustInclude":["11월 20일","10시 30분"],"categories":["개인 중요","일정/회의"],"msgs":[
+    {"app":"메시지","sender":"서울바른병원","body":"[서울바른병원] 11월 20일 오전 10시 30분 정형외과 진료 예약이 확정되었습니다. 10분 전까지 내원해 주세요.","min":0}]},
+  {"id":"12_방이름함정","expect":"내일 저녁 7시 학생회관 2층 세미나실. 방 이름(도서관)을 장소로 쓰지 않음",
+   "mustInclude":["7시","학생회관"],"mustNotInclude":["도서관에서"],"categories":["일정/회의"],"msgs":[
+    {"app":"KakaoTalk","sender":"지수","title":"도서관 스터디","body":"내일 저녁 7시에 모여요","min":0},
+    {"app":"KakaoTalk","sender":"지수","title":"도서관 스터디","body":"장소는 학생회관 2층 세미나실이에요","min":1}]},
+  {"id":"13_행동주체","expect":"아빠가 내일 공항 가는 길에 학교까지 태워 줌, 아침 7시까지 준비",
+   "mustInclude":["아빠","7시"],"mustNotInclude":["기다리"],"categories":["개인 일반","개인 중요","일정/회의"],"msgs":[
+    {"app":"KakaoTalk","sender":"엄마","title":"엄마","body":"아빠가 내일 공항 가는 길에 너 학교까지 태워다 준대","min":0},
+    {"app":"KakaoTalk","sender":"엄마","title":"엄마","body":"아침 7시까지 준비하고 있어","min":1}]},
+  {"id":"14_긴대화9개","expect":"배포 체크리스트: 담당 배정, DB 완료, 캐시 문제 해결, QA 진행 중, 저녁 7시 배포 (7개 초과라 나눠 요약)",
+   "mustInclude":["저녁 7시"],"mustNotInclude":["확인 중"],"categories":["일반 업무","긴급 업무","일정/회의"],"msgs":[
+    {"app":"Microsoft Teams","sender":"김팀장","body":"오늘 배포 체크리스트 공유합니다","min":0},
+    {"app":"Microsoft Teams","sender":"김팀장","body":"1번 DB 마이그레이션은 오후 3시에 진행","min":1},
+    {"app":"Microsoft Teams","sender":"김팀장","body":"2번 캐시 서버 설정은 민수님 담당","min":2},
+    {"app":"Microsoft Teams","sender":"김팀장","body":"3번 QA 회귀 테스트는 지연님이 맡아주세요","min":3},
+    {"app":"Microsoft Teams","sender":"김팀장","body":"DB 마이그레이션 끝났습니다","min":6},
+    {"app":"Microsoft Teams","sender":"김팀장","body":"캐시 서버 설정에서 문제가 있어 확인 중","min":9},
+    {"app":"Microsoft Teams","sender":"김팀장","body":"캐시 문제 해결됐어요","min":12},
+    {"app":"Microsoft Teams","sender":"김팀장","body":"QA 회귀 테스트 아직 진행 중입니다","min":14},
+    {"app":"Microsoft Teams","sender":"김팀장","body":"QA 끝나는 대로 저녁 7시에 배포합니다","min":16}]},
+  {"id":"15_영문혼합","expect":"PR #42 리뷰 요청, CI 실패 후 재실행해 통과",
+   "mustInclude":["#42"],"mustNotInclude":["실패했습니다."],"categories":["일반 업무"],"msgs":[
+    {"app":"Slack","sender":"GitHub","body":"Review requested on PR #42 (feat: add login page) by alex","min":0},
+    {"app":"Slack","sender":"GitHub","body":"CI failed on build-windows for PR #42","min":4},
+    {"app":"Slack","sender":"GitHub","body":"CI passed for PR #42 after re-run","min":8}]},
+  {"id":"16_시각없음","expect":"내일 보자는 인사. 시각을 지어내지 않음",
+   "mustNotInclude":["오전","오후","시에"],"categories":["개인 일반","기타"],"msgs":[
+    {"app":"Discord","sender":"준호","body":"내일 봐!","min":0}]},
+  {"id":"17_이모지만","expect":"내용 없는 웃음 반응. 사실·할 일을 지어내지 않음",
+   "mustNotInclude":["일정","해야"],"categories":["개인 일반","기타"],"msgs":[
+    {"app":"KakaoTalk","sender":"수빈","title":"과 동기 단톡","body":"ㅋㅋㅋㅋㅋㅋ","min":0},
+    {"app":"KakaoTalk","sender":"수빈","title":"과 동기 단톡","body":"😂😂","min":0},
+    {"app":"KakaoTalk","sender":"수빈","title":"과 동기 단톡","body":"ㄹㅇ","min":1}]},
+  {"id":"18_학사공지","expect":"수강 정정 11월 24~26일 포털 신청, 문의는 학과 사무실",
+   "mustInclude":["24일","26일","포털"],"categories":["일반 업무","일정/회의","기타"],"msgs":[
+    {"app":"Outlook","sender":"학사지원팀","title":"수강신청 정정 기간 안내","body":"수강신청 정정 기간은 11월 24일부터 26일까지이며 학교 포털에서 신청할 수 있습니다. 문의는 학과 사무실로 해 주세요.","min":0}]},
+  {"id":"19_진행중","expect":"운영 서버 배포 80% 진행 중. 완료로 단정하지 않음",
+   "mustInclude":["80"],"mustNotInclude":["완료"],"categories":["일반 업무","긴급 업무"],"msgs":[
+    {"app":"Slack","sender":"민수","body":"운영 서버 배포 시작합니다","min":0},
+    {"app":"Slack","sender":"민수","body":"배포 80% 진행됐어요","min":5}]},
+  {"id":"20_장소정정","expect":"금요일 오후 2시 오리엔테이션, 장소는 소강당으로 정정",
+   "mustInclude":["소강당"],"mustNotInclude":["대강당으로"],"categories":["일정/회의"],"msgs":[
+    {"app":"KakaoTalk","sender":"학생회장","title":"신입생 OT 준비","body":"금요일 오후 2시 오리엔테이션은 대강당에서 합니다","min":0},
+    {"app":"KakaoTalk","sender":"학생회장","title":"신입생 OT 준비","body":"정정합니다. 장소가 소강당으로 변경됐어요","min":4}]},
+  {"id":"21_결제실패","expect":"멤버십 결제 실패, 결제 수단 업데이트 필요. 개인 중요",
+   "mustInclude":["결제"],"categories":["개인 중요"],"msgs":[
+    {"app":"넷플릭스","sender":null,"title":"결제 실패","body":"멤버십 결제에 실패했습니다. 서비스를 계속 이용하려면 결제 수단을 업데이트해 주세요.","min":0}]},
+  {"id":"22_상대날짜","expect":"다음 주 화요일 오전 10시 주간회의, 7층 회의실 대면",
+   "mustInclude":["화요일","10시","7층"],"categories":["일정/회의"],"msgs":[
+    {"app":"Microsoft Teams","sender":"이대리","body":"다음 주 화요일 오전 10시 주간회의는 대면으로 7층 회의실에서 진행합니다","min":0}]},
+  {"id":"23_확정과요청","expect":"A안 확정, B안 파일은 삭제 요청(아직 안 함)",
+   "mustInclude":["A안"],"mustNotInclude":["삭제했","삭제되었"],"categories":["일반 업무"],"msgs":[
+    {"app":"Slack","sender":"하은","body":"디자인 시안 A안, B안 공유드려요","min":0},
+    {"app":"Slack","sender":"하은","body":"회의 결과 A안으로 확정됐어요","min":20},
+    {"app":"Slack","sender":"하은","body":"B안 파일은 공유 폴더에서 삭제해 주세요","min":21}]},
+  {"id":"24_시설점검","expect":"이번 주 토요일 오전 9~11시 수도 점검, 그동안 물 사용 불가. 날짜를 지어내지 않음",
+   "mustInclude":["토요일"],"mustNotInclude":["17일"],"categories":["시스템/보안"],"msgs":[
+    {"app":"KakaoTalk","sender":"관리사무소","title":"관리사무소","body":"이번 주 토요일 오전 9시부터 11시까지 수도 배관 점검이 있습니다","min":0},
+    {"app":"KakaoTalk","sender":"관리사무소","title":"관리사무소","body":"점검 시간 동안 물 사용이 불가합니다","min":1}]}
+]
