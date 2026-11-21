@@ -56,6 +56,22 @@ public sealed class BriefingEngineTests
     }
 
     [TestMethod]
+    public void BriefingScheduleExtractor_UsesDateAndHalfHourFromRehearsalRange()
+    {
+        var (isSchedule, schedule) = BriefingScheduleExtractor.Extract(
+            "중간발표 리허설 장소가 201호에서 305호로 변경되었으며, 시간은 내일 오후 3시부터 3시 반까지로 확정되었습니다. 발표자는 민지가 대신하게 되었으며, 지훈은 오늘 저녁 8시까지 PDF 최종본을 팀방에 올려야 합니다.",
+            "일정/회의",
+            ["다은: 내일 오후 3시부터 3시 반까지 305호에서 하자.", "지훈: 오늘 8시까지 올릴게 ㅋㅋㅋㅋ"],
+            new DateTime(2026, 11, 20, 15, 0, 0));
+
+        Assert.IsTrue(isSchedule);
+        Assert.IsNotNull(schedule);
+        Assert.AreEqual("305호", schedule.Location);
+        Assert.AreEqual(new DateTimeOffset(2026, 11, 21, 15, 0, 0, TimeSpan.FromHours(9)), schedule.Start);
+        Assert.AreEqual(new DateTimeOffset(2026, 11, 21, 15, 30, 0, TimeSpan.FromHours(9)), schedule.End);
+    }
+
+    [TestMethod]
     public void BriefingScheduleExtractor_NonSchedule_ReturnsFalse()
     {
         var refTime = new DateTime(2026, 10, 13, 9, 0, 0);
