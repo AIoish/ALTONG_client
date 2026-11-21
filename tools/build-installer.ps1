@@ -6,7 +6,7 @@
 #   - .NET 9 SDK
 #   - Windows SDK (makeappx.exe, signtool.exe)
 #   - Inno Setup 6 (ISCC.exe):  winget install --id JRSoftware.InnoSetup -e
-#   - 모델 파일 3개 (README "모델 준비")
+#   - 모델 파일 3개 (tools/download-models.ps1 로 받기)
 #
 # 하는 일
 #   1. 앱을 .NET 런타임 포함(self-contained)으로 publish 한다. 받는 PC에 .NET이 없어도 된다.
@@ -35,13 +35,9 @@ function Step($text) { Write-Host "`n== $text" -ForegroundColor Cyan }
 
 # 0. 준비물 확인
 Step "준비물 확인"
-$models = @(
-    "models\filtering\klue-base-safety-v1\model-fp32.onnx",
-    "models\briefing\qwen_briefing_v8_q8_0.gguf",
-    "models\ocr\ppocr-v5-ko\korean_PP-OCRv5_mobile_rec.onnx"
-)
-$missing = $models | Where-Object { -not (Test-Path (Join-Path $root $_)) }
-if ($missing) { throw "모델 파일이 없습니다. README '모델 준비'를 따라 받아 주세요:`n  $($missing -join "`n  ")" }
+# 모델은 있기만 하면 안 되고 해시까지 맞아야 한다. 예전 필터 모델이 묶이면 설치본에서 필터가 꺼진다.
+& (Join-Path $PSScriptRoot "download-models.ps1") -CheckOnly
+if ($LASTEXITCODE -ne 0) { throw "모델 파일이 없거나 버전이 다릅니다. tools/download-models.ps1 을 먼저 실행해 주세요." }
 
 $sdkTool = {
     param($name)

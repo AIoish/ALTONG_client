@@ -59,7 +59,7 @@ public sealed class KlueFilterEngine : IFilterEngine, IDisposable
     private static FilterResult ToResult(string id,FilterDecision d) => new(id,d.IsPassed,
         d.UrgencyScore ?? 0,d.RelevanceScore ?? 0,d.UrgencyScore is null ? "판정 실패" : "미분류",
         d.UrgencyScore is null ? $"AI 평가 실패로 통과 ({d.Status}); 점수 0은 미평가 표시" :
-            $"긴급도 {d.UrgencyScore}, 관련도 {d.RelevanceScore}; 모델 {(d.ModelPassed ? "통과" : "차단")}{(d.Status=="shadow" ? "; 시험 모드로 실제 통과" : "")}");
+            $"긴급도 {d.UrgencyScore}/5, 관련도 {d.RelevanceScore}/{d.RelevanceLevels}; 모델 {(d.ModelPassed ? "통과" : "차단")}{(d.Status=="shadow" ? "; 시험 모드로 실제 통과" : "")}");
     public void Dispose()
     {
         try { _initialization.GetAwaiter().GetResult()?.Dispose(); }

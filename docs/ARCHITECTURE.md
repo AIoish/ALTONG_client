@@ -13,7 +13,7 @@
 | 항목 | 초기 설계 (README 원문) | 현재 구현 | 코드 위치 |
 | :--- | :--- | :--- | :--- |
 | 실시간 필터 모델 | Qwen 2.5 1.5B LoRA SLM, 300ms 미만 | KLUE base 판별 모델 (ONNX FP32, 약 440MB), `Microsoft.ML.OnnxRuntime` 1.31.0 | `integration/csharp/Altong.Filtering`, `integration/csharp/ClientAdapter/KlueFilterEngine.cs` |
-| 통과 규칙 | 긴급도 1순위 → 보통이면 연관도 2순위 | 한 번의 추론으로 두 점수를 낸 뒤 `urgency >= 4 OR relevance >= 4`면 통과 | `KlueFilter.cs` |
+| 통과 규칙 | 긴급도 1순위 → 보통이면 연관도 2순위 | 한 모델로 긴급도(1~5)와 관련도를 낸 뒤 긴급도 4 이상이거나 관련도가 가장 높은 단계면 통과. 관련도 단계는 manifest의 `relevance_score_to_app`을 따르며 filtering-v3는 1~3(통과 3), 대응표가 없는 예전 모델은 1~5(통과 4). 그 이전에 저장된 기록의 관련도는 1~5 | `KlueFilter.cs` (`RelevanceScale`) |
 | 모델 실패 시 | (언급 없음) | 로딩 실패·2초 시간 초과 시 알림을 통과시킴 (fail-open, 점수 0 = 미평가) | `KlueFilterEngine.cs` |
 | 필터 결과 `category` | "긴급 업무" 등 분류 | 항상 `"미분류"` 또는 `"판정 실패"` | `KlueFilterEngine.cs` |
 | 요약·브리핑 모델 | 클라우드 LLM (Gemini 2.0 Flash / GPT-4o-mini) | 로컬 Qwen GGUF (`qwen_briefing_v8_q8_0.gguf`), `LLamaSharp` 0.27.0. 클라우드 호출 없음 | `Services/AI/Briefing/` |
@@ -211,7 +211,7 @@ ALTONG_client/
   "notification_id": "noti_20260913_001",
   "is_passed": true,
   "urgency_score": 5,
-  "relevance_score": 4,
+  "relevance_score": 3,
   "category": "긴급 업무",
   "ai_summary_reason": "현재 백엔드 코드 작성 중 발생한 서버 핫픽스 요청으로 즉시 확인 필요"
 }
