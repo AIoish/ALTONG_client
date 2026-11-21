@@ -246,6 +246,7 @@ public partial class App : System.Windows.Application
         _trayIconService = new TrayIconService(() => PostToUiThread(ShowDashboard));
         _trayIconService.SetDashboardAction(() => PostToUiThread(ToggleDashboard));
         _trayIconService.SetExitAction(() => PostToUiThread(RequestShutdown));
+        _ = NotifyIfFilterUnavailableAsync();
 
         FocusModeService.StateChanged += FocusModeService_StateChanged;
         _focusModeCoordinator.StateChanged += FocusModeCoordinator_StateChanged;
@@ -939,6 +940,27 @@ public partial class App : System.Windows.Application
         {
             if (!IsShuttingDown) action();
         }));
+
+    /// <summary>
+    /// 필터 모델을 불러오지 못하면 모든 알림이 그대로 통과한다. 화면에는 티가 나지 않으므로 트레이 알림으로 알린다.
+    /// </summary>
+    private async Task NotifyIfFilterUnavailableAsync()
+    {
+        if (_klueFilterEngine is null) return;
+        try
+        {
+            var (available, error) = await _klueFilterEngine.GetAvailabilityAsync().ConfigureAwait(false);
+            if (available) return;
+            AppLogger.Warn($"[KLUE] 필터 모델을 불러오지 못해 모든 알림을 통과시킵니다: {error}");
+            PostToUiThread(() => _trayIconService?.ShowRoutineReminder(
+                "AI 필터가 꺼져 있어요",
+                "필터 모델이 없거나 버전이 달라서 모든 알림을 그대로 보여 줘요. 앱을 다시 설치하거나, 개발 PC라면 tools/download-models.ps1을 실행해 주세요."));
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("[KLUE] 필터 상태 확인 실패", ex);
+        }
+    }
 
     private void RunOnUiThread(Action action)
     {

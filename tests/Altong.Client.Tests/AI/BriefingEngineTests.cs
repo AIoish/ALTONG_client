@@ -303,6 +303,36 @@ public sealed class BriefingEngineTests
     }
 
     [TestMethod]
+    public async Task LlamaBriefingEngine_GpuLoadFailure_RetriesOnCpuAndStaysOnCpu()
+    {
+        // 모델을 GPU로 올리다 실패하면 CPU로 한 번 더 시도하고, 다음 세션부터는 처음부터 CPU를 쓴다.
+        var modelPath = Path.Combine(Path.GetTempPath(), $"altong-gpu-fallback-{Guid.NewGuid():N}.gguf");
+        File.WriteAllText(modelPath, "not a real model");
+        var original = LlamaBriefingEngine.WeightsLoader;
+        var attempts = new List<int>();
+        LlamaBriefingEngine.WeightsLoader = parameters =>
+        {
+            attempts.Add(parameters.GpuLayerCount);
+            throw new InvalidOperationException(parameters.GpuLayerCount > 0 ? "GPU 메모리 부족 (테스트)" : "CPU도 실패 (테스트)");
+        };
+        try
+        {
+            using var engine = new LlamaBriefingEngine(modelPath, gpuLayerCount: 999);
+
+            Assert.IsNull(await engine.OpenSessionAsync(), "둘 다 실패하면 세션 없이 기본 요약으로 넘어간다");
+            CollectionAssert.AreEqual(new[] { 999, 0 }, attempts, "GPU 실패 뒤 CPU로 재시도");
+
+            Assert.IsNull(await engine.OpenSessionAsync());
+            CollectionAssert.AreEqual(new[] { 999, 0, 0 }, attempts, "다음 세션은 처음부터 CPU");
+        }
+        finally
+        {
+            LlamaBriefingEngine.WeightsLoader = original;
+            File.Delete(modelPath);
+        }
+    }
+
+    [TestMethod]
     public async Task LlamaBriefingEngine_RealModelInference_Succeeds()
     {
         var modelPath = Path.Combine(AppContext.BaseDirectory, "models", "briefing", "gemma-4-E2B-it-Q4_0.gguf");

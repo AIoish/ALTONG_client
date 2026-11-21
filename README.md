@@ -94,6 +94,8 @@ dotnet test
 
 상단 노치·알림 패널 사용법과 집중 모드 기록 규칙: [docs/CLIENT_BEHAVIOR.md](docs/CLIENT_BEHAVIOR.md)
 
+문제가 생기면 로그 `%LOCALAPPDATA%\Altong\logs\altong.log`를 확인하세요. 설치본에도 남고, 5MB마다 `altong.1.log`·`altong.2.log`로 밀어내 최대 15MB만 보관합니다. 로그에는 알림 제목·창 제목이 들어가며 이 PC 밖으로 보내지 않습니다. 필터 모델을 불러오지 못하면 시작할 때 트레이 알림으로 알려 줍니다.
+
 ### 설치 파일 만들기
 
 .NET이 없는 PC에도 설치할 수 있는 `dist\AltongSetup-<버전>.exe`(약 1GB, 모델 포함)를 만듭니다.
