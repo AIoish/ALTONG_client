@@ -199,6 +199,8 @@ public sealed class BriefingEngineTests
             Task.FromResult(records.FirstOrDefault(r => r.Id == id));
         public Task<IReadOnlyList<NotificationRecord>> GetBlockedNotificationsAsync(string? sessionId = null, int limit = 50) =>
             Task.FromResult<IReadOnlyList<NotificationRecord>>(records.Where(r => r.SessionId == sessionId).ToList());
+        public Task<IReadOnlyList<NotificationRecord>> GetSessionNotificationsAsync(string sessionId, int limit = 200) =>
+            Task.FromResult<IReadOnlyList<NotificationRecord>>(records.Where(r => r.SessionId == sessionId).ToList());
         public Task<IReadOnlyList<NotificationRecord>> GetRecentNotificationsAsync(int limit = 50) =>
             Task.FromResult(records);
     }
@@ -271,6 +273,33 @@ public sealed class BriefingEngineTests
         StringAssert.Contains(supply.Items[0].Text, "주말에 바다 갈까");
         Assert.IsFalse(supply.Items[0].Text.Contains("읽지 못함"), supply.Items[0].Text);
         Assert.IsFalse(supply.Items[0].Text.Contains("이모티콘"), supply.Items[0].Text);
+    }
+
+    [TestMethod]
+    public async Task LlamaReportSummaryProvider_IncludesPassedNotificationsOfGroupsWithBlockedOnes()
+    {
+        // 같은 대화가 차단("2시 회의")과 통과("3시로 변경")로 나뉘면, 차단된 것만으로는 바뀌기 전 내용으로 요약된다.
+        var now = new DateTime(2026, 11, 17, 18, 0, 0);
+        var fakeNotifications = new[]
+        {
+            new NotificationRecord("1", "Discord", "지훈", "지훈", "내일 팀 회의 오후 2시에 공학관 301호에서 해요", now,
+                IsPassed: false, SessionId: "session-mixed"),
+            new NotificationRecord("2", "Discord", "지훈", "지훈", "아 잠깐 교수님 일정 때문에 3시로 바뀌었어요", now.AddMinutes(1),
+                IsPassed: true, SessionId: "session-mixed"),
+            // 통과한 알림만 있는 대화는 사용자가 이미 봤으므로 리포트에 넣지 않는다.
+            new NotificationRecord("3", "Slack", "박과장", "박과장", "분기 보고서 초안 검토 부탁드립니다", now.AddMinutes(2),
+                IsPassed: true, SessionId: "session-mixed")
+        };
+
+        using var provider = new LlamaReportSummaryProvider(
+            new FakeNotificationRepository(fakeNotifications), "non_existent_model.gguf", () => now);
+
+        var supply = await provider.ReadAsync("session-mixed", CancellationToken.None);
+
+        Assert.AreEqual(1, supply.Items.Count);
+        // 모델이 없을 때의 대체 요약은 묶음의 가장 최근 알림을 쓴다. 통과한 변경 알림이 묶음에 들어갔는지 확인한다.
+        StringAssert.Contains(supply.Items[0].Text, "3시로 바뀌었어요");
+        Assert.AreEqual("지훈", supply.Items[0].Sender);
     }
 
     [TestMethod]

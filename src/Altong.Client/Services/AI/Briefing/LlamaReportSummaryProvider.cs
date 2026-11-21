@@ -94,21 +94,24 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
 
     private async Task<ReportSummarySupply> GenerateSummarySupplyAsync(string sessionId, CancellationToken cancellationToken)
     {
-        // 1. 해당 세션의 차단된 알림 목록 조회 (최대 50건)
-        var blocked = await _notifications.GetBlockedNotificationsAsync(sessionId, 50).ConfigureAwait(false);
+        // 1. 해당 세션의 알림을 통과·차단 구분 없이 조회한다. 같은 대화가 통과와 차단으로 나뉘면
+        //    (예: "2시 회의"는 차단, "3시로 변경"은 통과) 차단된 것만으로는 바뀌기 전 내용으로 요약되기 때문이다.
+        var sessionNotifications = await _notifications.GetSessionNotificationsAsync(sessionId).ConfigureAwait(false);
 
         // 카카오톡 팝업에서 본문을 읽지 못한 알림은 요약할 내용이 없다. 본문 자리에 앱이 대신 넣은 문구
         // ("(내용을 읽지 못함)" 등)를 모델이 메시지로 읽고 요약하지 않도록 뺀다. 알림 자체는 목록에 그대로 남는다.
-        blocked = blocked.Where(n => !KakaoNotificationText.IsUnreadBody(n.Body)).ToList();
-        if (blocked.Count == 0)
+        sessionNotifications = sessionNotifications.Where(n => !KakaoNotificationText.IsUnreadBody(n.Body)).ToList();
+        if (!sessionNotifications.Any(IsBlocked))
         {
             return new ReportSummarySupply([]);
         }
 
-        // 2. AI 레포와 같은 규칙(앱·발신자·카카오톡 방·30분·대화 연결)으로 묶고,
+        // 2. AI 레포와 같은 규칙(앱·발신자·카카오톡 방·30분·대화 연결)으로 묶고, 놓친(차단된) 알림이 있는 묶음만 요약한다.
+        //    통과한 알림만 있는 묶음은 사용자가 이미 봤으므로 리포트에 넣지 않는다.
         //    모델 학습 범위(그룹당 7개)나 문맥을 넘는 그룹은 시간 순서대로 고르게 나눈다.
         using var session = await _engine.OpenSessionAsync(cancellationToken).ConfigureAwait(false);
-        var chunks = BriefingGrouping.Group(blocked)
+        var chunks = BriefingGrouping.Group(sessionNotifications)
+            .Where(group => group.Any(IsBlocked))
             .SelectMany(group =>
             {
                 var groupId = ComputeDeterministicId("grp", sessionId, SummaryGroupResolver.GroupKey(group[0]),
@@ -190,6 +193,8 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
 
         return new ReportSummarySupply(summaryItems, IsDemo: false);
     }
+
+    private static bool IsBlocked(NotificationRecord notification) => notification.IsPassed == false;
 
     public static string ComputeDeterministicId(string prefix, string sessionId, string groupKey, IEnumerable<string> notificationIds)
     {
