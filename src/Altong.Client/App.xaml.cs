@@ -179,7 +179,7 @@ public partial class App : System.Windows.Application
             Path.Combine(modelDir, "tokenizer.json"),
             shadow: false,
             observe: d => AppLogger.Info(
-                $"[KLUE] {d.Status}: U={d.UrgencyScore}, R={d.RelevanceScore}, modelPass={d.ModelPassed}"));
+                $"[KLUE] {d.Status}: U={d.UrgencyScore}, R={d.RelevanceScore}/{d.RelevanceLevels}, modelPass={d.ModelPassed}"));
 
         var briefingModelPath = Path.Combine(AppContext.BaseDirectory,
             "models", "briefing", "qwen_briefing_v8_q8_0.gguf");

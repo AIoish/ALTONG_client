@@ -15,7 +15,7 @@
 
 ## 주요 기능
 
-- **맥락 기반 알림 필터링**: 활성 창(프로세스·제목)과 알림을 KLUE 판별 모델로 함께 평가합니다. 긴급도 4 이상이거나 관련도 4 이상이면 통과합니다.
+- **맥락 기반 알림 필터링**: 활성 창(프로세스·제목)과 알림을 KLUE 판별 모델로 함께 평가합니다. 긴급도(1~5)가 4 이상이거나 관련도(1~3)가 3(지금 작업과 관련 있음)이면 통과합니다.
 - **카카오톡 알림 처리**: Windows 알림 외에 카카오톡 팝업도 숨긴 뒤 OCR로 내용을 읽어 같은 방식으로 판단합니다.
 - **상단 노치 + 알림 패널**: 화면 맨 위 띠 가운데 노치에 상태를 표시하고, 마우스를 올리면 노치가 아래로 늘어나 알림 목록이 펼쳐집니다.
 - **세션 리포트·브리핑**: 집중을 마치면 로컬 Qwen 모델이 차단된 알림을 요약하고 일정을 뽑습니다. 일정은 구글 캘린더 등록 링크로 연결됩니다.
@@ -56,14 +56,21 @@ flowchart LR
 * [.NET 9 SDK (x64)](https://dotnet.microsoft.com/download/dotnet/9.0) 설치 필요
 
 ### 모델 준비
-- **필터 모델**: `models/filtering/klue-base-safety-v1/`에 들어 있습니다. 빌드할 때 출력 폴더로 복사됩니다.
-- **브리핑 모델**: Git에 포함되지 않습니다. GitHub Release `briefing-v8-q8-mvp`에서 `qwen_briefing_v8_q8_0.gguf`를 받아 `models/briefing/`에 넣으세요. 없으면 AI 요약을 쓸 수 없습니다.
-- **카카오톡 팝업 OCR 모델** (개발 빌드에서 카카오톡 연동을 쓸 때만): Git에 포함되지 않습니다. 저장소 루트에서 아래 명령으로 받으세요(13MB). 없으면 Windows OCR로 대신 읽는데, 'ㅋㅋㅋ' 같은 짧은 본문을 읽지 못해 본문이 `(내용을 읽지 못함)`으로 들어옵니다.
-  ```powershell
-  curl.exe -L -o models\ocr\ppocr-v5-ko\korean_PP-OCRv5_mobile_rec.onnx https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/5c6f574b8e2230adf4287b33e736d71b9fabd28e/inference.onnx
-  (Get-FileHash models\ocr\ppocr-v5-ko\korean_PP-OCRv5_mobile_rec.onnx).Hash  # 92F0B7785E64FC9090106A241CF4C1EB97472824558272751B88A2A4476D3A08
-  ```
-  출처는 PaddlePaddle 공식 [korean_PP-OCRv5_mobile_rec_onnx](https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx)이고 라이선스는 Apache 2.0입니다.
+모델 파일은 Git에 들어 있지 않습니다. 저장소 루트에서 아래 명령을 실행하면 필요한 모델을 받고 해시까지 확인합니다. 이미 맞는 파일은 건너뛰므로, 모델이 바뀌었다는 공지가 오면 pull한 뒤 다시 실행하면 됩니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/download-models.ps1
+```
+
+| 모델 | 위치 | 출처 |
+| :--- | :--- | :--- |
+| 필터 (KLUE, filtering-v3, 약 440MB) | `models/filtering/klue-base-safety-v1/model-fp32.onnx` | ALTONG_ai 릴리즈 `filtering-v3` |
+| 요약 (Qwen v8 Q8, 약 640MB) | `models/briefing/qwen_briefing_v8_q8_0.gguf` | ALTONG_ai 릴리즈 `briefing-v8-q8-mvp` |
+| 카카오톡 팝업 OCR (13MB) | `models/ocr/ppocr-v5-ko/korean_PP-OCRv5_mobile_rec.onnx` | PaddlePaddle 공식 [korean_PP-OCRv5_mobile_rec_onnx](https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx), Apache 2.0 |
+
+- 필터 모델이 `manifest.json`의 해시와 다르면 앱은 필터를 끄고 모든 알림을 통과시킵니다. 화면에는 오류가 보이지 않으니 모델 변경 공지가 오면 꼭 다시 실행하세요.
+- 요약 모델이 없으면 AI 요약 대신 기본 요약을 씁니다. OCR 모델이 없으면 Windows OCR로 대신 읽는데, 'ㅋㅋㅋ' 같은 짧은 본문을 읽지 못해 본문이 `(내용을 읽지 못함)`으로 들어옵니다.
+- `-CheckOnly`를 붙이면 받지 않고 확인만 합니다. 설치 파일 빌드(`tools/build-installer.ps1`)가 시작할 때 이 확인을 거칩니다.
 
 ### 빌드 및 실행
 
