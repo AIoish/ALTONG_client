@@ -25,6 +25,14 @@ public sealed class KlueFilterEngine : IFilterEngine, IDisposable
         });
     }
     public Task InitializeAsync()=>_initialization;
+    /// <summary>
+    /// 모델을 불러왔는지와 실패 이유. 불러오지 못하면 모든 알림을 통과시키므로(fail-open) 앱이 사용자에게 알려야 한다.
+    /// </summary>
+    public async Task<(bool Available, string? Error)> GetAvailabilityAsync()
+    {
+        var filter=await _initialization.ConfigureAwait(false);
+        return (filter is not null,_loadError);
+    }
     public async Task<FilterResult> EvaluateAsync(RawNotification n,CurrentContext c)
     {
         if (n.Timestamp.Kind==DateTimeKind.Unspecified)

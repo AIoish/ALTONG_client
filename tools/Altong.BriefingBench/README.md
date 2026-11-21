@@ -25,7 +25,7 @@ dotnet run --project tools/Altong.BriefingBench -- models/briefing/<새 모델>.
 | --- | --- |
 | `--template app` (기본) | 앱 엔진을 그대로 씁니다. 대화 형식은 앱처럼 모델 정보로 고릅니다(Gemma 4 또는 Qwen). 앱에 넣을 모델은 이걸로 확인합니다. GPU는 쓰지 않습니다. |
 | `--template gemma4` | 도구 안의 Gemma 4 경로로 넣습니다. `--gpu`와 같이 써서 GPU 속도를 볼 때 씁니다. |
-| `--gpu` | `gemma4`와 같이 씁니다. 내장·외장 그래픽(Vulkan)으로 실행합니다. 처음 실행할 때는 그래픽 드라이버 준비로 40초쯤 더 걸립니다. |
+| `--gpu` | 내장·외장 그래픽(Vulkan)으로 실행합니다. 앱처럼 Vulkan을 못 쓰면 CPU로 넘어갑니다. 처음 실행할 때는 그래픽 드라이버 준비로 40초쯤 더 걸립니다. |
 
 ```powershell
 dotnet run --project tools/Altong.BriefingBench -- F:/models/gemma-4-E2B_q4_0-it.gguf --template gemma4 --gpu

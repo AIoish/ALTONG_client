@@ -26,7 +26,7 @@ public sealed class LlamaBriefingEngine : IDisposable
     public const int MaxNewTokens = 256;
 
     private readonly string _modelPath;
-    private readonly int _gpuLayerCount;
+    private int _gpuLayerCount;
     private LLamaWeights? _weights;
     private ModelParams? _parameters;
     private readonly SemaphoreSlim _inferenceGate = new(1, 1);
@@ -96,17 +96,20 @@ public sealed class LlamaBriefingEngine : IDisposable
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            _parameters ??= new ModelParams(ResolveNativeModelPath(_modelPath))
+            BriefingSession session;
+            try
             {
-                ContextSize = ContextSize,
-                GpuLayerCount = _gpuLayerCount
-            };
-            _weights ??= LLamaWeights.LoadFromFile(_parameters);
-            var template = BriefingPromptBuilder.TemplateForArchitecture(
-                _weights.Metadata.TryGetValue("general.architecture", out var architecture) ? architecture : null);
-            AppLogger.Info($"[LlamaBriefingEngine] 요약 모델 준비: {Path.GetFileName(_modelPath)}, 형식 {template}, GPU 층 {_gpuLayerCount}");
-
-            var session = await BriefingSession.CreateAsync(_weights, _parameters, template, CloseSession, ct).ConfigureAwait(false);
+                session = await LoadAndOpenAsync(ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (_gpuLayerCount > 0 && ex is not OperationCanceledException and not ObjectDisposedException)
+            {
+                // GPU로 올리다 실패하면(그래픽 메모리 부족, 드라이버 오류 등) CPU로 한 번 더 시도하고 이후에도 CPU를 쓴다.
+                AppLogger.Warn($"[LlamaBriefingEngine] GPU로 요약 모델을 올리지 못해 CPU로 다시 시도합니다: {ex.Message}");
+                ReleaseWeights();
+                _gpuLayerCount = 0;
+                _parameters = null;
+                session = await LoadAndOpenAsync(ct).ConfigureAwait(false);
+            }
             handedOver = true;
             return session;
         }
@@ -121,13 +124,35 @@ public sealed class LlamaBriefingEngine : IDisposable
         }
     }
 
+    /// <summary>테스트에서 모델 불러오기 실패를 흉내 낼 수 있게 바꿔 끼우는 지점. 앱에서는 바꾸지 않는다.</summary>
+    internal static Func<ModelParams, LLamaWeights> WeightsLoader { get; set; } = parameters => LLamaWeights.LoadFromFile(parameters);
+
+    private async Task<BriefingSession> LoadAndOpenAsync(CancellationToken ct)
+    {
+        _parameters ??= new ModelParams(ResolveNativeModelPath(_modelPath))
+        {
+            ContextSize = ContextSize,
+            GpuLayerCount = _gpuLayerCount
+        };
+        _weights ??= WeightsLoader(_parameters);
+        var template = BriefingPromptBuilder.TemplateForArchitecture(
+            _weights.Metadata.TryGetValue("general.architecture", out var architecture) ? architecture : null);
+        AppLogger.Info($"[LlamaBriefingEngine] 요약 모델 준비: {Path.GetFileName(_modelPath)}, 형식 {template}, GPU 층 {_gpuLayerCount}");
+        return await BriefingSession.CreateAsync(_weights, _parameters, template, CloseSession, ct).ConfigureAwait(false);
+    }
+
+    private void ReleaseWeights()
+    {
+        _weights?.Dispose();
+        _weights = null;
+    }
+
     /// <summary>요약이 끝나면 가중치를 내리고 다음 요약이 들어올 수 있게 한다.</summary>
     private void CloseSession()
     {
         try
         {
-            _weights?.Dispose();
-            _weights = null;
+            ReleaseWeights();
         }
         finally
         {

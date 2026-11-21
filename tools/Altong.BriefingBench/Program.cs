@@ -13,7 +13,8 @@ using LLama.Sampling;
 
 // 요약 모델(GGUF)을 앱과 같은 조건(LLamaSharp, 앱 프롬프트, 앱 묶기·나누기, 앱 응답 검사)으로 평가한다.
 // 사용법: dotnet run --project tools/Altong.BriefingBench -- <model.gguf> [<model2.gguf> ...] [--template app|gemma4] [--cases <cases.json>] [--out <dir>]
-//   --template app    (기본) 앱의 LlamaBriefingEngine을 그대로 사용한다 (대화 형식은 모델 정보로 자동 선택, CPU).
+//   --template app    (기본) 앱의 LlamaBriefingEngine을 그대로 사용한다 (대화 형식은 모델 정보로 자동 선택).
+//   --gpu             GPU(Vulkan)로 실행한다. 앱처럼 Vulkan을 못 쓰면 CPU로 넘어간다.
 //   --template gemma4 바탕 모델 비교용. 앱과 같은 지시문·입력을 Gemma 4 대화 형식으로만 바꿔 넣는다.
 // 모델 경로는 저장소 루트 기준 상대 경로 또는 한글이 없는 절대 경로를 쓴다. 한글 경로는 llama.cpp가 열지 못할 수 있다.
 // 메모리는 프로세스 최대 사용량이라, 모델별로 정확히 재려면 모델 하나씩 따로 실행한다.
@@ -34,12 +35,7 @@ for (int i = 0; i < args.Length; i++)
     else if (args[i] == "--gpu") gpu = true;
     else models.Add(args[i]);
 }
-if (gpu && template == "app")
-{
-    Console.WriteLine("--gpu는 --template gemma4에서만 쓸 수 있습니다. 앱 엔진은 GPU 층 수가 0으로 고정돼 있습니다.");
-    return 2;
-}
-// 네이티브 라이브러리는 첫 LLama 호출 전에 고른다. --gpu면 Vulkan, 아니면 CPU 전용.
+// 네이티브 라이브러리는 첫 LLama 호출 전에 고른다. --gpu면 Vulkan(못 불러오면 CPU), 아니면 CPU 전용. 앱과 같은 설정.
 NativeLibraryConfig.All.WithCuda(false).WithVulkan(gpu).WithAutoFallback(true);
 if (models.Count == 0 || template is not ("app" or "gemma4"))
 {
@@ -62,12 +58,12 @@ var report = new StringBuilder();
 foreach (var modelArg in models)
 {
     var modelPath = Path.GetFullPath(modelArg, repo);
-    var modelName = Path.GetFileNameWithoutExtension(modelPath) + (template == "app" ? "" : $" [{template}{(gpu ? ", gpu" : "")}]");
+    var modelName = Path.GetFileNameWithoutExtension(modelPath) + $" [{template}{(gpu ? ", gpu" : "")}]";
     if (!File.Exists(modelPath)) { Console.WriteLine($"모델 파일이 없습니다: {modelPath}"); return 1; }
 
     var openWatch = Stopwatch.StartNew();
     using ISummarizer summarizer = template == "app"
-        ? await AppSummarizer.OpenAsync(modelPath)
+        ? await AppSummarizer.OpenAsync(modelPath, gpu)
         : await Gemma4Summarizer.OpenAsync(modelArg, gpu);
     openWatch.Stop();
     Console.WriteLine($"\n[{modelName}] 모델 준비(로딩+지시문) {openWatch.ElapsedMilliseconds:N0} ms");
@@ -172,9 +168,9 @@ interface ISummarizer : IDisposable
 /// <summary>앱의 LlamaBriefingEngine·BriefingSession을 그대로 쓴다.</summary>
 sealed class AppSummarizer(LlamaBriefingEngine engine, BriefingSession session) : ISummarizer
 {
-    public static async Task<ISummarizer> OpenAsync(string modelPath)
+    public static async Task<ISummarizer> OpenAsync(string modelPath, bool gpu)
     {
-        var engine = new LlamaBriefingEngine(modelPath);
+        var engine = new LlamaBriefingEngine(modelPath, gpu ? BriefingGpuPolicy.AllLayers : 0);
         var session = await engine.OpenSessionAsync()
             ?? throw new InvalidOperationException($"모델을 불러오지 못했습니다: {modelPath}");
         return new AppSummarizer(engine, session);
