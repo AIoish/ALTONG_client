@@ -97,6 +97,31 @@ public sealed class SqliteNotificationRepository : INotificationRepository
         return null;
     }
 
+    public async Task<IReadOnlyList<NotificationRecord>> GetSessionNotificationsAsync(string sessionId, int limit = 200)
+    {
+        using var connection = _database.CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, app_name, sender, title, body, received_at,
+                   is_passed, urgency_score, relevance_score, category, ai_summary_reason, session_id, created_at
+            FROM notifications
+            WHERE session_id = $session_id
+            ORDER BY received_at DESC, id DESC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$session_id", sessionId);
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var list = new List<NotificationRecord>();
+        using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+        while (await reader.ReadAsync().ConfigureAwait(false))
+        {
+            list.Add(MapNotification(reader));
+        }
+
+        return list;
+    }
+
     public async Task<IReadOnlyList<NotificationRecord>> GetBlockedNotificationsAsync(string? sessionId = null, int limit = 50)
     {
         using var connection = _database.CreateOpenConnection();
