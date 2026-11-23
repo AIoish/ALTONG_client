@@ -21,6 +21,43 @@
         </Style>
         <Style TargetType="DatePicker"><Setter Property="FontFamily" Value="{x:Static services:AppTypography.BodyFont}" /><Setter Property="Background" Value="{StaticResource BlackInput}" /><Setter Property="Foreground" Value="{StaticResource BlackText}" /><Setter Property="BorderBrush" Value="{StaticResource BlackControlRule}" /></Style>
         <Style TargetType="DatePickerTextBox"><Setter Property="FontFamily" Value="{x:Static services:AppTypography.BodyFont}" /><Setter Property="Background" Value="{StaticResource BlackInput}" /><Setter Property="Foreground" Value="{StaticResource BlackText}" /><Setter Property="BorderThickness" Value="0" /></Style>
+        <Style x:Key="TimeSlotItem" TargetType="ComboBoxItem">
+            <Setter Property="Padding" Value="10,6" /><Setter Property="Foreground" Value="{StaticResource BlackText}" />
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem">
+                <Border x:Name="Surface" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter /></Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource BlackSelection}" /></Trigger>
+                    <Trigger Property="IsSelected" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource BlackSelection}" /></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <!-- 30분 간격 시각 목록. 알림 확인 화면의 앱 필터와 같은 어두운 드롭다운이다. -->
+        <Style x:Key="TimeSlotComboBox" TargetType="ComboBox">
+            <Setter Property="Width" Value="110" /><Setter Property="Height" Value="32" /><Setter Property="Margin" Value="0,4,0,10" />
+            <Setter Property="Foreground" Value="{StaticResource BlackText}" /><Setter Property="FontSize" Value="13" />
+            <Setter Property="FontFamily" Value="{x:Static services:AppTypography.BodyFont}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BlackControlRule}" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource TimeSlotItem}" />
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
+                <Grid>
+                    <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                        <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
+                            <Border x:Name="Surface" Background="{StaticResource BlackInput}" BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderThickness="1" CornerRadius="6">
+                                <Path Data="M 0,0 L 4,4 L 8,0" Stroke="{StaticResource BlackMuted}" StrokeThickness="1.2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            </Border>
+                            <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger></ControlTemplate.Triggers>
+                        </ControlTemplate></ToggleButton.Template>
+                    </ToggleButton>
+                    <TextBlock Text="{Binding SelectedItem, RelativeSource={RelativeSource TemplatedParent}, TargetNullValue=선택}" Margin="10,0,28,0" VerticalAlignment="Center" IsHitTestVisible="False" TextWrapping="NoWrap" />
+                    <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" IsOpen="{TemplateBinding IsDropDownOpen}" Focusable="False">
+                        <Border Background="{StaticResource BlackInput}" BorderBrush="{StaticResource BlackControlRule}" BorderThickness="1" CornerRadius="6" Width="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="240">
+                            <ScrollViewer><ItemsPresenter /></ScrollViewer>
+                        </Border>
+                    </Popup>
+                </Grid>
+                <ControlTemplate.Triggers><Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger></ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
         <Style x:Key="CalendarButton" TargetType="Button">
             <Setter Property="services:MotionBehavior.ButtonFeedback" Value="True" />
             <Setter Property="FontFamily" Value="{x:Static services:AppTypography.BodyFont}" />
@@ -92,14 +129,18 @@
                             <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="일정 제목" />
                             <WrapPanel>
                                 <StackPanel Margin="0,0,12,8"><TextBlock Text="시작 날짜" Style="{StaticResource CalendarMuted}" FontSize="12" /><DatePicker SelectedDate="{Binding StartDate}" Width="155" Margin="0,4,0,0" AutomationProperties.Name="시작 날짜" /></StackPanel>
-                                <StackPanel><TextBlock Text="시작 시각 · HH:mm" Style="{StaticResource CalendarMuted}" FontSize="12" /><TextBox Text="{Binding StartTime, UpdateSourceTrigger=PropertyChanged}" Width="110" AutomationProperties.Name="시작 시각" /></StackPanel>
+                                <StackPanel><TextBlock Text="시작 시각" Style="{StaticResource CalendarMuted}" FontSize="12" /><ComboBox ItemsSource="{Binding StartTimeOptions}" SelectedItem="{Binding StartTime}" Style="{StaticResource TimeSlotComboBox}" AutomationProperties.Name="시작 시각" /></StackPanel>
                             </WrapPanel>
                             <WrapPanel>
                                 <StackPanel Margin="0,0,12,8"><TextBlock Text="종료 날짜" Style="{StaticResource CalendarMuted}" FontSize="12" /><DatePicker SelectedDate="{Binding EndDate}" Width="155" Margin="0,4,0,0" AutomationProperties.Name="종료 날짜" /></StackPanel>
-                                <StackPanel><TextBlock Text="종료 시각 · HH:mm" Style="{StaticResource CalendarMuted}" FontSize="12" /><TextBox Text="{Binding EndTime, UpdateSourceTrigger=PropertyChanged}" Width="110" AutomationProperties.Name="종료 시각" /></StackPanel>
+                                <StackPanel><TextBlock Text="종료 시각" Style="{StaticResource CalendarMuted}" FontSize="12" /><ComboBox ItemsSource="{Binding EndTimeOptions}" SelectedItem="{Binding EndTime}" Style="{StaticResource TimeSlotComboBox}" AutomationProperties.Name="종료 시각" /></StackPanel>
                             </WrapPanel>
-                            <TextBlock Text="시간대 · 예: Asia/Seoul" Style="{StaticResource CalendarMuted}" FontSize="12" />
-                            <TextBox Text="{Binding TimeZone, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="일정 시간대" />
+                            <Expander Header="{Binding TimeZoneHeader}" FontSize="12" Foreground="{StaticResource BlackMuted}" Margin="0,0,0,8">
+                                <StackPanel Margin="0,6,0,0">
+                                    <TextBlock Text="다른 시간대 일정만 바꾸세요 · 예: America/New_York" Style="{StaticResource CalendarMuted}" FontSize="12" />
+                                    <TextBox Text="{Binding TimeZone, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="일정 시간대" />
+                                </StackPanel>
+                            </Expander>
                             <TextBlock Text="장소 · 선택" Style="{StaticResource CalendarMuted}" FontSize="12" />
                             <TextBox Text="{Binding Location, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="일정 장소" />
                             <TextBlock Text="약속 세부사항 · 선택" Style="{StaticResource CalendarMuted}" FontSize="12" />

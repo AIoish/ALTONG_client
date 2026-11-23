@@ -277,12 +277,20 @@
                                                     <DataTrigger Binding="{Binding ReplyText}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
                                                     <DataTrigger Binding="{Binding ReplyText}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
                                                 </Style.Triggers></Style></Expander.Style>
-                                                <Border Background="{StaticResource BlackInput}" CornerRadius="8" Padding="12" Margin="0,8,0,0">
-                                                    <StackPanel>
-                                                        <TextBlock Text="{Binding ReplyText}" LineHeight="22" Margin="0,0,0,10" />
-                                                        <Button Content="문구 복사" Tag="{Binding ReplyText}" Click="CopyQuickReply_Click"
-                                                                HorizontalAlignment="Left" FontSize="12" Padding="12,6" />
-                                                    </StackPanel>
+                                                <Border Background="{StaticResource BlackInput}" CornerRadius="8" Padding="12,6" Margin="0,8,0,0">
+                                                    <ItemsControl ItemsSource="{Binding ReplyOptions}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Grid Margin="0,6">
+                                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" LineHeight="22" VerticalAlignment="Center" Margin="0,0,12,0" />
+                                                                    <Button Grid.Column="1" Content="복사" Tag="{Binding}" Click="CopyQuickReply_Click"
+                                                                            VerticalAlignment="Center" FontSize="12" Padding="12,6"
+                                                                            AutomationProperties.Name="{Binding StringFormat=문구 복사: {0}}" />
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
                                                 </Border>
                                             </Expander>
                                         </StackPanel>
@@ -379,7 +387,7 @@
             <Grid>
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                <TextBlock x:Name="SaveAvailabilityText" Grid.ColumnSpan="2" Text="AI 요약 완료 후 리포트를 저장할 수 있어요."
+                <TextBlock x:Name="SaveAvailabilityText" Grid.ColumnSpan="2" Text="AI 요약 중에도 저장할 수 있어요. 요약이 끝나면 알림으로 알려드려요."
                            Style="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"
                            Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
                 <TextBlock x:Name="SaveStatusText" Grid.Row="1" Style="{StaticResource Muted}" FontSize="11" Margin="0,0,12,0" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" services:MotionBehavior.TextFeedback="True" />

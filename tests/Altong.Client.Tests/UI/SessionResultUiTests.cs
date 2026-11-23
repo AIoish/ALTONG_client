@@ -591,8 +591,10 @@ public sealed class SessionResultUiTests
                             Assert.IsFalse(lastReply.IsExpanded);
                             lastReply.IsExpanded = true;
                             reportRoot.UpdateLayout();
-                            var copy = Descendants(lastReply).OfType<Button>().Single(button => Equals(button.Content, "문구 복사"));
-                            Assert.AreEqual("확인했습니다. 곧 답변드릴게요.", copy.Tag);
+                            var copies = Descendants(lastReply).OfType<Button>().Where(button => Equals(button.Content, "복사")).ToArray();
+                            CollectionAssert.AreEqual(QuickReplyTemplateStore.Defaults.ToArray(), copies.Select(button => (string)button.Tag).ToArray(),
+                                "기본 답장 문구를 모두 골라 복사할 수 있어야 합니다.");
+                            var copy = copies[0];
                             copy.BringIntoView();
                             PumpBindings();
                             reportRoot.UpdateLayout();

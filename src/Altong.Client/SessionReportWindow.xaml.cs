@@ -26,10 +26,16 @@ public partial class SessionReportWindow : Window
     private readonly bool _demoMode;
     private readonly DashboardCalendarStore _calendar;
     private readonly DashboardSummaryStateStore _summaryState;
+    private readonly string? _summaryStatePath;
     private readonly NotificationSummaryCalendarView _summaryCards;
     private readonly ReportNotificationItem[] _notificationItems;
     private sealed record ReportNotificationItem(string AppName, string? Sender, string Title, string Body,
-        bool? IsPassed, string? ReplyText);
+        bool? IsPassed, string? ReplyText, IReadOnlyList<string> ReplyOptions);
+    private readonly bool _isSavedReport;
+    private Task _saveTask = Task.CompletedTask;
+    private ReportReadyToastWindow? _summaryToast;
+    private CancellationTokenRegistration _shutdownHook;
+    private string? _titleBeforeNotice;
     private int _notificationDisplayLimit = 50;
     private int _appDisplayLimit = 50;
     private int _memoDisplayLimit = 20;
@@ -51,9 +57,12 @@ public partial class SessionReportWindow : Window
 
     public SessionReportWindow(SessionResult result, SqliteSessionReportRepository? reports = null, bool isSaved = false,
         IReportSummaryProvider? summaryProvider = null, DashboardCalendarStore? calendar = null,
-        string? summaryStatePath = null)
+        string? summaryStatePath = null, IReadOnlyList<string>? replyTemplates = null)
     {
         _result = result;
+        _isSavedReport = isSaved;
+        replyTemplates ??= (System.Windows.Application.Current as App)?.QuickReplyTemplates.Current
+            ?? QuickReplyTemplateStore.Defaults;
         _memoItems = result.Memos.OrderBy(memo => memo.CreatedAt).ThenBy(memo => memo.Id, StringComparer.Ordinal)
             .Select(memo => new ReportMemoItem(memo)).ToArray();
         _reports = reports;
@@ -62,6 +71,7 @@ public partial class SessionReportWindow : Window
         _summaryProvider = summaryProvider ?? (_demoMode ? new FakeReportSummaryProvider()
             : string.IsNullOrWhiteSpace(summaryFolder) ? null : new JsonReportSummaryProvider(summaryFolder));
         _calendar = calendar ?? new DashboardCalendarStore();
+        _summaryStatePath = summaryStatePath;
         _summaryState = new(summaryStatePath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Altong", "dashboard-summary-state.json"));
         _summaryState.Load();
@@ -87,7 +97,12 @@ public partial class SessionReportWindow : Window
         Closed += (_, _) =>
         {
             _closed = true;
-            _summaryLifetime.Cancel();
+            // 요약 중에 닫아도 요약은 끝까지 돌린다. 끝나면 저장본에 붙이고 말풍선으로 알린다.
+            // 떠 있는 말풍선은 닫지 않는다. [리포트 열기]가 리포트를 다시 연다.
+            // 앱이 끝나는 중이면 모델이 정리되기 전에 요약을 멈춘다.
+            var app = System.Windows.Application.Current as App;
+            if (!_loadingSummaries || app?.IsShuttingDown == true) _summaryLifetime.Cancel();
+            else if (app is not null) _shutdownHook = app.ShutdownToken.Register(_summaryLifetime.Cancel);
             _calendar.Changed -= Calendar_Changed;
         };
         if (isSaved || reports is null || result.SessionId is null)
@@ -125,10 +140,13 @@ public partial class SessionReportWindow : Window
                 string.Equals(reply.AppName, notification.AppName, StringComparison.OrdinalIgnoreCase)
                 && reply.Sender == notification.Sender && reply.NotificationTitle == notification.Title);
             var replyText = replyIndex >= 0 ? remainingReplies[replyIndex].Text
-                : notification.IsPassed == false ? "확인했습니다. 곧 답변드릴게요." : null;
+                : notification.IsPassed == false ? replyTemplates.FirstOrDefault() : null;
             if (replyIndex >= 0) remainingReplies.RemoveAt(replyIndex);
+            // 저장된 초안을 맨 앞에 두고, 설정의 답장 문구를 이어서 고를 수 있게 한다.
+            IReadOnlyList<string> options = string.IsNullOrWhiteSpace(replyText) ? []
+                : replyTemplates.Prepend(replyText).Distinct(StringComparer.Ordinal).ToArray();
             return new ReportNotificationItem(notification.AppName, notification.Sender, notification.Title,
-                notification.Body, notification.IsPassed, replyText);
+                notification.Body, notification.IsPassed, replyText, options);
         }).ToArray();
         UpdateSummaryContentVisibility();
         if (result.SummaryItems.Count > 0) ShowSummaryItems(result.SummaryItems);
@@ -274,33 +292,39 @@ public partial class SessionReportWindow : Window
 
     private async Task LoadSummaryItemsAsync()
     {
-        if (_loadingSummaries || _saving || _closed || _summaryProvider is null || _result.SessionId is null) return;
+        if (_loadingSummaries || _closed || _summaryProvider is null || _result.SessionId is null) return;
         _loadingSummaries = true;
-        SaveReportButton.IsEnabled = false;
-        if (SaveReportButton.Visibility == Visibility.Visible)
+        // 요약 중에도 저장할 수 있다. 저장 전이면 요약이 끝날 때 알려 준다는 안내를 보여 준다.
+        if (SaveReportButton.Visibility == Visibility.Visible && !_saving && !_saveSucceeded)
         {
             SaveAvailabilityText.Visibility = Visibility.Visible;
             SaveStatusText.Visibility = Visibility.Collapsed;
         }
         ReloadSummaryButton.IsEnabled = false;
         SetSummaryStatus(_summaryCards.Items.Length > 0 ? "AI 요약을 갱신하고 있어요" : "AI가 알림을 요약하고 있어요", busy: true);
+        string? outcome = null;
+        var before = _result;
         try
         {
             var supply = await _summaryProvider.ReadAsync(_result.SessionId, _summaryLifetime.Token);
-            if (_closed) return;
             if (supply.Items.Count > 0)
             {
                 var previous = _summaryCards.Items.Select(row => row.Summary).ToArray();
                 ShowSummaryItems(supply.Items, updateSnapshot: !supply.IsDemo);
                 SetSummaryStatus(null);
+                outcome = "AI 요약 완료";
                 if (IsLoaded && !previous.SequenceEqual(_summaryCards.Items.Select(row => row.Summary)))
                     _ = Dispatcher.InvokeAsync(() =>
                     {
                         if (!_closed && !_loadingSummaries) MotionBehavior.Transition(CalendarSummaryHost);
                     }, System.Windows.Threading.DispatcherPriority.Loaded);
             }
-            else SetSummaryStatus(_summaryCards.Items.Length > 0 ? "새 요약이 없어 기존 요약을 표시합니다."
-                : _result.BlockedCount == 0 ? "요약할 알림이 없습니다." : "생성된 AI 요약이 없습니다.");
+            else
+            {
+                SetSummaryStatus(_summaryCards.Items.Length > 0 ? "새 요약이 없어 기존 요약을 표시합니다."
+                    : _result.BlockedCount == 0 ? "요약할 알림이 없습니다." : "생성된 AI 요약이 없습니다.");
+                // 새로 요약한 내용이 없으면 알릴 것도 없다.
+            }
         }
         catch (OperationCanceledException)
         {
@@ -308,7 +332,8 @@ public partial class SessionReportWindow : Window
         }
         catch (Exception)
         {
-            if (!_closed) SetSummaryStatus("AI 요약을 불러오지 못했습니다.", failed: true);
+            SetSummaryStatus("AI 요약을 불러오지 못했습니다.", failed: true);
+            outcome = "AI 요약 실패";
         }
         finally
         {
@@ -317,10 +342,101 @@ public partial class SessionReportWindow : Window
             {
                 SaveAvailabilityText.Visibility = Visibility.Collapsed;
                 SaveStatusText.Visibility = Visibility.Visible;
-                SaveReportButton.IsEnabled = true;
                 ReloadSummaryButton.IsEnabled = true;
             }
         }
+        // 이미 저장한 리포트는 요약이 끝나면 저장본에도 반영한다.
+        if (_reports is not null && (_saveSucceeded || _isSavedReport) && !ReferenceEquals(_result, before))
+        {
+            try
+            {
+                await AttachSummaryToSavedReportAsync();
+                if (!_closed && _saveSucceeded) SaveStatusText.Text = "AI 요약까지 저장했어요";
+            }
+            catch (Exception)
+            {
+                if (!_closed) SaveStatusText.Text = "AI 요약을 저장하지 못했어요 · 다시 열면 다시 요약해요.";
+            }
+        }
+        _shutdownHook.Dispose();
+        if (outcome is not null) NotifySummaryFinished(outcome);
+    }
+
+    /// <summary>
+    /// AI 요약이 끝나면 리포트 창을 보고 있든, 다른 창을 보고 있든, 창을 닫았든 항상 말풍선으로 알린다.
+    /// 리포트 창을 보고 있지 않으면 창 제목에도 결과를 적어 둔다.
+    /// </summary>
+    private void NotifySummaryFinished(string outcome)
+    {
+        if (!_closed && IsVisible && !(IsActive && WindowState != WindowState.Minimized))
+        {
+            // 알림이 겹쳐도 원래 제목은 처음 한 번만 기억한다.
+            if (_titleBeforeNotice is null)
+            {
+                _titleBeforeNotice = Title;
+                Activated += RestoreTitle;
+            }
+            Title = $"{outcome} · 집중 리포트";
+        }
+        ShowSummaryToast(succeeded: outcome == "AI 요약 완료");
+    }
+
+    private void RestoreTitle(object? sender, EventArgs e)
+    {
+        Activated -= RestoreTitle;
+        if (_titleBeforeNotice is not null) Title = _titleBeforeNotice;
+        _titleBeforeNotice = null;
+    }
+
+    internal ReportReadyToastWindow? SummaryToast => _summaryToast;
+
+    internal void ShowSummaryToast(bool succeeded)
+    {
+        // 앱이 끝나는 중에 요약이 끝났으면 띄울 곳이 없다.
+        if (Dispatcher.HasShutdownStarted) return;
+        _summaryToast?.Dismiss();
+        var toast = new ReportReadyToastWindow();
+        toast.OpenRequested += (_, _) => BringReportToFront();
+        toast.Closed += (_, _) => { if (ReferenceEquals(_summaryToast, toast)) _summaryToast = null; };
+        _summaryToast = toast;
+        toast.Present(succeeded);
+    }
+
+    private void BringReportToFront()
+    {
+        if (_closed)
+        {
+            ReopenReport();
+            return;
+        }
+        if (WindowState == WindowState.Minimized) SystemCommands.RestoreWindow(this);
+        Show();
+        // 말풍선을 누른 입력으로 알통이 앞으로 나올 수 있다. 막히면 작업 표시줄 단추로 대신 알린다.
+        if (!Activate()) Services.Win32.WindowAttention.FlashTaskbar(this);
+    }
+
+    /// <summary>닫은 리포트를 요약이 반영된 상태로 다시 연다. 저장했으면 저장된 리포트로 연다.</summary>
+    internal SessionReportWindow? ReopenedReport { get; private set; }
+
+    private void ReopenReport()
+    {
+        var report = new SessionReportWindow(_result, _reports, _isSavedReport || _saveSucceeded,
+            _summaryProvider, _calendar, _summaryStatePath)
+        {
+            WindowStartupLocation = WindowStartupLocation.CenterScreen
+        };
+        ReopenedReport = report;
+        report.Show();
+        if (!report.Activate()) Services.Win32.WindowAttention.FlashTaskbar(report);
+    }
+
+    /// <summary>요약 없이 저장된 리포트에 지금 표시 중인 AI 요약을 채운다. 진행 중인 저장이 끝난 뒤 실행한다.</summary>
+    private async Task AttachSummaryToSavedReportAsync()
+    {
+        try { await _saveTask; } catch (Exception) { return; }
+        if (_reports is null || _result.SessionId is not { } session || _result.SummaryItems.Count == 0) return;
+        var items = _result.SummaryItems;
+        await Task.Run(() => _reports.AttachSummaryAsync(session, items));
     }
 
     private void FitToWorkArea()
@@ -345,15 +461,21 @@ public partial class SessionReportWindow : Window
 
     private async void SaveReport_Click(object sender, RoutedEventArgs e)
     {
-        if (_saving || _saveSucceeded || _loadingSummaries || _closed || _reports is null) return;
+        if (_saving || _saveSucceeded || _closed || _reports is null) return;
         _saving = true;
         SaveReportButton.IsEnabled = false;
         SkipSaveButton.IsEnabled = false;
         SetSaveLabel("저장 중");
+        SaveAvailabilityText.Visibility = Visibility.Collapsed;
+        SaveStatusText.Visibility = Visibility.Visible;
         SaveStatusText.Text = "리포트 저장 중…";
         try
         {
-            await Task.Run(() => _reports.SaveAsync(_result));
+            var snapshot = _result;
+            _saveTask = Task.Run(() => _reports.SaveAsync(snapshot));
+            await _saveTask;
+            // 저장하는 동안 요약이 끝났으면 저장본에 요약을 채운다.
+            if (!_loadingSummaries && !ReferenceEquals(_result, snapshot)) await AttachSummaryToSavedReportAsync();
         }
         catch (Exception)
         {
@@ -367,6 +489,7 @@ public partial class SessionReportWindow : Window
 
         // Persistence is finished. Feedback failure must never be presented as a save failure.
         _saveSucceeded = true;
+        bool keepOpen = false;
         try
         {
             SetSaveLabel("저장 완료");
@@ -383,6 +506,13 @@ public partial class SessionReportWindow : Window
             SaveCompletedIcon.Visibility = Visibility.Visible;
             MotionBehavior.DrawCheck(SaveCompletedIcon);
             MotionBehavior.Acknowledge(SaveReportLabel);
+            if (_loadingSummaries)
+            {
+                // 요약이 끝나야 저장본에 요약이 들어가므로 창을 열어 두고, 끝나면 말풍선으로 알린다.
+                SaveStatusText.Text = "저장했어요 · AI 요약이 끝나면 알림으로 알려드릴게요";
+                keepOpen = true;
+                return;
+            }
             await Task.Delay(TimeSpan.FromMilliseconds(600), _summaryLifetime.Token);
             await MotionBehavior.FadeOutAsync(ReportSurface, _summaryLifetime.Token);
         }
@@ -394,7 +524,7 @@ public partial class SessionReportWindow : Window
         finally
         {
             _saving = false;
-            if (!_closed) Close();
+            if (!_closed && !keepOpen) Close();
         }
     }
 

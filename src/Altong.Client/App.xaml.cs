@@ -28,6 +28,7 @@ public partial class App : System.Windows.Application
     public FocusSettingsStore FocusSettings { get; } = new();
     public AutoDndSettingsStore AutoDndSettings { get; } = new();
     public StartupRegistration StartupRegistration { get; } = new();
+    public QuickReplyTemplateStore QuickReplyTemplates { get; } = QuickReplyTemplateStore.OpenDefault();
     public FocusRoutineService FocusRoutine { get; private set; } = null!;
     public SessionResultsService SessionResults { get; private set; } = null!;
     private readonly System.Windows.Threading.DispatcherTimer _routineTimer = new()
@@ -45,7 +46,21 @@ public partial class App : System.Windows.Application
     public KakaoNotificationInterceptor? KakaoInterceptor { get; private set; }
     public IKakaoAudioOperator? KakaoAudioOperator { get; private set; }
 
-    internal bool IsShuttingDown { get; private set; }
+    private readonly CancellationTokenSource _shutdown = new();
+    private bool _isShuttingDown;
+
+    internal bool IsShuttingDown
+    {
+        get => _isShuttingDown;
+        private set
+        {
+            _isShuttingDown = value;
+            if (value) _shutdown.Cancel();
+        }
+    }
+
+    /// <summary>앱이 끝나기 시작하면 취소된다. 닫힌 리포트가 이어서 돌리던 AI 요약을 멈출 때 쓴다.</summary>
+    internal CancellationToken ShutdownToken => _shutdown.Token;
 
     private DashboardWindow? _dashboardWindow;
     private NotificationDockWindow? _notificationDockWindow;

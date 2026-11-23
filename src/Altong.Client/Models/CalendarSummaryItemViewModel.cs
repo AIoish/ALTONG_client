@@ -16,11 +16,71 @@ public sealed class CalendarSummaryItemViewModel : INotifyPropertyChanged
     public CalendarSchedule Draft { get; private set; }
     public bool IsScheduleRelated => Summary.IsScheduleRelated;
     public string Title { get; set; }
-    public DateTime? StartDate { get; set; }
-    public string StartTime { get; set; }
-    public DateTime? EndDate { get; set; }
-    public string EndTime { get; set; }
+    public const string DefaultTimeZone = "Asia/Seoul";
+    /// <summary>시각 선택 목록. 00:00부터 23:30까지 30분 간격이다.</summary>
+    public static IReadOnlyList<string> HalfHourSlots { get; } =
+        Enumerable.Range(0, 48).Select(slot => $"{slot / 2:00}:{slot % 2 * 30:00}").ToArray();
+    private string _startTime = "";
+    private string _endTime = "";
+    private DateTime? _startDate;
+    private DateTime? _endDate;
+    public DateTime? StartDate
+    {
+        get => _startDate;
+        set
+        {
+            if (_startDate == value) return;
+            _startDate = value;
+            Changed(nameof(StartDate));
+            // 종료 날짜가 없거나 시작보다 앞서면 시작 날짜를 따라간다. 시작만 골라도 저장할 수 있다.
+            if (value is { } start && (EndDate is null || EndDate < start)) EndDate = start;
+            FillEndTime();
+        }
+    }
+    public DateTime? EndDate
+    {
+        get => _endDate;
+        set { if (_endDate == value) return; _endDate = value; Changed(nameof(EndDate)); }
+    }
+    public string StartTime
+    {
+        get => _startTime;
+        set
+        {
+            if (_startTime == value) return;
+            bool listChanges = !IsSlot(_startTime) || !IsSlot(value);
+            _startTime = value ?? "";
+            Changed(nameof(StartTime));
+            if (listChanges) Changed(nameof(StartTimeOptions));
+            FillEndTime();
+        }
+    }
+
+    /// <summary>같은 날 일정에서 종료가 비었거나 시작보다 이르면 종료를 시작 1시간 뒤로 맞춘다. 23시 이후는 사용자가 고른다.</summary>
+    private void FillEndTime()
+    {
+        if (StartDate is { } start && (EndDate is null || EndDate == start) &&
+            TryParseTime(_startTime, out var from) && (!TryParseTime(EndTime, out var to) || to <= from) &&
+            from < TimeSpan.FromHours(23))
+            EndTime = from.Add(TimeSpan.FromHours(1)).ToString(@"hh\:mm", CultureInfo.InvariantCulture);
+    }
+    public string EndTime
+    {
+        get => _endTime;
+        set
+        {
+            if (_endTime == value) return;
+            // 30분 단위가 아닌 시각이 들어오거나 빠지면 선택 목록도 바꿔야 빈칸으로 보이지 않는다.
+            bool listChanges = !IsSlot(_endTime) || !IsSlot(value);
+            _endTime = value ?? "";
+            Changed(nameof(EndTime));
+            if (listChanges) Changed(nameof(EndTimeOptions));
+        }
+    }
+    public IReadOnlyList<string> StartTimeOptions => WithSlot(StartTime);
+    public IReadOnlyList<string> EndTimeOptions => WithSlot(EndTime);
     public string TimeZone { get; set; }
+    public string TimeZoneHeader => TimeZone == DefaultTimeZone ? "시간대 · 한국 시간" : $"시간대 · {TimeZone}";
     public string Location { get; set; }
     public string Details { get; set; }
     public bool IsBusy { get => _busy; set { _busy = value; Changed(nameof(IsBusy)); Changed(nameof(CanAct)); Changed(nameof(CanEdit)); Changed(nameof(ButtonText)); } }
@@ -57,7 +117,7 @@ public sealed class CalendarSummaryItemViewModel : INotifyPropertyChanged
         EndDate = Draft.End?.Date;
         StartTime = Draft.Start?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
         EndTime = Draft.End?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
-        TimeZone = Draft.TimeZone ?? "";
+        TimeZone = string.IsNullOrWhiteSpace(Draft.TimeZone) ? DefaultTimeZone : Draft.TimeZone;
         Location = Draft.Location ?? "";
         Details = Draft.Details ?? "";
     }
@@ -82,7 +142,7 @@ public sealed class CalendarSummaryItemViewModel : INotifyPropertyChanged
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(TimeZone)) throw new ArgumentException("시간대를 입력해 주세요. 예: Asia/Seoul");
+            if (string.IsNullOrWhiteSpace(TimeZone)) TimeZone = DefaultTimeZone;
             var zone = TimeZoneInfo.FindSystemTimeZoneById(TimeZone.Trim());
             var updated = Draft with
             {
@@ -113,7 +173,7 @@ public sealed class CalendarSummaryItemViewModel : INotifyPropertyChanged
     private static DateTimeOffset ReadTime(DateTime? date, string time, TimeZoneInfo zone, DateTimeOffset? original)
     {
         if (date is null || !DateTime.TryParseExact(time, ["H:mm", "HH:mm"], CultureInfo.InvariantCulture,
-            DateTimeStyles.None, out var parsed)) throw new ArgumentException("시작·종료 날짜와 시각(HH:mm)을 입력해 주세요.");
+            DateTimeStyles.None, out var parsed)) throw new ArgumentException("시작·종료 날짜와 시각을 선택해 주세요.");
         var wall = DateTime.SpecifyKind(date.Value.Date.Add(parsed.TimeOfDay), DateTimeKind.Unspecified);
         // The minute-only editor must preserve seconds and the known DST offset when left unchanged.
         if (original is { } unchanged && unchanged.Date == wall.Date && unchanged.Hour == wall.Hour &&
@@ -127,6 +187,22 @@ public sealed class CalendarSummaryItemViewModel : INotifyPropertyChanged
         }
         return new(wall, zone.GetUtcOffset(wall));
     }
+
+    private static bool TryParseTime(string? text, out TimeSpan time)
+    {
+        time = default;
+        if (!DateTime.TryParseExact(text, ["H:mm", "HH:mm"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+            return false;
+        time = parsed.TimeOfDay;
+        return true;
+    }
+
+    private static bool IsSlot(string? time) => string.IsNullOrWhiteSpace(time) || HalfHourSlots.Contains(time);
+
+    // AI가 뽑은 시각이 30분 단위가 아니어도 목록에서 그대로 고를 수 있게 끼워 넣는다.
+    private static IReadOnlyList<string> WithSlot(string time) =>
+        string.IsNullOrWhiteSpace(time) || HalfHourSlots.Contains(time) ? HalfHourSlots
+            : HalfHourSlots.Append(time).Order(StringComparer.Ordinal).ToArray();
 
     public NotificationSummaryItem Capture() => Summary with { Schedule = Summary.IsScheduleRelated ? Draft : Summary.Schedule };
     public event PropertyChangedEventHandler? PropertyChanged;

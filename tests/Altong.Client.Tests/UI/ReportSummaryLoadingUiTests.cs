@@ -35,7 +35,7 @@ public sealed class ReportSummaryLoadingUiTests
             var save = (Button)report.FindName("SaveReportButton");
             Assert.AreEqual(Visibility.Visible, hint.Visibility);
             Assert.AreEqual(Visibility.Collapsed, ((TextBlock)report.FindName("SaveStatusText")).Visibility);
-            Assert.IsFalse(save.IsEnabled);
+            Assert.IsTrue(save.IsEnabled, "AI 요약 중에도 리포트를 저장할 수 있어야 합니다.");
             var hintBounds = hint.TransformToAncestor(report).TransformBounds(new Rect(hint.RenderSize));
             var buttonBounds = save.TransformToAncestor(report).TransformBounds(new Rect(save.RenderSize));
             Assert.IsTrue(hintBounds.Bottom <= buttonBounds.Top && hintBounds.Right <= report.ActualWidth);
@@ -52,11 +52,50 @@ public sealed class ReportSummaryLoadingUiTests
             }
             if (outcome == "failure") provider.Pending.SetException(new IOException("controlled failure"));
             else provider.Pending.SetResult(new(outcome == "empty" ? [] : [new("summary", "요약 결과", false, null)]));
-            Until(() => save.IsEnabled);
-            Assert.AreEqual(Visibility.Collapsed, hint.Visibility);
+            Until(() => hint.Visibility == Visibility.Collapsed);
+            Assert.IsTrue(save.IsEnabled);
             Assert.AreEqual(Visibility.Visible, ((TextBlock)report.FindName("SaveStatusText")).Visibility);
         }
         finally { report.Close(); }
+    });
+
+    [TestMethod]
+    public void SaveDuringSummary_KeepsReportOpen_AndStoresSummaryWhenItFinishes() => RunSta(() =>
+    {
+        using var db = Altong.Client.Data.SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var reports = new Altong.Client.Data.Repositories.SqliteSessionReportRepository(db);
+        var provider = new ControlledProvider();
+        var now = DateTime.UtcNow;
+        new Altong.Client.Data.Repositories.SqliteFocusSessionRepository(db)
+            .StartSessionAsync(new("save-early", now.AddMinutes(-25), now, IsCompleted: true)).GetAwaiter().GetResult();
+        var result = new SessionResult(now.AddMinutes(-25), now,
+            [new NotificationRecord("n1", "Slack", "사용자", "원본 제목", "원본 본문", now, false)], [], true)
+            { SessionId = "save-early" };
+        var folder = Path.Combine(Path.GetTempPath(), "altong-summary-loading-" + Guid.NewGuid().ToString("N"));
+        var report = new SessionReportWindow(result, reports, summaryProvider: provider,
+            calendar: new DashboardCalendarStore(Path.Combine(folder, "calendar.json")),
+            summaryStatePath: Path.Combine(folder, "state.json"));
+        try
+        {
+            report.Show();
+            var save = (Button)report.FindName("SaveReportButton");
+            var status = (TextBlock)report.FindName("SaveStatusText");
+            save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Until(() => status.Text.Contains("알림으로 알려"));
+            Assert.IsTrue(report.IsVisible, "요약 중에 저장하면 요약이 끝날 때까지 리포트를 열어 둬야 합니다.");
+            Assert.IsNotNull(reports.GetSnapshotAsync("save-early").Result, "요약 전에도 리포트가 저장되어야 합니다.");
+            Assert.AreEqual(0, reports.GetSnapshotAsync("save-early").Result!.SummaryItems.Count);
+
+            provider.Pending.SetResult(new([new("summary", "늦게 끝난 요약", false, null) { AppName = "Slack", GroupId = "group" }]));
+            Until(() => status.Text.StartsWith("AI 요약"));
+            Assert.AreEqual("AI 요약까지 저장했어요", status.Text);
+            var stored = reports.GetSnapshotAsync("save-early").Result!;
+            Assert.AreEqual("늦게 끝난 요약", stored.SummaryItems.Single().Text, "요약이 끝나면 저장본에도 반영되어야 합니다.");
+            Assert.IsTrue(report.IsVisible);
+            Assert.IsTrue(report.SummaryToast?.IsVisible, "요약이 끝나면 리포트 창 상태와 상관없이 말풍선을 띄워야 합니다.");
+        }
+        finally { report.SummaryToast?.Close(); report.Close(); }
     });
 
     [TestMethod]
@@ -154,7 +193,7 @@ public sealed class ReportSummaryLoadingUiTests
     });
 
     [TestMethod]
-    public void EmptyResult_IsDistinctFromFailure_AndClosingCancelsPendingLoad() => RunSta(() =>
+    public void EmptyResult_IsDistinctFromFailure_AndClosingKeepsSummarizing() => RunSta(() =>
     {
         var provider = new ControlledProvider();
         var now = DateTime.UtcNow;
@@ -166,17 +205,52 @@ public sealed class ReportSummaryLoadingUiTests
             Assert.AreEqual("요약할 알림이 없습니다.", Status(report).Text);
             Assert.AreEqual(Visibility.Collapsed, Indicator(report).Visibility);
             Assert.AreEqual(Visibility.Collapsed, Retry(report).Visibility);
+            Assert.IsNull(report.SummaryToast, "요약할 알림이 없으면 말풍선을 띄우지 않아야 합니다.");
 
             provider.Pending = ControlledProvider.NewPending();
             Reload(report).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            var loadingText = Status(report).Text;
             report.Close();
-            Assert.IsTrue(provider.LastToken.IsCancellationRequested);
+            Assert.IsFalse(provider.LastToken.IsCancellationRequested, "리포트를 닫아도 요약은 끝까지 돌아야 합니다.");
             provider.Pending.SetResult(new([new("late", "늦게 도착한 요약", false, null)]));
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
-            Assert.AreEqual(loadingText, Status(report).Text, "닫힌 리포트를 뒤늦게 갱신하면 안 됩니다.");
+            Until(() => report.SummaryToast is { IsVisible: true });
+
+            ((Button)report.SummaryToast!.FindName("OpenButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var reopened = report.ReopenedReport;
+            Assert.IsNotNull(reopened, "[리포트 열기]는 닫힌 리포트를 다시 열어야 합니다.");
+            try
+            {
+                Assert.IsTrue(reopened.IsVisible);
+                Assert.AreEqual("늦게 도착한 요약", Cards(reopened).Items.Single().Summary.Text, "다시 연 리포트에 요약이 보여야 합니다.");
+            }
+            finally { reopened.Close(); }
         }
-        finally { report.Close(); }
+        finally { report.SummaryToast?.Close(); report.Close(); }
+    });
+
+    [TestMethod]
+    public void ToastShownBeforeClosing_StaysAndReopensReport() => RunSta(() =>
+    {
+        var provider = new ControlledProvider();
+        var now = DateTime.UtcNow;
+        var report = Create(new(now.AddMinutes(-25), now,
+            [new NotificationRecord("n1", "Slack", "사용자", "원본 제목", "원본 본문", now, false)], [], true) { SessionId = "toast-first" }, provider);
+        report.Show();
+        try
+        {
+            provider.Pending.SetResult(new([new("done", "먼저 끝난 요약", false, null) { AppName = "Slack", GroupId = "g" }]));
+            Until(() => report.SummaryToast is { IsVisible: true });
+            var toast = report.SummaryToast!;
+            report.Close();
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+            Assert.IsTrue(toast.IsVisible, "리포트를 닫아도 말풍선은 남아 있어야 다시 열 수 있습니다.");
+
+            ((Button)toast.FindName("OpenButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var reopened = report.ReopenedReport;
+            Assert.IsNotNull(reopened);
+            try { Assert.AreEqual("먼저 끝난 요약", Cards(reopened).Items.Single().Summary.Text); }
+            finally { reopened.Close(); }
+        }
+        finally { report.SummaryToast?.Close(); report.Close(); }
     });
 
     private static SessionReportWindow Create(SessionResult result, IReportSummaryProvider provider)

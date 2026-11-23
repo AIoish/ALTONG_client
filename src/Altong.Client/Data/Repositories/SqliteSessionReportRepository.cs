@@ -133,6 +133,38 @@ public sealed class SqliteSessionReportRepository(IAltongDatabase database)
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// AI 요약 없이 저장된 리포트에만 나중에 끝난 요약을 채운다. 저장본은 바꾸지 않는 것이 원칙이므로
+    /// 이미 요약이 있거나 저장 뒤 내용이 달라졌으면 아무것도 하지 않고 false를 돌려준다.
+    /// </summary>
+    public async Task<bool> AttachSummaryAsync(string sessionId, IReadOnlyList<NotificationSummaryItem> items)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || items.Count == 0) return false;
+        using var connection = database.CreateOpenConnection();
+        string stored;
+        using (var read = connection.CreateCommand())
+        {
+            read.CommandText = "SELECT snapshot_json FROM focus_session_reports WHERE session_id = $id AND schema_version = 1;";
+            read.Parameters.AddWithValue("$id", sessionId);
+            if (await read.ExecuteScalarAsync() is not string json) return false;
+            stored = json;
+        }
+        var snapshot = JsonSerializer.Deserialize<ReportSnapshot>(stored);
+        if (snapshot is null || snapshot.SummaryItems is { Length: > 0 }) return false;
+        using var update = connection.CreateCommand();
+        // 읽은 내용과 같을 때만 바꿔, 그 사이 다른 저장이 끼어들어도 덮어쓰지 않는다.
+        update.CommandText = """
+            UPDATE focus_session_reports SET snapshot_json = $snapshot
+            WHERE session_id = $id AND snapshot_json = $stored;
+            """;
+        update.Parameters.AddWithValue("$id", sessionId);
+        update.Parameters.AddWithValue("$stored", stored);
+        update.Parameters.AddWithValue("$snapshot", JsonSerializer.Serialize(snapshot with { SummaryItems = items.ToArray() }));
+        bool changed = await update.ExecuteNonQueryAsync() == 1;
+        if (changed) Changed?.Invoke(this, EventArgs.Empty);
+        return changed;
+    }
+
     public async Task<SessionResult?> GetSnapshotAsync(string sessionId)
     {
         using var connection = database.CreateOpenConnection();
