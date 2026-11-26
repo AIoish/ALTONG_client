@@ -19,6 +19,7 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
 {
     private readonly INotificationRepository _notifications;
     private readonly LlamaBriefingEngine _engine;
+    private readonly bool _ownsEngine;
     private readonly Func<DateTime> _nowProvider;
     private readonly ConcurrentDictionary<string, Lazy<Task<ReportSummarySupply>>> _sessionTaskCache = new(StringComparer.Ordinal);
 
@@ -27,11 +28,23 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
         string modelPath,
         Func<DateTime>? nowProvider = null,
         int gpuLayerCount = 0)
+        : this(notifications, new LlamaBriefingEngine(modelPath, gpuLayerCount), nowProvider, ownsEngine: true)
     {
-        _notifications = notifications;
-        _engine = new LlamaBriefingEngine(modelPath, gpuLayerCount);
-        _nowProvider = nowProvider ?? (() => DateTime.Now);
     }
+
+    public LlamaReportSummaryProvider(
+        INotificationRepository notifications,
+        LlamaBriefingEngine engine,
+        Func<DateTime>? nowProvider = null,
+        bool ownsEngine = false)
+    {
+        _notifications = notifications ?? throw new ArgumentNullException(nameof(notifications));
+        _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _nowProvider = nowProvider ?? (() => DateTime.Now);
+        _ownsEngine = ownsEngine;
+    }
+
+    internal LlamaBriefingEngine Engine => _engine;
 
     public async Task<ReportSummarySupply> ReadAsync(string sessionId, CancellationToken cancellationToken)
     {
@@ -204,5 +217,11 @@ public sealed class LlamaReportSummaryProvider : IReportSummaryProvider, IDispos
         return $"{prefix}-{Convert.ToHexString(hash)[..12].ToLowerInvariant()}";
     }
 
-    public void Dispose() => _engine.Dispose();
+    public void Dispose()
+    {
+        if (_ownsEngine)
+        {
+            _engine.Dispose();
+        }
+    }
 }
