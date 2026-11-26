@@ -42,6 +42,7 @@ RestartApplications=no
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Tasks]
+Name: "startup"; Description: "Windows 시작 시 Altong 자동 실행 (로그인 시 트레이에서 시작)"; GroupDescription: "추가 작업:"
 Name: "desktopicon"; Description: "바탕 화면에 바로 가기 만들기"; GroupDescription: "추가 작업:"; Flags: unchecked
 Name: "kakao"; Description: "카카오톡 알림 연동 켜기 (실험 기능: 카카오톡 팝업을 화면에서 읽어 옵니다)"; GroupDescription: "추가 작업:"; Flags: unchecked
 
@@ -95,4 +96,15 @@ begin
     ExecAsOriginalUser(ExpandConstant('{sys}\setx.exe'), 'ALTONG_ENABLE_KAKAO 1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
   else
     ExecAsOriginalUser(ExpandConstant('{sys}\reg.exe'), 'delete HKCU\Environment /v ALTONG_ENABLE_KAKAO /f', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  { 4. Windows 시작 시 자동 실행 (기본 선택, 원래 사용자의 시작 프로그램에 등록). }
+  if WizardIsTaskSelected('startup') then
+    ExecAsOriginalUser(ExpandConstant('{sys}\reg.exe'),
+      'add HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Altong /t REG_SZ /d "\"' +
+      ExpandConstant('{app}\Altong.Client.exe') + '\" --startup" /f',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+  else
+    ExecAsOriginalUser(ExpandConstant('{sys}\reg.exe'),
+      'delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Altong /f',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
