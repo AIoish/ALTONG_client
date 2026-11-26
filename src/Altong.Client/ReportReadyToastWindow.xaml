@@ -10,7 +10,7 @@
         UseLayoutRounding="True" FontFamily="{x:Static services:AppTypography.BodyFont}">
     <!--
         AI 요약이 끝났음을 알리는 트레이 말풍선. 작업 표시줄 알림 영역 근처(작업 영역 오른쪽 아래)에 뜬다.
-        대시보드 카드와 같은 어두운 표면·테두리·버튼을 쓰고, 눌러도 작업 중인 창의 포커스를 가져가지 않는다.
+        대시보드와 같은 흑연 유리(왼쪽 위에 호박빛이 번진 판, 윗변이 밝은 테두리)를 쓰고, 눌러도 작업 중인 창의 포커스를 가져가지 않는다.
     -->
     <Window.Resources>
         <ResourceDictionary>
@@ -22,13 +22,13 @@
                 <Setter Property="Cursor" Value="Hand" />
                 <Setter Property="FontSize" Value="12" />
                 <Setter Property="Padding" Value="14,7" />
-                <Setter Property="Background" Value="{StaticResource BlackRaised}" />
+                <Setter Property="Background" Value="{StaticResource GlassPaneHover}" />
                 <Setter Property="Foreground" Value="{StaticResource BlackText}" />
-                <Setter Property="BorderBrush" Value="{StaticResource BlackRule}" />
+                <Setter Property="BorderBrush" Value="{StaticResource NavSelectedRule}" />
                 <Setter Property="Template"><Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                BorderThickness="1" CornerRadius="12" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -49,14 +49,22 @@
 
     <Grid x:Name="Root" Margin="12,12,12,12" Opacity="0">
         <Grid.RenderTransform><TranslateTransform x:Name="SlideTransform" Y="14" /></Grid.RenderTransform>
-        <Border x:Name="Card" Background="{StaticResource BlackSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="14"
+        <Border x:Name="Card" BorderBrush="{StaticResource GlassWindowRim}" BorderThickness="1" CornerRadius="22"
                 AutomationProperties.LiveSetting="Polite">
+            <Border.Background>
+                <!-- 다른 앱 위에 뜨므로 글자가 읽히게 거의 불투명하게, 왼쪽 위에만 호박빛을 번지게 한다. -->
+                <RadialGradientBrush GradientOrigin="0.08,0" Center="0.08,0" RadiusX="0.95" RadiusY="1.6">
+                    <GradientStop Color="#F73B2E22" Offset="0" />
+                    <GradientStop Color="#F72B2622" Offset="0.55" />
+                    <GradientStop Color="#F7262220" Offset="1" />
+                </RadialGradientBrush>
+            </Border.Background>
             <Border.Effect>
-                <DropShadowEffect BlurRadius="20" Direction="270" Opacity=".45" ShadowDepth="4" Color="{StaticResource BlackShadowColor}" />
+                <DropShadowEffect BlurRadius="24" Direction="270" Opacity=".5" ShadowDepth="6" Color="{StaticResource BlackShadowColor}" />
             </Border.Effect>
             <Grid>
                 <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                <Grid Margin="18,14,10,14">
+                <Grid Margin="18,16,10,14">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <!-- 대시보드 홈의 상태 배지처럼 원형 아이콘 바탕에 결과 색을 입힌다. -->
                     <Border x:Name="IconBadge" Width="34" Height="34" CornerRadius="17" Background="{StaticResource BlackSuccessSurface}"
@@ -78,7 +86,7 @@
                             Style="{StaticResource ToastButton}" Click="CloseButton_Click" AutomationProperties.Name="알림 닫기" />
                 </Grid>
                 <!-- 자동으로 닫히기까지 남은 시간. 커서를 올리면 멈춘다. -->
-                <Border Grid.Row="1" Height="3" Margin="18,0,18,8" CornerRadius="1.5" Background="{StaticResource BlackRule}" ClipToBounds="True">
+                <Border Grid.Row="1" Height="3" Margin="20,0,20,10" CornerRadius="1.5" Background="{StaticResource AmberTrack}" ClipToBounds="True">
                     <Border x:Name="CountdownBar" Background="{StaticResource BlackAction}" CornerRadius="1.5" RenderTransformOrigin="0,.5">
                         <Border.RenderTransform><ScaleTransform x:Name="CountdownScale" ScaleX="1" /></Border.RenderTransform>
                     </Border>

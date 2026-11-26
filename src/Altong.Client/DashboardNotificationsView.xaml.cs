@@ -6,6 +6,8 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
+using Altong.Client.Services.AI.Briefing;
+using Altong.Client.Services.Calendar;
 using CheckBox = System.Windows.Controls.CheckBox;
 using Clipboard = System.Windows.Clipboard;
 
@@ -15,6 +17,13 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
 {
     public const int PageSize = 30;
     private readonly SqliteDashboardNotificationRepository _repository;
+    private readonly DashboardCalendarStore? _calendar;
+    private readonly IReadOnlyList<string> _replyTemplates;
+    private readonly Dictionary<string, (DateTime StartedAt, DateTime? EndedAt)> _sessionPeriods = new(StringComparer.Ordinal);
+    private CalendarSchedule? _foundSchedule;
+    private bool _selectionMode;
+    /// <summary>[리포트에서 보기]: 알림이 속한 집중의 세션 ID와 그 집중이 끝난(또는 알림을 받은) 날.</summary>
+    public event Action<string, DateTime>? OpenReportRequested;
     private readonly HashSet<string> _checkedIds = new(StringComparer.Ordinal);
     private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly DispatcherTimer _pollTimer = new() { Interval = TimeSpan.FromSeconds(5) };
@@ -31,10 +40,15 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
     public int TotalCount => _snapshot?.Ids.Count ?? 0;
     internal IReadOnlyList<NotificationHistoryItem> VisibleItems => _rows;
 
-    public DashboardNotificationsView(SqliteDashboardNotificationRepository repository)
+    public DashboardNotificationsView(SqliteDashboardNotificationRepository repository, DashboardCalendarStore? calendar = null,
+        IReadOnlyList<string>? replyTemplates = null)
     {
         _repository = repository;
+        _calendar = calendar;
+        _replyTemplates = replyTemplates ?? (System.Windows.Application.Current as App)?.QuickReplyTemplates.Current
+            ?? Services.QuickReplyTemplateStore.Defaults;
         InitializeComponent();
+        CopyReplyText.Text = $"{_replyTemplates[0]}  · 복사";
         AppFilter.ItemsSource = new[] { new NotificationAppOption(null, "모든 앱") };
         AppFilter.SelectedIndex = 0;
         _ready = true;
@@ -95,11 +109,12 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
                 var snapshot = await _repository.ReadSnapshotAsync(query);
                 int page = Math.Min(wantedPage, Math.Max(0, (snapshot.Ids.Count - 1) / PageSize));
                 var records = await _repository.ReadSnapshotPageAsync(snapshot, page, PageSize);
-                return (Snapshot: snapshot, Page: page, Records: records);
+                return (Snapshot: snapshot, Page: page, Records: records, Periods: await ReadPeriodsAsync(records));
             });
             if (revision != _revision) return;
             _snapshot = data.Snapshot;
             _appliedQuery = query;
+            foreach (var (id, period) in data.Periods) _sessionPeriods[id] = period;
             PageIndex = data.Page;
             _checkedIds.IntersectWith(_snapshot.Ids);
             UpdateAppOptions(_snapshot.Apps, query.AppName);
@@ -135,8 +150,13 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         UpdateActions();
         try
         {
-            var records = await Task.Run(() => _repository.ReadSnapshotPageAsync(snapshot, pageIndex, PageSize));
+            var (records, periods) = await Task.Run(async () =>
+            {
+                var page = await _repository.ReadSnapshotPageAsync(snapshot, pageIndex, PageSize);
+                return (page, await ReadPeriodsAsync(page));
+            });
             if (revision != _revision) return;
+            foreach (var (id, period) in periods) _sessionPeriods[id] = period;
             PageIndex = pageIndex;
             ApplyRecords(records, null, true);
             StatusText.Text = "";
@@ -176,6 +196,47 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         finally { _probing = false; }
     }
 
+    /// <summary>세션 머리글용 집중 시각. 읽지 못해도 목록은 보여야 하므로 실패하면 날짜 머리글로 대신한다.</summary>
+    private async Task<IReadOnlyDictionary<string, (DateTime StartedAt, DateTime? EndedAt)>> ReadPeriodsAsync(
+        IReadOnlyList<Altong.Client.Data.Models.NotificationRecord> records)
+    {
+        try
+        {
+            var missing = records.Select(record => record.SessionId).OfType<string>().Where(id => !_sessionPeriods.ContainsKey(id)).ToArray();
+            return await _repository.ReadSessionPeriodsAsync(missing);
+        }
+        catch (Exception) { return new Dictionary<string, (DateTime, DateTime?)>(); }
+    }
+
+    /// <summary>
+    /// 같은 집중에서 받은 알림을 묶는다. 첫 알림 위에만 "오늘 18:27 – 18:56 집중 · 6개" 머리글을 붙인다.
+    /// 머리글이 행 안에 있어 가상화 목록의 휠 스크롤과 페이지 구성은 그대로다.
+    /// </summary>
+    private void AssignGroupHeaders(NotificationHistoryItem[] rows)
+    {
+        var culture = System.Globalization.CultureInfo.GetCultureInfo("ko-KR");
+        string Day(DateTime local) => local.Date == DateTime.Today ? "오늘" : local.Date == DateTime.Today.AddDays(-1) ? "어제"
+            : local.ToString("M월 d일 (ddd)", culture);
+        string Key(NotificationHistoryItem row) => row.Record.SessionId is { Length: > 0 } id && _sessionPeriods.ContainsKey(id)
+            ? "s:" + id : "d:" + row.Record.ReceivedAt.ToLocalTime().Date.ToString("yyyyMMdd", culture);
+        for (int index = 0; index < rows.Length; index++)
+        {
+            string key = Key(rows[index]);
+            if (index > 0 && Key(rows[index - 1]) == key) { rows[index].GroupHeaderText = null; continue; }
+            int count = 1;
+            while (index + count < rows.Length && Key(rows[index + count]) == key) count++;
+            if (key.StartsWith("s:", StringComparison.Ordinal))
+            {
+                var (started, ended) = _sessionPeriods[rows[index].Record.SessionId!];
+                var start = started.ToLocalTime();
+                string end = ended is { } finished ? finished.ToLocalTime().ToString("HH:mm") : "지금";
+                rows[index].GroupHeaderText = $"{Day(start)} {start:HH:mm} – {end} 집중 · {count}개";
+            }
+            else rows[index].GroupHeaderText = $"{Day(rows[index].Record.ReceivedAt.ToLocalTime())} · {count}개";
+            rows[index].IsFirstGroup = index == 0;
+        }
+    }
+
     private void UpdateAppOptions(IReadOnlyList<NotificationAppOption> options, string? appName)
     {
         _settingApps = true;
@@ -206,7 +267,9 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
     private void ApplyRecords(IReadOnlyList<Altong.Client.Data.Models.NotificationRecord> records, string? selectedId, bool resetScroll)
     {
         double previousOffset = ListScroll()?.VerticalOffset ?? 0;
-        ReplaceRows(records.Select(record => new NotificationHistoryItem(record) { IsSelected = _checkedIds.Contains(record.Id) }).ToArray());
+        var rows = records.Select(record => new NotificationHistoryItem(record) { IsSelected = _checkedIds.Contains(record.Id) }).ToArray();
+        AssignGroupHeaders(rows);
+        ReplaceRows(rows);
         var selected = _rows.FirstOrDefault(row => row.Record.Id == selectedId);
         _settingSelection = true;
         try { NotificationsList.SelectedItem = selected; }
@@ -233,19 +296,50 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
     {
         bool busy = _loading || _mutating || _searchTimer.IsEnabled;
         NotificationsList.IsEnabled = !busy;
+        NotificationsList.Tag = _selectionMode ? "select" : null;
+        SelectionBar.Visibility = _selectionMode || _checkedIds.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         SelectPageButton.IsEnabled = !busy && _rows.Length > 0;
         SelectPageButton.Content = _rows.Length > 0 && _rows.All(row => row.IsSelected) ? "페이지 선택 해제" : "페이지 전체 선택";
         DismissSelectedButton.IsEnabled = !busy && _checkedIds.Count > 0;
         SelectedCountText.Text = _checkedIds.Count == 0 ? "" : $"선택 {_checkedIds.Count}개";
-        DismissNotificationButton.IsEnabled = !busy && _detail is not null;
-        CopyNotificationButton.IsEnabled = _detail is not null;
-        RefreshButton.IsEnabled = !busy;
         NewArrivalsButton.IsEnabled = !busy;
         PreviousPageButton.IsEnabled = !busy && PageIndex > 0;
         NextPageButton.IsEnabled = !busy && PageIndex + 1 < PageCount;
         PageNumberText.Text = $"{PageIndex + 1} / {PageCount}";
         ResultCountText.Text = TotalCount == 0 ? "0개" : $"{PageIndex * PageSize + 1}–{Math.Min((PageIndex + 1) * PageSize, TotalCount)} / {TotalCount}개";
+        UpdatePagination();
     }
+
+    /// <summary>페이지 이동은 페이지가 둘 이상일 때만 보인다. 좁은 화면에서 본문을 보는 동안에는 숨긴다.</summary>
+    private void UpdatePagination() => PaginationPanel.Visibility = PageCount > 1 && !(_narrow && _detailRequested && _detail is not null)
+        ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>탭 머리 ⋯ 메뉴. 도안 화면에 없는 기능을 모은다.</summary>
+    internal IReadOnlyList<PageMenuItem> MenuItems()
+    {
+        bool busy = _loading || _mutating || _searchTimer.IsEnabled;
+        return
+        [
+            new("새로고침", () => _ = RefreshAsync(), !busy),
+            new(_selectionMode ? "여러 개 선택 끝내기" : "여러 개 골라서 지우기", () => SetSelectionMode(!_selectionMode), _rows.Length > 0 || _selectionMode),
+            new("이 알림 내용 복사", CopyDetail, _detail is not null),
+            new("이 알림 목록에서 지우기", () => _ = DismissDetailAsync(), !busy && _detail is not null, IsDestructive: true),
+            new("필터 초기화", () => ResetFilters_Click(this, new RoutedEventArgs()), _appliedQuery != new DashboardNotificationQuery() || SearchBox.Text.Length > 0)
+        ];
+    }
+
+    internal void SetSelectionMode(bool enabled)
+    {
+        _selectionMode = enabled;
+        if (!enabled)
+        {
+            foreach (var row in _rows) row.IsSelected = false;
+            _checkedIds.Clear();
+        }
+        UpdateActions();
+    }
+
+    private void DoneSelecting_Click(object sender, RoutedEventArgs args) => SetSelectionMode(false);
 
     private void RowSelectionChanged(object? sender, PropertyChangedEventArgs args)
     {
@@ -262,7 +356,8 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
     }
 
     private async void DismissSelected_Click(object sender, RoutedEventArgs args) => await DismissAsync(_checkedIds.ToArray());
-    private async void DismissNotification_Click(object sender, RoutedEventArgs args)
+    /// <summary>⋯ 메뉴 [이 알림 목록에서 지우기]. 리포트 원문은 남는다.</summary>
+    internal async Task DismissDetailAsync()
     {
         if (_detail is { } detail) await DismissAsync([detail.Record.Id]);
     }
@@ -289,12 +384,80 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         DetailContent.DataContext = row;
         DetailContent.Visibility = row is null ? Visibility.Collapsed : Visibility.Visible;
         DetailEmptyText.Visibility = row is null ? Visibility.Visible : Visibility.Collapsed;
+        if (changed) ShowFoundSchedule(row);
+        OpenInReportButton.IsEnabled = row?.Record.SessionId is { Length: > 0 };
+        OpenInReportButton.ToolTip = OpenInReportButton.IsEnabled ? "이 알림을 받은 집중의 리포트를 열어요" : "집중 기록과 연결되지 않은 알림";
         if (changed)
         {
             DetailScroll.ScrollToTop();
             if (!_narrow) Services.MotionBehavior.Transition(DetailContent, offsetX: 4, offsetY: 0);
         }
         UpdateActions();
+    }
+
+    /// <summary>본문에서 날짜·시각이 있는 약속을 찾으면 "찾은 일정"과 [캘린더에 저장]을 보인다.</summary>
+    private void ShowFoundSchedule(NotificationHistoryItem? row)
+    {
+        _foundSchedule = row is null ? null : FindSchedule(row);
+        FoundSchedulePanel.Visibility = _foundSchedule is null ? Visibility.Collapsed : Visibility.Visible;
+        SaveScheduleButton.Visibility = _foundSchedule is null || _calendar is null ? Visibility.Collapsed : Visibility.Visible;
+        if (_foundSchedule is null || row is null) return;
+        var culture = System.Globalization.CultureInfo.GetCultureInfo("ko-KR");
+        var start = _foundSchedule.Start!.Value.LocalDateTime;
+        var end = _foundSchedule.End!.Value.LocalDateTime;
+        string when = start.Date == end.Date ? $"{start.ToString("M월 d일 (ddd) HH:mm", culture)} – {end:HH:mm}"
+            : $"{start.ToString("M월 d일 (ddd) HH:mm", culture)} – {end.ToString("M월 d일 HH:mm", culture)}";
+        FoundScheduleText.Text = string.IsNullOrWhiteSpace(_foundSchedule.Location) ? when : $"{when} · {_foundSchedule.Location.Trim()}";
+        bool saved = _calendar?.Get(ScheduleSessionId(row), ScheduleSummaryId(row)) is not null;
+        SaveScheduleButton.Content = saved ? "캘린더에 저장됨" : "캘린더에 저장";
+        SaveScheduleButton.IsEnabled = !saved;
+    }
+
+    private static string ScheduleSessionId(NotificationHistoryItem row) => row.Record.SessionId is { Length: > 0 } id ? id : "notification";
+    private static string ScheduleSummaryId(NotificationHistoryItem row) => "notification-" + row.Record.Id;
+
+    internal static CalendarSchedule? FindSchedule(NotificationHistoryItem row)
+    {
+        try
+        {
+            var (related, schedule) = BriefingScheduleExtractor.Extract("", row.Record.Category ?? "",
+                [$"{row.Record.Title} {row.Record.Body}"], row.Record.ReceivedAt.ToLocalTime(), ScheduleSummaryId(row));
+            if (!related || schedule?.Start is null || schedule.End is null) return null;
+            if (string.IsNullOrWhiteSpace(schedule.Title)) schedule = schedule with { Title = row.TitleText };
+            return schedule.Validate() is null ? schedule : null;
+        }
+        catch (Exception) { return null; }
+    }
+
+    private void SaveSchedule_Click(object sender, RoutedEventArgs args)
+    {
+        if (_detail is not { } row || _foundSchedule is null || _calendar is null) return;
+        try
+        {
+            _calendar.Save(new DashboardCalendarEntry(ScheduleSessionId(row), ScheduleSummaryId(row), row.AppName, _foundSchedule));
+            SaveScheduleButton.Content = "캘린더에 저장됨";
+            SaveScheduleButton.IsEnabled = false;
+            StatusText.Text = "캘린더에 일정을 저장했어요.";
+        }
+        catch (Exception) { StatusText.Text = "일정을 저장하지 못했어요. 다시 시도하세요."; }
+    }
+
+    private void CopyReply_Click(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            Clipboard.SetText(_replyTemplates[0]);
+            StatusText.Text = "답장 문구 복사됨";
+            Services.MotionBehavior.Acknowledge(StatusText);
+        }
+        catch (Exception) { StatusText.Text = "복사 실패 · 다시 시도하세요."; }
+    }
+
+    private void OpenInReport_Click(object sender, RoutedEventArgs args)
+    {
+        if (_detail?.Record.SessionId is not { Length: > 0 } sessionId) return;
+        var day = _sessionPeriods.TryGetValue(sessionId, out var period) ? (period.EndedAt ?? period.StartedAt) : _detail.Record.ReceivedAt;
+        OpenReportRequested?.Invoke(sessionId, day.ToLocalTime().Date);
     }
 
     private void Notification_SelectionChanged(object sender, SelectionChangedEventArgs args)
@@ -351,14 +514,14 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         if (ReadingLayout is null) return;
         _narrow = ReadingLayout.ActualWidth < 680;
         bool compactDetail = _narrow && _detailRequested && _detail is not null;
-        ReadingLayout.ColumnDefinitions[0].Width = _narrow ? new GridLength(1, GridUnitType.Star) : new GridLength(330);
-        ReadingLayout.ColumnDefinitions[1].Width = new GridLength(_narrow ? 0 : 12);
-        ReadingLayout.ColumnDefinitions[2].Width = new GridLength(_narrow ? 0 : 1, GridUnitType.Star);
+        ReadingLayout.ColumnDefinitions[0].Width = new GridLength(_narrow ? 1 : 3, GridUnitType.Star);
+        ReadingLayout.ColumnDefinitions[1].Width = new GridLength(_narrow ? 0 : 14);
+        ReadingLayout.ColumnDefinitions[2].Width = new GridLength(_narrow ? 0 : 2, GridUnitType.Star);
         Grid.SetColumn(DetailPane, _narrow ? 0 : 2);
         DetailPane.Visibility = !_narrow || compactDetail ? Visibility.Visible : Visibility.Collapsed;
         ListPane.Visibility = compactDetail ? Visibility.Collapsed : Visibility.Visible;
         BackToListButton.Visibility = compactDetail ? Visibility.Visible : Visibility.Collapsed;
-        PaginationPanel.Visibility = compactDetail ? Visibility.Collapsed : Visibility.Visible;
+        UpdatePagination();
     }
 
     private async void StatusFilter_Changed(object sender, RoutedEventArgs args) { if (_ready) await RefreshAsync(); }
@@ -388,7 +551,7 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         _ready = true;
         await RefreshAsync();
     }
-    private void CopyNotification_Click(object sender, RoutedEventArgs args)
+    internal void CopyDetail()
     {
         if (_detail is null) return;
         try

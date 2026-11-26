@@ -186,6 +186,7 @@ public sealed class GoogleCalendarUiTests
                 }
                 ((TabControl)window.FindName("DashboardTabs")).SelectedIndex = 4;
                 var calendarView = (ReportCalendarView)((ContentControl)window.FindName("ReportCalendarHost")).Content;
+                calendarView.ListMode = true;
                 Await(calendarView.SelectDateAsync(corrected.Start!.Value.ToLocalTime().Date));
                 var schedules = (ListBox)calendarView.FindName("ScheduleList");
                 Assert.AreEqual(1, schedules.Items.Count);

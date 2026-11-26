@@ -1,27 +1,27 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:services="clr-namespace:Altong.Client.Services">
-    <Color x:Key="BlackCanvasColor">#242528</Color>
-    <Color x:Key="BlackPaperColor">#1C1D20</Color>
-    <Color x:Key="BlackSurfaceColor">#303135</Color>
-    <Color x:Key="BlackRaisedColor">#3A3B3F</Color>
-    <Color x:Key="BlackInputColor">#17181B</Color>
-    <Color x:Key="BlackRuleColor">#4B4D54</Color>
-    <Color x:Key="BlackControlRuleColor">#8C8E97</Color>
-    <Color x:Key="BlackTextColor">#F3F3F2</Color>
-    <Color x:Key="BlackMutedColor">#B8B9C0</Color>
-    <Color x:Key="BlackSoftColor">#D6D6D9</Color>
-    <Color x:Key="BlackActionColor">#A8B9D8</Color>
-    <Color x:Key="BlackActionTextColor">#131314</Color>
-    <Color x:Key="BlackFocusColor">#CCD9EF</Color>
-    <Color x:Key="BlackAccentTextColor">#C5D2E8</Color>
-    <Color x:Key="BlackSelectionColor">#2C3544</Color>
-    <Color x:Key="BlackSelectionRuleColor">#798BA9</Color>
-    <Color x:Key="BlackSuccessColor">#B6D3C4</Color>
-    <Color x:Key="BlackSuccessSurfaceColor">#293A34</Color>
-    <Color x:Key="BlackSuccessRuleColor">#819E90</Color>
-    <Color x:Key="BlackSuccessMutedColor">#ACBFB4</Color>
-    <Color x:Key="BlackErrorColor">#E5AAA5</Color>
+    <Color x:Key="BlackCanvasColor">#1E1A17</Color>
+    <Color x:Key="BlackPaperColor">#17130F</Color>
+    <Color x:Key="BlackSurfaceColor">#322D29</Color>
+    <Color x:Key="BlackRaisedColor">#3B3631</Color>
+    <Color x:Key="BlackInputColor">#191512</Color>
+    <Color x:Key="BlackRuleColor">#4A433C</Color>
+    <Color x:Key="BlackControlRuleColor">#8E8478</Color>
+    <Color x:Key="BlackTextColor">#F7F1E8</Color>
+    <Color x:Key="BlackMutedColor">#C9BFB2</Color>
+    <Color x:Key="BlackSoftColor">#E4DACD</Color>
+    <Color x:Key="BlackActionColor">#E9C995</Color>
+    <Color x:Key="BlackActionTextColor">#241B10</Color>
+    <Color x:Key="BlackFocusColor">#F5DDB6</Color>
+    <Color x:Key="BlackAccentTextColor">#E9C995</Color>
+    <Color x:Key="BlackSelectionColor">#3A3025</Color>
+    <Color x:Key="BlackSelectionRuleColor">#9C8462</Color>
+    <Color x:Key="BlackSuccessColor">#B9D6C2</Color>
+    <Color x:Key="BlackSuccessSurfaceColor">#26332B</Color>
+    <Color x:Key="BlackSuccessRuleColor">#7FA18C</Color>
+    <Color x:Key="BlackSuccessMutedColor">#AFC4B6</Color>
+    <Color x:Key="BlackErrorColor">#EBB0A6</Color>
     <Color x:Key="BlackShadowColor">#000000</Color>
     <SolidColorBrush x:Key="BlackCanvas" Color="{StaticResource BlackCanvasColor}" />
     <SolidColorBrush x:Key="BlackPaper" Color="{StaticResource BlackPaperColor}" />
@@ -45,6 +45,58 @@
     <SolidColorBrush x:Key="BlackSuccessMuted" Color="{StaticResource BlackSuccessMutedColor}" />
     <SolidColorBrush x:Key="BlackError" Color="{StaticResource BlackErrorColor}" />
     <SolidColorBrush x:Key="BlackShadow" Color="{StaticResource BlackShadowColor}" />
+    <!-- 흑연 유리(E): 창은 번진 빛 배경 위 반투명 흑연, 카드는 그 위의 옅은 유리 판. 떠 있는 창·팝업은 불투명에 가깝게. -->
+    <Color x:Key="GlassBackdropColor">#17130F</Color>
+    <Color x:Key="GlassAmberGlowColor">#5A3E24</Color>
+    <Color x:Key="GlassSlateGlowColor">#2C3B45</Color>
+    <Color x:Key="GlassEmberGlowColor">#4A3426</Color>
+    <SolidColorBrush x:Key="GlassBackdrop" Color="{StaticResource GlassBackdropColor}" />
+    <SolidColorBrush x:Key="GlassWindow" Color="#85262220" />
+    <SolidColorBrush x:Key="GlassFloating" Color="#F2292420" />
+    <SolidColorBrush x:Key="GlassPane" Color="#0FFFF0DC" />
+    <SolidColorBrush x:Key="GlassPaneHover" Color="#1AFFF0DC" />
+    <SolidColorBrush x:Key="GlassPaneRule" Color="#1FFFF0DC" />
+    <SolidColorBrush x:Key="GlassDivider" Color="#14FFF0DC" />
+    <SolidColorBrush x:Key="NavSelected" Color="#1AFFF0DC" />
+    <SolidColorBrush x:Key="NavSelectedRule" Color="#29FFF0DC" />
+    <SolidColorBrush x:Key="AmberTrack" Color="#0FFFF0DC" />
+    <SolidColorBrush x:Key="AmberSoft" Color="#29E9C995" />
+    <!-- 유리 판의 테두리: 윗변이 더 밝아 빛이 맺힌 것처럼 보인다. -->
+    <LinearGradientBrush x:Key="GlassRim" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#3DFFF0DC" Offset="0" />
+        <GradientStop Color="#1AFFF0DC" Offset="0.18" />
+        <GradientStop Color="#14FFF0DC" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="GlassWindowRim" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#40FFF0DC" Offset="0" />
+        <GradientStop Color="#1FFFF0DC" Offset="0.06" />
+        <GradientStop Color="#1AFFF0DC" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="TimelineHour" Color="#A99F92" />
+    <SolidColorBrush x:Key="GlassInput" Color="#730E0B09" />
+    <SolidColorBrush x:Key="GlassInputRule" Color="#29FFF0DC" />
+    <!-- ⋯ 메뉴: 유리 위에 뜨는 불투명 흑연 판 -->
+    <Style x:Key="BlackMenu" TargetType="ContextMenu">
+        <Setter Property="SnapsToDevicePixels" Value="True" /><Setter Property="HasDropShadow" Value="False" />
+        <Setter Property="Foreground" Value="{StaticResource BlackText}" /><Setter Property="FontSize" Value="13" />
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContextMenu">
+            <Border Background="{StaticResource BlackRaised}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="14" Padding="6" MinWidth="180">
+                <ItemsPresenter />
+            </Border>
+        </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="BlackMenuItem" TargetType="MenuItem">
+        <Setter Property="Foreground" Value="{StaticResource BlackText}" /><Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="MenuItem">
+            <Border x:Name="Surface" Background="Transparent" CornerRadius="10" Padding="12,8">
+                <ContentPresenter ContentSource="Header" RecognizesAccessKey="False" />
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Surface" Property="Background" Value="{StaticResource BlackSelection}" /></Trigger>
+                <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Opacity" Value=".4" /></Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
+    </Style>
     <Thickness x:Key="SectionGap">0,0,0,24</Thickness>
     <Thickness x:Key="PanelPadding">16</Thickness>
     <Style x:Key="QuietScrollViewer" TargetType="ScrollViewer">

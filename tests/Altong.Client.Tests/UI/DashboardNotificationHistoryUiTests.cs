@@ -158,7 +158,7 @@ public sealed class DashboardNotificationHistoryUiTests
         var list = (ListBox)view.FindName("NotificationsList");
         list.SelectedItem = view.VisibleItems[0];
         string detailId = view.VisibleItems[0].Record.Id;
-        ((Button)view.FindName("DismissNotificationButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        _ = view.DismissDetailAsync();
         Until(() => ((TextBlock)view.FindName("StatusText")).Text == "알림 1개 제거됨");
         Assert.AreEqual(59, view.TotalCount);
         Assert.IsNotNull(raw.GetByIdAsync(detailId).GetAwaiter().GetResult());
@@ -205,7 +205,7 @@ public sealed class DashboardNotificationHistoryUiTests
             Assert.IsTrue(detailScroll.ScrollableHeight > 0 && detailScroll.ScrollableWidth <= 1);
             detailScroll.ScrollToBottom();
             Layout(view, size);
-            foreach (string name in new[] { "CopyNotificationButton", "DismissNotificationButton" })
+            foreach (string name in new[] { "CopyReplyButton", "OpenInReportButton" })
             {
                 var button = (Button)view.FindName(name);
                 var bounds = button.TransformToAncestor(view).TransformBounds(new Rect(button.RenderSize));
