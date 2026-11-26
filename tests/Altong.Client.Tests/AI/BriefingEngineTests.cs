@@ -704,6 +704,44 @@ public sealed class BriefingEngineTests
     }
 
     [TestMethod]
+    public async Task LlamaBriefingEngine_GenerateTextAsync_GpuLoadFailure_RetriesOnCpuAndStaysOnCpu()
+    {
+        var modelPath = Path.Combine(Path.GetTempPath(), $"altong-gen-gpu-fallback-{Guid.NewGuid():N}.gguf");
+        File.WriteAllText(modelPath, "not a real model");
+        var original = LlamaBriefingEngine.WeightsLoader;
+        var attempts = new List<int>();
+        LlamaBriefingEngine.WeightsLoader = parameters =>
+        {
+            attempts.Add(parameters.GpuLayerCount);
+            throw new InvalidOperationException(parameters.GpuLayerCount > 0 ? "GPU 메모리 부족 (테스트)" : "CPU도 실패 (테스트)");
+        };
+        try
+        {
+            using var engine = new LlamaBriefingEngine(modelPath, gpuLayerCount: 999);
+
+            Assert.IsNull(await engine.GenerateTextAsync("시스템", "사용자"));
+            CollectionAssert.AreEqual(new[] { 999, 0 }, attempts, "GPU 실패 뒤 CPU로 재시도");
+
+            Assert.IsNull(await engine.GenerateTextAsync("시스템", "사용자"));
+            CollectionAssert.AreEqual(new[] { 999, 0, 0 }, attempts, "다음 호출은 처음부터 CPU");
+        }
+        finally
+        {
+            LlamaBriefingEngine.WeightsLoader = original;
+            File.Delete(modelPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task LlamaBriefingEngine_GenerateTextAsync_MissingModelOrInvalidArgs_ReturnsNull()
+    {
+        using var engine = new LlamaBriefingEngine("non_existent_model.gguf");
+        Assert.IsNull(await engine.GenerateTextAsync("시스템", "사용자"));
+        Assert.IsNull(await engine.GenerateTextAsync("시스템", "   "));
+        Assert.IsNull(await engine.GenerateTextAsync("시스템", "사용자", maxTokens: 0));
+    }
+
+    [TestMethod]
     public void LlamaBriefingEngine_ParseResponse_UnclosedSecondThinkBlock_ReturnsNull()
     {
         var raw = "<think>first thought</think><think>second unclosed thought with \"english quoted phrase\"";

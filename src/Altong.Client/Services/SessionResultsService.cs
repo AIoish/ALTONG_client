@@ -67,6 +67,7 @@ public sealed class SessionResultsService(IAltongDatabase database, IFocusSessio
     public SqliteSessionReportRepository Reports { get; } = new(database);
     public SqliteDashboardNotificationRepository DashboardNotifications { get; } = new(database);
     public SqliteFocusUsageRepository FocusUsage { get; } = new(database);
+    public SqliteFocusInsightRepository FocusInsights { get; } = new(database);
     private FocusSessionRecord? _session;
     private Task _saveStarted = Task.CompletedTask;
     private readonly List<Task> _completionWrites = new();
