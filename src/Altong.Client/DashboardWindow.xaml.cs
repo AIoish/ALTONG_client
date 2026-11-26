@@ -26,6 +26,7 @@ public partial class DashboardWindow : Window
     private readonly Action? _shutdownApplication;
     private readonly AutoDndSettingsStore? _autoDndSettings;
     private readonly StartupRegistration? _startupRegistration;
+    private readonly DashboardInsightsView _insightsView;
     private bool _settingsReady;
     public SessionResultsService Results { get; }
     private bool _dashboardDataLoading;
@@ -58,7 +59,9 @@ public partial class DashboardWindow : Window
         Action<string>? openCalendar = null,
         AutoDndSettingsStore? autoDndSettings = null,
         StartupRegistration? startupRegistration = null,
-        DashboardCalendarStore? calendar = null)
+        DashboardCalendarStore? calendar = null,
+        IFocusInsightRepository? insightRepository = null,
+        IFocusInsightCoachingService? insightCoaching = null)
     {
         Results = results;
         _autoDndSettings = autoDndSettings;
@@ -84,6 +87,9 @@ public partial class DashboardWindow : Window
         _calendarView = new ReportCalendarView(results, calendar, openCalendar, summaryProvider, summaryStatePath);
         _calendarView.SummaryChanged += (_, _) => UpdateHeader();
         ReportCalendarHost.Content = _calendarView;
+        insightRepository ??= results.FocusInsights;
+        _insightsView = new DashboardInsightsView(insightRepository, insightCoaching, () => Results.ActiveSession);
+        InsightsHost.Content = _insightsView;
         _activeWindowTracker.ContextChanged += ActiveWindowTracker_ContextChanged;
         if (_focusModeService is not null)
             _focusModeService.StateChanged += FocusMode_StateChanged;
@@ -124,6 +130,7 @@ public partial class DashboardWindow : Window
         {
             _isClosed = true;
             _calendar.Changed -= Calendar_Changed;
+            _insightsView.CancelPending();
             Results.PropertyChanged -= Results_PropertyChanged;
             _clockTimer.Stop();
             _activeWindowTracker.ContextChanged -= ActiveWindowTracker_ContextChanged;
@@ -249,6 +256,7 @@ public partial class DashboardWindow : Window
         _focusUsageRevision++;
         _lastFocusUsageRefresh = DateTime.MinValue;
         if (IsVisible && DashboardTabs.SelectedIndex == 0) _ = RefreshHomeFocusUsageAsync();
+        if (IsVisible && DashboardTabs.SelectedIndex == 5) _ = _insightsView.RefreshAsync();
     }
 
     private async Task RefreshHomeFocusUsageAsync()
@@ -379,7 +387,7 @@ public partial class DashboardWindow : Window
         DashboardClockText.Visibility = index is 0 or 1 ? Visibility.Visible : Visibility.Collapsed;
         JournalRangeTabs.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
         SettingsVersionText.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
-        PageMenuButton.Visibility = index == 0 ? Visibility.Collapsed : Visibility.Visible;
+        PageMenuButton.Visibility = index is 0 or 5 ? Visibility.Collapsed : Visibility.Visible;
         DashboardDateText.Text = index switch
         {
             2 => _journalSubtitle.Length > 0 ? _journalSubtitle : "집중 중 쓴 앱",
@@ -755,7 +763,7 @@ public partial class DashboardWindow : Window
         if (!ReferenceEquals(e.Source, DashboardTabs) || DashboardTabs.SelectedIndex < 0)
             return;
         int index = DashboardTabs.SelectedIndex;
-        string[] titles = [Greeting(DateTime.Now), "알림 확인", "활동 일지", "설정", "캘린더"];
+        string[] titles = [Greeting(DateTime.Now), "알림 확인", "활동 일지", "설정", "캘린더", "집중 인사이트"];
         PageTitleText.Text = titles[index];
         UpdateNavigationSelection();
         UpdateHeader();
@@ -763,6 +771,8 @@ public partial class DashboardWindow : Window
             _ = RefreshDashboardDataAsync();
         if (_settingsReady && index == 0)
             _ = RefreshHomeFocusUsageAsync();
+        if (_settingsReady && index == 5)
+            _ = _insightsView.RefreshAsync();
     }
 
     private bool TryReadTimerSettings(out FocusTimerSettings settings)

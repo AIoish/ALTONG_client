@@ -84,6 +84,48 @@ public sealed class LlamaBriefingEngine : IDisposable
     }
 
     /// <summary>
+    /// 범용 단일 턴 텍스트 생성을 수행한다.
+    /// 기존 추론 게이트, GPU->CPU 폴백, 아키텍처별 대화 템플릿, greedy 디코딩을 재사용하고
+    /// 완료 즉시 가중치를 내려 유휴 RAM 점유를 0으로 유지한다.
+    /// </summary>
+    public async Task<string?> GenerateTextAsync(
+        string systemPrompt,
+        string userPrompt,
+        int maxTokens = 320,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(userPrompt) || maxTokens <= 0) return null;
+        if (!IsModelAvailable) return null;
+
+        await _inferenceGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            try
+            {
+                return await LoadAndGenerateTextAsync(systemPrompt ?? string.Empty, userPrompt, maxTokens, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (_gpuLayerCount > 0 && ex is not OperationCanceledException and not ObjectDisposedException)
+            {
+                AppLogger.Warn($"[LlamaBriefingEngine] GPU로 텍스트 생성 모델을 올리지 못해 CPU로 다시 시도합니다: {ex.Message}");
+                ReleaseWeights();
+                _gpuLayerCount = 0;
+                _parameters = null;
+                return await LoadAndGenerateTextAsync(systemPrompt ?? string.Empty, userPrompt, maxTokens, ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ObjectDisposedException)
+        {
+            AppLogger.Error($"[LlamaBriefingEngine] 텍스트 생성 실패: {ex.Message}", ex);
+            return null;
+        }
+        finally
+        {
+            CloseSession();
+        }
+    }
+
+    /// <summary>
     /// 모델을 올리고 시스템 지시문을 한 번 처리한 요약 세션을 연다. 세션이 열려 있는 동안 다른 요약은 기다린다.
     /// 세션을 닫으면 문맥과 모델 가중치를 모두 내려 평상시 메모리를 차지하지 않는다 (다시 올리는 데 약 0.6초).
     /// 모델 파일이 없거나 불러오지 못하면 null.
@@ -139,6 +181,80 @@ public sealed class LlamaBriefingEngine : IDisposable
             _weights.Metadata.TryGetValue("general.architecture", out var architecture) ? architecture : null);
         AppLogger.Info($"[LlamaBriefingEngine] 요약 모델 준비: {Path.GetFileName(_modelPath)}, 형식 {template}, GPU 층 {_gpuLayerCount}");
         return await BriefingSession.CreateAsync(_weights, _parameters, template, CloseSession, ct).ConfigureAwait(false);
+    }
+
+    private async Task<string?> LoadAndGenerateTextAsync(
+        string systemPrompt,
+        string userPrompt,
+        int maxTokens,
+        CancellationToken ct)
+    {
+        _parameters ??= new ModelParams(ResolveNativeModelPath(_modelPath))
+        {
+            ContextSize = ContextSize,
+            GpuLayerCount = _gpuLayerCount
+        };
+        _weights ??= WeightsLoader(_parameters);
+        var template = BriefingPromptBuilder.TemplateForArchitecture(
+            _weights.Metadata.TryGetValue("general.architecture", out var architecture) ? architecture : null);
+        AppLogger.Info($"[LlamaBriefingEngine] 텍스트 생성 모델 준비: {Path.GetFileName(_modelPath)}, 형식 {template}, GPU 층 {_gpuLayerCount}");
+
+        using var executor = new BatchedExecutor(_weights, _parameters);
+        var prefix = executor.Context.Tokenize(
+            BriefingPromptBuilder.RenderPrefix(template, systemPrompt),
+            BriefingPromptBuilder.AddBos(template),
+            true);
+        var suffix = executor.Context.Tokenize(
+            BriefingPromptBuilder.RenderSuffix(template, userPrompt),
+            false,
+            true);
+
+        int promptTokenCount = prefix.Length + suffix.Length;
+        if (promptTokenCount >= ContextSize)
+        {
+            AppLogger.Warn($"[LlamaBriefingEngine] 프롬프트 토큰({promptTokenCount})이 문맥 크기({ContextSize}) 이상이라 생성을 건너뜁니다.");
+            return null;
+        }
+
+        int generationBudget = (int)Math.Min(maxTokens, ContextSize - (uint)promptTokenCount);
+        if (generationBudget < maxTokens)
+        {
+            AppLogger.Warn($"[LlamaBriefingEngine] 문맥 크기 제한으로 생성 토큰 상한을 {maxTokens}에서 {generationBudget}로 조정합니다.");
+        }
+
+        var stopMarkers = BriefingPromptBuilder.StopMarkers(template);
+        var stopTokens = new HashSet<LLamaToken>();
+        foreach (var marker in stopMarkers)
+            stopTokens.UnionWith(executor.Context.Tokenize(marker, false, true));
+
+        var promptTokens = new LLamaToken[promptTokenCount];
+        Array.Copy(prefix, 0, promptTokens, 0, prefix.Length);
+        Array.Copy(suffix, 0, promptTokens, prefix.Length, suffix.Length);
+
+        using var conversation = executor.Create();
+        conversation.Prompt(promptTokens);
+        await BriefingSession.DrainAsync(executor, ct).ConfigureAwait(false);
+
+        using var sampler = new DefaultSamplingPipeline { Temperature = 0.0f, RepeatPenalty = 1.0f };
+        var decoder = new StreamingTokenDecoder(executor.Context);
+        for (int i = 0; i < generationBudget; i++)
+        {
+            var token = sampler.Sample(executor.Context.NativeHandle, conversation.GetSampleIndex());
+            if (stopTokens.Contains(token) || token.IsEndOfGeneration(executor.Model.Vocab)) break;
+            sampler.Accept(token);
+            decoder.Add(token);
+            conversation.Prompt(token);
+            await BriefingSession.DrainAsync(executor, ct).ConfigureAwait(false);
+        }
+
+        var text = decoder.Read();
+        foreach (var marker in stopMarkers)
+        {
+            int idx = text.IndexOf(marker, StringComparison.Ordinal);
+            if (idx >= 0) text = text[..idx];
+        }
+
+        return text.Trim();
     }
 
     private void ReleaseWeights()
@@ -384,7 +500,7 @@ public sealed class BriefingSession : IDisposable
         return _executor.Context.Tokenize(BriefingPromptBuilder.RenderSuffix(_template, userPrompt), false, true);
     }
 
-    private static async Task DrainAsync(BatchedExecutor executor, CancellationToken ct)
+    internal static async Task DrainAsync(BatchedExecutor executor, CancellationToken ct)
     {
         // 한 번의 Infer는 배치 크기만큼만 처리하므로 대기 토큰이 없어질 때까지 반복한다.
         while (executor.BatchedTokenCount > 0)
