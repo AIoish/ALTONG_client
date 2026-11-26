@@ -115,8 +115,12 @@ public sealed class ReportSummaryLoadingUiTests
             report.UpdateLayout();
             Assert.AreEqual("AI가 알림을 요약하고 있어요", Status(report).Text);
             Assert.AreEqual(Visibility.Visible, Indicator(report).Visibility);
-            Assert.AreEqual("원본 알림 미리보기", ((TextBlock)report.FindName("LegacySummaryLabel")).Text);
-            Assert.AreEqual(Visibility.Visible, ((StackPanel)report.FindName("LegacySummaryPanel")).Visibility);
+            var blend = (SummaryBlendView)report.FindName("SummaryBlend");
+            Assert.AreEqual(Visibility.Visible, blend.Visibility, "요약 중에는 알림이 섞이는 연출을 보여 줘야 합니다.");
+            Assert.AreEqual(1, blend.ChipCount);
+            Assert.AreEqual(SystemParameters.ClientAreaAnimation, blend.IsAnimating);
+            Assert.AreEqual(Visibility.Collapsed, ((StackPanel)report.FindName("LegacySummaryPanel")).Visibility,
+                "연출과 원본 미리보기를 함께 보여 주지 않습니다.");
             Assert.IsTrue(((Button)report.FindName("ReportCloseButton")).IsEnabled);
             Assert.IsTrue(((Button)report.FindName("SkipSaveButton")).IsEnabled);
             var scroll = (ScrollViewer)report.FindName("ReportScroll");
@@ -135,12 +139,19 @@ public sealed class ReportSummaryLoadingUiTests
             provider.Pending.SetException(new IOException("controlled failure"));
             Until(() => Reload(report).IsEnabled);
             Assert.AreEqual(Visibility.Collapsed, Indicator(report).Visibility);
+            Assert.AreEqual(Visibility.Collapsed, blend.Visibility);
+            Assert.IsFalse(blend.IsAnimating, "끝나면 애니메이션을 멈춰야 합니다.");
+            Assert.AreEqual("원본 알림 미리보기", ((TextBlock)report.FindName("LegacySummaryLabel")).Text);
+            Assert.AreEqual(Visibility.Visible, ((StackPanel)report.FindName("LegacySummaryPanel")).Visibility,
+                "요약에 실패하면 원본 미리보기로 돌아갑니다.");
             Assert.AreEqual(Visibility.Visible, Retry(report).Visibility);
 
             provider.Pending = ControlledProvider.NewPending();
             Retry(report).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.AreEqual(2, provider.Reads);
             Assert.AreEqual(Visibility.Visible, Indicator(report).Visibility);
+            Assert.AreEqual(Visibility.Visible, blend.Visibility, "다시 시도할 때도 연출을 보여 줍니다.");
+            Assert.IsFalse(blend.IsAnimating, "동작 줄이기에서는 카드를 움직이지 않습니다.");
             provider.Pending.SetResult(new([new("summary", "생성된 요약", false, null) { AppName = "Slack", GroupId = "group" }]));
             Until(() => Reload(report).IsEnabled);
             Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
