@@ -20,6 +20,7 @@ public partial class SessionReportWindow : Window
     private bool _saving;
     private bool _saveSucceeded;
     private bool _loadingSummaries;
+    private bool _blending;
     private bool _closed;
     private readonly CancellationTokenSource _summaryLifetime = new();
     private readonly IReportSummaryProvider? _summaryProvider;
@@ -148,6 +149,7 @@ public partial class SessionReportWindow : Window
             return new ReportNotificationItem(notification.AppName, notification.Sender, notification.Title,
                 notification.Body, notification.IsPassed, replyText, options);
         }).ToArray();
+        SummaryBlend.SetNotifications(result.Notifications.Where(notification => notification.IsPassed == false));
         UpdateSummaryContentVisibility();
         if (result.SummaryItems.Count > 0) ShowSummaryItems(result.SummaryItems);
         else if (_summaryProvider is not null && result.SessionId is not null) _ = LoadSummaryItemsAsync();
@@ -237,7 +239,19 @@ public partial class SessionReportWindow : Window
     {
         bool hasSummary = _summaryCards.Items.Length > 0;
         CalendarSummaryHost.Visibility = hasSummary ? Visibility.Visible : Visibility.Collapsed;
-        LegacySummaryPanel.Visibility = !hasSummary && LegacyHighlightItemsControl.HasItems ? Visibility.Visible : Visibility.Collapsed;
+        LegacySummaryPanel.Visibility = !hasSummary && !_blending && LegacyHighlightItemsControl.HasItems ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>요약 카드가 아직 없을 때만 알림이 섞이는 연출을 보여 준다. 새로고침 중에는 기존 요약을 그대로 둔다.</summary>
+    private void ShowBlend(bool show)
+    {
+        show = show && SummaryBlend.ChipCount > 0;
+        if (_blending == show) return;
+        _blending = show;
+        SummaryBlend.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (show) SummaryBlend.Start();
+        else SummaryBlend.Stop();
+        UpdateSummaryContentVisibility();
     }
 
     private void SetSummaryStatus(string? message, bool busy = false, bool failed = false)
@@ -302,6 +316,7 @@ public partial class SessionReportWindow : Window
         }
         ReloadSummaryButton.IsEnabled = false;
         SetSummaryStatus(_summaryCards.Items.Length > 0 ? "AI 요약을 갱신하고 있어요" : "AI가 알림을 요약하고 있어요", busy: true);
+        ShowBlend(_summaryCards.Items.Length == 0);
         string? outcome = null;
         var before = _result;
         try
@@ -338,6 +353,7 @@ public partial class SessionReportWindow : Window
         finally
         {
             _loadingSummaries = false;
+            ShowBlend(false);
             if (!_closed)
             {
                 SaveAvailabilityText.Visibility = Visibility.Collapsed;
