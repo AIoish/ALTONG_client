@@ -361,6 +361,23 @@
                     <local:QuickMemoView x:Name="MemoView" Visibility="Collapsed" />
                 </Grid>
                 <StackPanel Grid.Row="3" Margin="0,12,0,0">
+                    <Border x:Name="MessengerOfflineNotice" Visibility="Collapsed" Background="#15191D" BorderBrush="#3D4854"
+                            BorderThickness="1" CornerRadius="6" Padding="9,1,4,1" Margin="0,0,0,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="PC 메신저 3개가 모두 꺼져 있어요" FontSize="11" Foreground="{StaticResource MutedText}"
+                                       TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,2,4,2" />
+                            <Button x:Name="MessengerStatusHomeButton" Grid.Column="1" Click="MessengerStatusHome_Click"
+                                    Style="{StaticResource HeaderButton}" Width="Auto" Height="26"
+                                    Foreground="{StaticResource Accent}" AutomationProperties.Name="홈에서 메신저 실행 상태 보기">
+                                <StackPanel Orientation="Horizontal" Margin="5,0">
+                                    <TextBlock Text="홈에서 보기" FontSize="11" VerticalAlignment="Center" />
+                                    <TextBlock Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="8"
+                                               VerticalAlignment="Center" Margin="4,0,0,0" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                    </Border>
                     <Grid x:Name="NotificationBulkActions" Margin="0,0,0,10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />

@@ -30,6 +30,13 @@ public sealed class FocusUsageUiTests
         {
             var root = (FrameworkElement)window.Content;
             window.ApplyTemplate();
+            window.SetMessengerStatus(new MessengerRunningStatus(KakaoTalk: true, Slack: false, Discord: true));
+            var kakaoBadge = (ContentControl)window.FindName("KakaoTalkRunningBadge");
+            var slackBadge = (ContentControl)window.FindName("SlackRunningBadge");
+            var discordBadge = (ContentControl)window.FindName("DiscordRunningBadge");
+            Assert.AreEqual(true, kakaoBadge.Content);
+            Assert.AreEqual(false, slackBadge.Content);
+            Assert.AreEqual(true, discordBadge.Content);
             Refresh(window);
             var bars = (ItemsControl)window.FindName("HomeFocusUsageItems");
             Assert.AreEqual(24, bars.Items.Count);
@@ -74,6 +81,10 @@ public sealed class FocusUsageUiTests
                 var toggleBounds = toggle.TransformToAncestor(scroll).TransformBounds(new Rect(toggle.RenderSize));
                 Assert.IsTrue(toggleBounds.Top >= 0 && toggleBounds.Bottom <= scroll.ViewportHeight + 1,
                     "카드가 커져도 집중모드 조작은 첫 화면에 보여야 합니다.");
+                var messengerStatuses = (FrameworkElement)window.FindName("HomeMessengerStatuses");
+                var messengerBounds = messengerStatuses.TransformToAncestor(scroll).TransformBounds(new Rect(messengerStatuses.RenderSize));
+                Assert.IsTrue(messengerBounds.Top >= toggleBounds.Bottom && messengerBounds.Bottom <= scroll.ViewportHeight + 1);
+                Assert.IsTrue(messengerBounds.Left >= -1 && messengerBounds.Right <= scroll.ViewportWidth + 1);
                 SavePreview(root, $"focus-chart-home-{size.Width}.png", size);
                 var chart = (FrameworkElement)window.FindName("HomeFocusUsageChart");
                 chart.BringIntoView();
@@ -84,6 +95,10 @@ public sealed class FocusUsageUiTests
                 Assert.IsTrue(bars.Items.Cast<FocusUsageHour>().All(hour => hour.BarHeight is >= 0 and <= 88));
                 SavePreview(root, $"focus-chart-visible-{size.Width}.png", size);
             }
+            window.SetMessengerStatus(new MessengerRunningStatus(KakaoTalk: false, Slack: true, Discord: false));
+            Assert.AreEqual(false, kakaoBadge.Content);
+            Assert.AreEqual(true, slackBadge.Content);
+            Assert.AreEqual(false, discordBadge.Content);
             using (var connection = db.CreateOpenConnection())
             using (var command = connection.CreateCommand())
             {
@@ -97,6 +112,10 @@ public sealed class FocusUsageUiTests
             Refresh(window);
             Assert.IsTrue(bars.Items.Cast<FocusUsageHour>().All(hour => hour.Duration == TimeSpan.Zero));
             Assert.IsTrue(((TextBlock)window.FindName("HomeFocusUsageStatusText")).Text.Contains("아직 집중 기록"));
+            var tabs = (TabControl)window.FindName("DashboardTabs");
+            tabs.SelectedIndex = 3;
+            window.ShowHome();
+            Assert.AreEqual(0, tabs.SelectedIndex);
         }
         finally { window.Close(); }
     });
