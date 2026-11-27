@@ -23,6 +23,24 @@
         <Style x:Key="Muted" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
             <Setter Property="Foreground" Value="{StaticResource MutedText}" />
         </Style>
+        <DataTemplate x:Key="MessengerRunningBadge">
+            <Border x:Name="Badge" BorderBrush="{StaticResource BlackRule}" BorderThickness="1"
+                    CornerRadius="4" Padding="5,2" Margin="5,0,0,0">
+                <TextBlock x:Name="Status" Text="확인 불가" FontSize="11" TextWrapping="NoWrap"
+                           Foreground="{StaticResource BlackMuted}" />
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding}" Value="True">
+                    <Setter TargetName="Badge" Property="Background" Value="{StaticResource BlackSelection}" />
+                    <Setter TargetName="Badge" Property="BorderBrush" Value="Transparent" />
+                    <Setter TargetName="Status" Property="Text" Value="실행 중" />
+                    <Setter TargetName="Status" Property="Foreground" Value="{StaticResource BlackAccentText}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding}" Value="False">
+                    <Setter TargetName="Status" Property="Text" Value="꺼져 있음" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
         <Style x:Key="Heading" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
             <Setter Property="FontSize" Value="18" /><Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,16" />
@@ -274,7 +292,27 @@
                                                 <Button x:Name="FocusModeToggleButton" Style="{StaticResource PrimaryButton}" MinWidth="148" Click="FocusModeToggleButton_Click" />
                                             </StackPanel>
                                         </Grid>
-                                        <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,0" Margin="0,18,0,0" Padding="0,16,0,0">
+                                        <WrapPanel x:Name="HomeMessengerStatuses" Margin="0,8,0,0"
+                                                   AutomationProperties.Name="PC 메신저 실행 상태">
+                                            <TextBlock Text="PC 메신저 실행 상태" Style="{StaticResource Muted}" FontSize="12"
+                                                       Margin="0,0,16,5" VerticalAlignment="Center" TextWrapping="NoWrap" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,16,5">
+                                                <TextBlock Text="카카오톡" FontSize="12" VerticalAlignment="Center" TextWrapping="NoWrap" />
+                                                <ContentControl x:Name="KakaoTalkRunningBadge" Focusable="False"
+                                                                ContentTemplate="{StaticResource MessengerRunningBadge}" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,16,5">
+                                                <TextBlock Text="Slack" FontSize="12" VerticalAlignment="Center" TextWrapping="NoWrap" />
+                                                <ContentControl x:Name="SlackRunningBadge" Focusable="False"
+                                                                ContentTemplate="{StaticResource MessengerRunningBadge}" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                                <TextBlock Text="Discord" FontSize="12" VerticalAlignment="Center" TextWrapping="NoWrap" />
+                                                <ContentControl x:Name="DiscordRunningBadge" Focusable="False"
+                                                                ContentTemplate="{StaticResource MessengerRunningBadge}" />
+                                            </StackPanel>
+                                        </WrapPanel>
+                                        <Border BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,0" Margin="0,6,0,0" Padding="0,16,0,0">
                                             <StackPanel>
                                                 <WrapPanel>
                                                     <TextBlock Text="오늘의 집중 시간" FontSize="14" FontWeight="SemiBold" Margin="0,0,12,4" VerticalAlignment="Center" />
