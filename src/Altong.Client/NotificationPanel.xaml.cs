@@ -25,8 +25,10 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
     private DockNotificationItem? _displayedDetail;
     private TopBandStyle _bandStyle;
     private bool _stoppingFocus;
+    private bool _allMessengersStopped;
     public bool IsMemoOpen => MemoView.Visibility == Visibility.Visible;
     public Func<string?>? StopFocusAction { get; set; }
+    internal Action? ShowMessengerStatusAction { get; set; }
     public event EventHandler? MemoModeChanged;
 
     public event EventHandler? ShowDashboardRequested;
@@ -91,6 +93,21 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
 
     private void Dashboard_Click(object sender, RoutedEventArgs e) => ShowDashboardRequested?.Invoke(this, EventArgs.Empty);
 
+    private void MessengerStatusHome_Click(object sender, RoutedEventArgs e) => ShowMessengerStatusAction?.Invoke();
+
+    internal void SetMessengerStatus(MessengerRunningStatus? status)
+    {
+        bool stopped = status is { AllStopped: true };
+        if (_allMessengersStopped == stopped) return;
+
+        _allMessengersStopped = stopped;
+        UpdateMessengerNotice();
+    }
+
+    private void UpdateMessengerNotice() => MessengerOfflineNotice.Visibility =
+        _allMessengersStopped && _state.IsActive && _state.IsPanelOpen && !IsMemoOpen
+            ? Visibility.Visible : Visibility.Collapsed;
+
     internal void SetMemoStore(QuickMemoStore store) => MemoView.SetStore(store);
     internal System.Windows.Controls.TextBox MemoEditor => MemoView.Editor;
     public bool TryFlushMemoDraft() => MemoView.TryFlushDraft();
@@ -123,6 +140,7 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
         MemoButtonLabel.Text = open ? "알림 보기" : "빠른 메모";
         MemoButtonIcon.Text = open ? "\uEA8F" : "\uE70B";
         System.Windows.Automation.AutomationProperties.SetName(QuickMemoButton, MemoButtonLabel.Text);
+        UpdateMessengerNotice();
         MemoModeChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -178,6 +196,7 @@ public partial class NotificationPanel : System.Windows.Controls.UserControl
         ListPinButton.ToolTip = DetailPinButton.ToolTip = pinHint;
         EmptyState.Visibility = _state.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ListScroll.Visibility = _state.Items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        UpdateMessengerNotice();
 
         bool hasDetail = HasDetail;
         bool openingDetail = hasDetail && DetailPanel.Visibility != Visibility.Visible;

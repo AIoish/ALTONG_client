@@ -241,6 +241,7 @@ public partial class App : System.Windows.Application
         _routineTimer.Start();
 
         _notificationDockWindow = new NotificationDockWindow(new DockNotificationState(), quickMemos);
+        _notificationDockWindow.Panel.ShowMessengerStatusAction = () => ShowDashboard(showHome: true);
         _notificationDockWindow.Panel.StopFocusAction = () =>
         {
             if (!FocusModeService.IsEnabled) return null;
@@ -389,7 +390,9 @@ public partial class App : System.Windows.Application
         }
     }
 
-    internal void ShowDashboard()
+    internal void ShowDashboard() => ShowDashboard(showHome: false);
+
+    private void ShowDashboard(bool showHome)
     {
         RunOnUiThread(() =>
         {
@@ -400,7 +403,7 @@ public partial class App : System.Windows.Application
             _isShowingDashboard = true;
             try
             {
-                ShowDashboardCore();
+                ShowDashboardCore(showHome);
             }
             finally
             {
@@ -409,7 +412,7 @@ public partial class App : System.Windows.Application
         });
     }
 
-    private void ShowDashboardCore()
+    private void ShowDashboardCore(bool showHome)
     {
         if (_dashboardWindow is null)
         {
@@ -432,6 +435,7 @@ public partial class App : System.Windows.Application
             MainWindow = _dashboardWindow;
         }
 
+        if (showHome) _dashboardWindow.ShowHome();
         _dashboardWindow.Show();
 
         if (_dashboardWindow.WindowState == WindowState.Minimized)
@@ -440,6 +444,7 @@ public partial class App : System.Windows.Application
         }
 
         _dashboardWindow.Activate();
+        UpdateMessengerStatus();
     }
 
     private void DashboardWindow_Closed(object? sender, EventArgs e)
@@ -517,6 +522,7 @@ public partial class App : System.Windows.Application
                 SessionResults.Begin(changedAt, FocusSettings.Current.TimerEnabled ? FocusSettings.Current.FocusMinutes : 0);
                 if (SessionResults.CurrentSessionId is { } sessionId)
                     _notificationDockWindow?.BeginNotificationSession(sessionId);
+                UpdateMessengerStatus();
             }
             else
             {
@@ -756,7 +762,9 @@ public partial class App : System.Windows.Application
 
     private async void RoutineTimer_Tick(object? sender, EventArgs e)
     {
-        if (_routineTickInProgress || IsShuttingDown) return;
+        if (IsShuttingDown) return;
+        UpdateMessengerStatus();
+        if (_routineTickInProgress) return;
         _routineTickInProgress = true;
         try
         {
@@ -771,6 +779,15 @@ public partial class App : System.Windows.Application
             Console.WriteLine($"[Database] 집중 상태 갱신 실패: {ex.GetBaseException().Message}");
         }
         finally { _routineTickInProgress = false; }
+    }
+
+    private void UpdateMessengerStatus()
+    {
+        if (!FocusModeService.IsEnabled && _dashboardWindow?.IsHomeVisible != true) return;
+
+        var status = MessengerRunningStatus.Read();
+        _dashboardWindow?.SetMessengerStatus(status);
+        _notificationDockWindow?.Panel.SetMessengerStatus(status);
     }
 
     private async Task CheckpointActiveWindowAsync()

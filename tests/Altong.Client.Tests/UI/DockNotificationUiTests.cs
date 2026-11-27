@@ -64,6 +64,59 @@ public sealed class DockNotificationUiTests
         });
     }
 
+    [TestMethod]
+    public void MessengerNotice_OnlyShowsInOpenAlertPanel_WhenAllAppsAreStopped()
+    {
+        RunOnSta(() =>
+        {
+            var state = new DockNotificationState();
+            var (flyout, panel) = Host(state);
+            state.Changed += (_, _) => panel.Refresh();
+            try
+            {
+                flyout.Show();
+                var notice = (Border)panel.FindName("MessengerOfflineNotice");
+                panel.SetMessengerStatus(new MessengerRunningStatus());
+                Assert.AreEqual(Visibility.Collapsed, notice.Visibility);
+                state.BeginSession("ui");
+                Assert.AreEqual(Visibility.Collapsed, notice.Visibility);
+                state.OpenPanel();
+                Assert.AreEqual(Visibility.Visible, notice.Visibility);
+                flyout.UpdateLayout();
+                Assert.IsTrue(notice.ActualHeight <= 32, "알림 패널의 기존 너비에서 안내는 한 줄로 표시합니다.");
+                SavePreview(flyout, "messenger-offline-notice.png");
+
+                int homeRequests = 0;
+                panel.ShowMessengerStatusAction = () => homeRequests++;
+                ((Button)panel.FindName("MessengerStatusHomeButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.AreEqual(1, homeRequests);
+                Assert.AreEqual(0, state.UnreadCount);
+
+                foreach (var running in new MessengerRunningStatus?[]
+                {
+                    new(true, false, false), new(false, true, false), new(false, false, true), null,
+                })
+                {
+                    panel.SetMessengerStatus(running);
+                    Assert.AreEqual(Visibility.Collapsed, notice.Visibility);
+                    panel.SetMessengerStatus(new MessengerRunningStatus());
+                    Assert.AreEqual(Visibility.Visible, notice.Visibility);
+                }
+
+                state.Receive(Record("existing", 4));
+                Assert.AreEqual(Visibility.Visible, notice.Visibility);
+                Assert.AreEqual(1, state.UnreadCount);
+                ((Button)panel.FindName("QuickMemoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.AreEqual(Visibility.Collapsed, notice.Visibility);
+                panel.CloseMemo();
+                Assert.AreEqual(Visibility.Visible, notice.Visibility);
+                state.ClosePanel();
+                Assert.AreEqual(Visibility.Collapsed, notice.Visibility);
+            }
+            finally { flyout.Close(); }
+        });
+    }
+
     [DataTestMethod]
     [DataRow("민준", false)]
     [DataRow(" 민준 ", false)]

@@ -24,6 +24,24 @@
         <Style x:Key="Muted" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
             <Setter Property="Foreground" Value="{StaticResource MutedText}" />
         </Style>
+        <DataTemplate x:Key="MessengerRunningBadge">
+            <Border x:Name="Badge" BorderBrush="{StaticResource BlackRule}" BorderThickness="1"
+                    CornerRadius="4" Padding="5,2" Margin="5,0,0,0">
+                <TextBlock x:Name="Status" Text="확인 불가" FontSize="11" TextWrapping="NoWrap"
+                           Foreground="{StaticResource BlackMuted}" />
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding}" Value="True">
+                    <Setter TargetName="Badge" Property="Background" Value="{StaticResource BlackSelection}" />
+                    <Setter TargetName="Badge" Property="BorderBrush" Value="Transparent" />
+                    <Setter TargetName="Status" Property="Text" Value="실행 중" />
+                    <Setter TargetName="Status" Property="Foreground" Value="{StaticResource BlackAccentText}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding}" Value="False">
+                    <Setter TargetName="Status" Property="Text" Value="꺼져 있음" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
         <Style x:Key="Heading" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
             <Setter Property="FontSize" Value="{StaticResource TypeSection}" /><Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,16" />
@@ -356,6 +374,22 @@
                                                 </Border>
                                                 <TextBlock x:Name="FocusTimerTitleText" FontSize="{StaticResource TypeSection}" FontWeight="SemiBold" VerticalAlignment="Center" />
                                             </DockPanel>
+                                            <!-- PC 메신저 실행 상태(#72): 타이머 버튼 아래 한 줄 -->
+                                            <WrapPanel x:Name="HomeMessengerStatuses" DockPanel.Dock="Bottom" Margin="0,14,0,0" AutomationProperties.Name="PC 메신저 실행 상태">
+                                                <TextBlock Text="PC 메신저" Style="{StaticResource Muted}" FontSize="{StaticResource TypeLabel}" Margin="0,0,14,4" VerticalAlignment="Center" TextWrapping="NoWrap" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,14,4">
+                                                    <TextBlock Text="카카오톡" FontSize="{StaticResource TypeLabel}" VerticalAlignment="Center" TextWrapping="NoWrap" />
+                                                    <ContentControl x:Name="KakaoTalkRunningBadge" Focusable="False" ContentTemplate="{StaticResource MessengerRunningBadge}" />
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,14,4">
+                                                    <TextBlock Text="Slack" FontSize="{StaticResource TypeLabel}" VerticalAlignment="Center" TextWrapping="NoWrap" />
+                                                    <ContentControl x:Name="SlackRunningBadge" Focusable="False" ContentTemplate="{StaticResource MessengerRunningBadge}" />
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                    <TextBlock Text="Discord" FontSize="{StaticResource TypeLabel}" VerticalAlignment="Center" TextWrapping="NoWrap" />
+                                                    <ContentControl x:Name="DiscordRunningBadge" Focusable="False" ContentTemplate="{StaticResource MessengerRunningBadge}" />
+                                                </StackPanel>
+                                            </WrapPanel>
                                             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal">
                                                 <Button x:Name="FocusModeToggleButton" Style="{StaticResource PrimaryButton}" MinWidth="148" Height="46" Click="FocusModeToggleButton_Click" />
                                                 <Button x:Name="HomeRoutineButton" Content="루틴 설정" Height="46" Margin="10,0,0,0" Click="HomeRoutine_Click" ToolTip="설정에서 집중·휴식 시간을 바꿔요" />

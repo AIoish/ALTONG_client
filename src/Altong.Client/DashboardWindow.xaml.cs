@@ -48,6 +48,9 @@ public partial class DashboardWindow : Window
     private bool _journalDetails;
     private ReportCalendarView _calendarView = null!;
     private static readonly System.Globalization.CultureInfo Korean = System.Globalization.CultureInfo.GetCultureInfo("ko-KR");
+    private MessengerRunningStatus? _messengerStatus;
+
+    internal bool IsHomeVisible => IsVisible && WindowState != WindowState.Minimized && DashboardTabs.SelectedIndex == 0;
 
     public DashboardWindow(
         FocusSettingsStore focusSettings,
@@ -139,6 +142,18 @@ public partial class DashboardWindow : Window
             if (_focusModeCoordinator is not null)
                 _focusModeCoordinator.StateChanged -= FocusMode_StateChanged;
         };
+    }
+
+    internal void ShowHome() => NavigateTo(0);
+
+    internal void SetMessengerStatus(MessengerRunningStatus? status)
+    {
+        if (_messengerStatus == status) return;
+
+        _messengerStatus = status;
+        KakaoTalkRunningBadge.Content = status?.KakaoTalk;
+        SlackRunningBadge.Content = status?.Slack;
+        DiscordRunningBadge.Content = status?.Discord;
     }
 
     private void ActiveWindowTracker_ContextChanged(object? sender, Altong.Client.Models.CurrentContext context)
