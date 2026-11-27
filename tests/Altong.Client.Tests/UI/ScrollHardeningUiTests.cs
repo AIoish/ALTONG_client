@@ -76,6 +76,8 @@ public sealed class ScrollHardeningUiTests
             var items = (ItemsControl)report.FindName("NotificationItemsControl");
             var apps = (ItemsControl)report.FindName("AppItemsControl");
             Assert.AreEqual(1000, ((SessionResult)report.DataContext).NotificationCount);
+            Assert.AreEqual(0, items.Items.Count);
+            ((Expander)report.FindName("NotificationsExpander")).IsExpanded = true;
             Assert.AreEqual(50, items.Items.Count);
             Assert.AreEqual(50, apps.Items.Count);
             ((Button)report.FindName("MoreAppsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

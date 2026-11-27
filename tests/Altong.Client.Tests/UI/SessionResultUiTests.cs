@@ -480,7 +480,6 @@ public sealed class SessionResultUiTests
                             Assert.IsTrue(scroll.ViewportHeight > 0);
                             Assert.IsTrue(scroll.ScrollableWidth <= 1, "결과 리포트에 가로 잘림이 없어야 합니다.");
                             var notifications = (ItemsControl)report.FindName("NotificationItemsControl");
-                            Assert.AreEqual(blocked.Count() + 2, notifications.Items.Count);
                             foreach (var name in new[] { "SaveReportButton", "SkipSaveButton" })
                             {
                                 var action = (Button)report.FindName(name);
@@ -495,6 +494,7 @@ public sealed class SessionResultUiTests
                             SavePreview(reportRoot, $"report-{size.Width}.png", size);
                             var notificationsExpander = (Expander)report.FindName("NotificationsExpander");
                             notificationsExpander.IsExpanded = true;
+                            Assert.AreEqual(blocked.Count() + 2, notifications.Items.Count);
                             reportRoot.UpdateLayout();
                             var replies = Descendants(notifications).OfType<Expander>()
                                 .Where(expander => Equals(expander.Header, "답변하기") && expander.Visibility == Visibility.Visible)

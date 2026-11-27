@@ -99,7 +99,7 @@ public sealed class ReportSummaryLoadingUiTests
     });
 
     [TestMethod]
-    public void InitialLoading_LabelsPreview_AndRetryReplacesItWithSummary() => RunSta(() =>
+    public void InitialLoading_ShowsGenericAnimation_AndKeepsOriginalsInExpander() => RunSta(() =>
     {
         var provider = new ControlledProvider();
         var now = DateTime.UtcNow;
@@ -117,10 +117,15 @@ public sealed class ReportSummaryLoadingUiTests
             Assert.AreEqual(Visibility.Visible, Indicator(report).Visibility);
             var blend = (SummaryBlendView)report.FindName("SummaryBlend");
             Assert.AreEqual(Visibility.Visible, blend.Visibility, "요약 중에는 알림이 섞이는 연출을 보여 줘야 합니다.");
-            Assert.AreEqual(1, blend.ChipCount);
+            var originals = (Expander)report.FindName("NotificationsExpander");
+            var rows = (ItemsControl)report.FindName("NotificationItemsControl");
+            Assert.IsFalse(originals.IsExpanded);
+            Assert.AreEqual(0, rows.Items.Count);
             Assert.AreEqual(SystemParameters.ClientAreaAnimation, blend.IsAnimating);
-            Assert.AreEqual(Visibility.Collapsed, ((StackPanel)report.FindName("LegacySummaryPanel")).Visibility,
-                "연출과 원본 미리보기를 함께 보여 주지 않습니다.");
+            report.WindowState = WindowState.Minimized;
+            Assert.IsFalse(blend.IsAnimating);
+            report.WindowState = WindowState.Normal;
+            Assert.AreEqual(SystemParameters.ClientAreaAnimation, blend.IsAnimating);
             Assert.IsTrue(((Button)report.FindName("ReportCloseButton")).IsEnabled);
             Assert.IsTrue(((Button)report.FindName("SkipSaveButton")).IsEnabled);
             var scroll = (ScrollViewer)report.FindName("ReportScroll");
@@ -141,9 +146,9 @@ public sealed class ReportSummaryLoadingUiTests
             Assert.AreEqual(Visibility.Collapsed, Indicator(report).Visibility);
             Assert.AreEqual(Visibility.Collapsed, blend.Visibility);
             Assert.IsFalse(blend.IsAnimating, "끝나면 애니메이션을 멈춰야 합니다.");
-            Assert.AreEqual("원본 알림 미리보기", ((TextBlock)report.FindName("LegacySummaryLabel")).Text);
-            Assert.AreEqual(Visibility.Visible, ((StackPanel)report.FindName("LegacySummaryPanel")).Visibility,
-                "요약에 실패하면 원본 미리보기로 돌아갑니다.");
+            Assert.IsFalse(originals.IsExpanded);
+            originals.IsExpanded = true;
+            Assert.AreEqual(1, rows.Items.Count);
             Assert.AreEqual(Visibility.Visible, Retry(report).Visibility);
 
             provider.Pending = ControlledProvider.NewPending();
@@ -156,8 +161,24 @@ public sealed class ReportSummaryLoadingUiTests
             Until(() => Reload(report).IsEnabled);
             Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
             Assert.AreEqual(Visibility.Collapsed, Indicator(report).Visibility);
-            Assert.AreEqual(Visibility.Collapsed, ((StackPanel)report.FindName("LegacySummaryPanel")).Visibility);
+            Assert.IsTrue(originals.IsExpanded);
             Assert.AreEqual("생성된 요약", Cards(report).Items.Single().Summary.Text);
+        }
+        finally { report.Close(); }
+    });
+
+    [TestMethod]
+    public void SavedHighlightsWithoutRawRows_AppearWhenOriginalsAreExpanded() => RunSta(() =>
+    {
+        var now = DateTime.UtcNow;
+        var report = new SessionReportWindow(new SessionResult(now, now, [], [], true)
+            { StoredNotificationHighlights = ["기존 알림 기록"] }, isSaved: true);
+        try
+        {
+            var highlights = (ItemsControl)report.FindName("LegacyHighlights");
+            Assert.IsFalse(highlights.HasItems);
+            ((Expander)report.FindName("NotificationsExpander")).IsExpanded = true;
+            Assert.AreEqual("기존 알림 기록", highlights.Items[0]);
         }
         finally { report.Close(); }
     });

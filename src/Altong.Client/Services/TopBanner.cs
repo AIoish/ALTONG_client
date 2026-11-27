@@ -28,9 +28,10 @@ public static class TopBanner
         double width = window.ActualWidth > 0 ? window.ActualWidth : window.Width;
         window.Left = Math.Round((SystemParameters.PrimaryScreenWidth - width) / 2);
         double top = Math.Max(0, SystemParameters.WorkArea.Top) + TopMargin;
-        foreach (var other in banners)
+        foreach (var other in banners.OrderBy(banner => banner.Top))
         {
             if (ReferenceEquals(other, window) || !other.IsVisible || other.ActualHeight <= 0) continue;
+            if (top + window.ActualHeight - ShadowRoom + Gap <= other.Top + 0.5) break;
             top = Math.Max(top, other.Top + other.ActualHeight - ShadowRoom + Gap);
         }
         window.Top = Math.Round(top);

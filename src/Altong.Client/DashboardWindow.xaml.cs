@@ -26,7 +26,7 @@ public partial class DashboardWindow : Window
     private readonly Action? _shutdownApplication;
     private readonly AutoDndSettingsStore? _autoDndSettings;
     private readonly StartupRegistration? _startupRegistration;
-    private readonly DashboardInsightsView _insightsView;
+    private readonly Lazy<DashboardInsightsView> _insightsView;
     private readonly IFocusInsightRepository _insightRepository;
     private DateTime _lastHomeExtrasRefresh = DateTime.MinValue;
     private int _homeExtrasRevision = -1;
@@ -46,7 +46,7 @@ public partial class DashboardWindow : Window
     private int _journalRange;
     private string _journalSubtitle = "";
     private bool _journalDetails;
-    private ReportCalendarView _calendarView = null!;
+    private readonly Lazy<ReportCalendarView> _calendarView;
     private static readonly System.Globalization.CultureInfo Korean = System.Globalization.CultureInfo.GetCultureInfo("ko-KR");
     private MessengerRunningStatus? _messengerStatus;
 
@@ -87,17 +87,15 @@ public partial class DashboardWindow : Window
         _calendar.Changed += Calendar_Changed;
         Results.PropertyChanged += Results_PropertyChanged;
         ShowHomeFocusUsage(SqliteFocusUsageRepository.Aggregate(DateTime.Today, DateTime.UtcNow, []));
-        var notifications = new DashboardNotificationsView(Results.DashboardNotifications, calendar);
-        notifications.OpenReportRequested += (sessionId, day) => _ = OpenSessionReportAsync(sessionId, day);
-        NotificationsHost.Content = notifications;
         UpdateNavigationSelection();
-        _calendarView = new ReportCalendarView(results, calendar, openCalendar, summaryProvider, summaryStatePath);
-        _calendarView.SummaryChanged += (_, _) => UpdateHeader();
-        ReportCalendarHost.Content = _calendarView;
-        insightRepository ??= results.FocusInsights;
-        _insightRepository = insightRepository;
-        _insightsView = new DashboardInsightsView(insightRepository, insightCoaching, () => Results.ActiveSession);
-        InsightsHost.Content = _insightsView;
+        _calendarView = new(() =>
+        {
+            var view = new ReportCalendarView(results, calendar, openCalendar, summaryProvider, summaryStatePath);
+            view.SummaryChanged += (_, _) => UpdateHeader();
+            return view;
+        });
+        _insightRepository = insightRepository ?? results.FocusInsights;
+        _insightsView = new(() => new DashboardInsightsView(_insightRepository, insightCoaching, () => Results.ActiveSession));
         _activeWindowTracker.ContextChanged += ActiveWindowTracker_ContextChanged;
         if (_focusModeService is not null)
             _focusModeService.StateChanged += FocusMode_StateChanged;
@@ -133,7 +131,7 @@ public partial class DashboardWindow : Window
         {
             _isClosed = true;
             _calendar.Changed -= Calendar_Changed;
-            _insightsView.CancelPending();
+            if (_insightsView.IsValueCreated) _insightsView.Value.CancelPending();
             Results.PropertyChanged -= Results_PropertyChanged;
             _clockTimer.Stop();
             _activeWindowTracker.ContextChanged -= ActiveWindowTracker_ContextChanged;
@@ -264,7 +262,7 @@ public partial class DashboardWindow : Window
         _focusUsageRevision++;
         _lastFocusUsageRefresh = DateTime.MinValue;
         if (IsVisible && DashboardTabs.SelectedIndex == 0) _ = RefreshHomeFocusUsageAsync();
-        if (IsVisible && DashboardTabs.SelectedIndex == 5) _ = _insightsView.RefreshAsync();
+        if (IsVisible && DashboardTabs.SelectedIndex == 5) _ = _insightsView.Value.RefreshAsync();
     }
 
     private async Task RefreshHomeFocusUsageAsync()
@@ -399,7 +397,7 @@ public partial class DashboardWindow : Window
         {
             2 => _journalSubtitle.Length > 0 ? _journalSubtitle : "집중 중 쓴 앱",
             3 => "자주 바꾸는 것은 위에서 바로",
-            4 => _calendarView?.MonthSummary ?? "",
+            4 => _calendarView.Value.MonthSummary,
             _ => DateTime.Now.ToString("M월 d일 dddd", Korean)
         };
     }
@@ -416,7 +414,7 @@ public partial class DashboardWindow : Window
                 new("새로고침", () => { _lastDashboardRefresh = DateTime.MinValue; _ = RefreshDashboardDataAsync(); })
             ],
             3 => SettingsMenuItems(),
-            4 => _calendarView.MenuItems(),
+            4 => _calendarView.Value.MenuItems(),
             _ => []
         };
         if (items.Count == 0) return;
@@ -437,7 +435,7 @@ public partial class DashboardWindow : Window
     private async Task OpenSessionReportAsync(string sessionId, DateTime day)
     {
         NavigateTo(4);
-        await _calendarView.OpenSessionReportAsync(sessionId, day);
+        await _calendarView.Value.OpenSessionReportAsync(sessionId, day);
     }
 
     internal void ShowJournalDetails(bool show)
@@ -875,6 +873,20 @@ public partial class DashboardWindow : Window
             return;
         int index = DashboardTabs.SelectedIndex;
         string[] titles = [HomeTitle, "알림 확인", "활동 일지", "설정", "캘린더", "집중 인사이트"];
+        switch (index)
+        {
+            case 1 when NotificationsHost.Content is null:
+                var notifications = new DashboardNotificationsView(Results.DashboardNotifications, _calendar);
+                notifications.OpenReportRequested += (sessionId, day) => _ = OpenSessionReportAsync(sessionId, day);
+                NotificationsHost.Content = notifications;
+                break;
+            case 4 when ReportCalendarHost.Content is null:
+                ReportCalendarHost.Content = _calendarView.Value;
+                break;
+            case 5 when InsightsHost.Content is null:
+                InsightsHost.Content = _insightsView.Value;
+                break;
+        }
         PageTitleText.Text = titles[index];
         UpdateNavigationSelection();
         UpdateHeader();
@@ -883,7 +895,7 @@ public partial class DashboardWindow : Window
         if (_settingsReady && index == 0)
             _ = RefreshHomeFocusUsageAsync();
         if (_settingsReady && index == 5)
-            _ = _insightsView.RefreshAsync();
+            _ = _insightsView.Value.RefreshAsync();
     }
 
     private static string DescribeTimerSettings(FocusTimerSettings settings) => !settings.TimerEnabled

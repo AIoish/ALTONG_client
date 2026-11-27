@@ -17,6 +17,11 @@ public sealed class AppIconConverter : IValueConverter
     {
         string name = value as string ?? "";
         if (_cache.TryGetValue(name, out var cached)) return cached;
+        return _cache[name] = LoadIcon(name);
+    }
+
+    internal static ImageSource LoadIcon(string name)
+    {
         string key = Normalize(name);
         string? path = null;
         try
@@ -53,7 +58,7 @@ public sealed class AppIconConverter : IValueConverter
                 {
                     var image = Imaging.CreateBitmapSourceFromHIcon(icon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(32, 32));
                     image.Freeze();
-                    return _cache[name] = image;
+                    return image;
                 }
             }
         }
@@ -61,7 +66,7 @@ public sealed class AppIconConverter : IValueConverter
         var fallback = Imaging.CreateBitmapSourceFromHIcon(System.Drawing.SystemIcons.Application.Handle,
             Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(32, 32));
         fallback.Freeze();
-        return _cache[name] = fallback;
+        return fallback;
     }
 
     private static string Normalize(string value)

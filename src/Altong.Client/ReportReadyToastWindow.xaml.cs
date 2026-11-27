@@ -47,7 +47,8 @@ public partial class ReportReadyToastWindow : Window
     public void Present(bool succeeded)
     {
         if (_closing) return;
-        if (s_current is { } previous && !ReferenceEquals(previous, this)) previous.Dismiss();
+        // 교체할 때는 이전 창의 퇴장 애니메이션이 새 알림의 자리를 차지하지 않게 한다.
+        if (s_current is { } previous && !ReferenceEquals(previous, this)) previous.Close();
         s_current = this;
         TitleText.Text = succeeded ? "AI 요약이 끝났어요" : "AI 요약을 만들지 못했어요";
         MessageText.Text = succeeded
@@ -96,7 +97,7 @@ public partial class ReportReadyToastWindow : Window
             return;
         }
         var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(140));
-        fade.Completed += (_, _) => Close();
+        fade.Completed += (_, _) => { if (IsVisible) Close(); };
         Root.BeginAnimation(OpacityProperty, fade);
         SlideTransform.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-10, TimeSpan.FromMilliseconds(140)));
     }

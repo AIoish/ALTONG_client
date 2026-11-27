@@ -60,14 +60,28 @@ public sealed class ReportReadyToastUiTests
     {
         var first = new ReportReadyToastWindow { AutoCloseAfter = TimeSpan.Zero };
         var second = new ReportReadyToastWindow { AutoCloseAfter = TimeSpan.Zero };
+        var other = new Window { Width = 360, Height = 120, ShowActivated = false, ShowInTaskbar = false };
         try
         {
             first.Present(succeeded: true);
+            double originalTop = first.Top;
+            other.Show();
+            Altong.Client.Services.TopBanner.Place(other);
+            Assert.IsTrue(other.Top > originalTop);
             second.Present(succeeded: false);
+            Assert.AreEqual(originalTop, second.Top, 0.5, "이전 알림이 차지했던 자리에 표시해야 합니다.");
+            var third = new ReportReadyToastWindow { AutoCloseAfter = TimeSpan.Zero };
+            try
+            {
+                second.Dismiss();
+                third.Present(succeeded: true);
+                Assert.AreEqual(originalTop, third.Top, 0.5, "퇴장 중에 새로고침해도 위치가 내려가면 안 됩니다.");
+            }
+            finally { third.Close(); }
             Until(() => !first.IsVisible);
-            Assert.IsTrue(second.IsVisible, "같은 자리에 말풍선이 겹쳐 쌓이면 안 됩니다.");
+            Assert.IsFalse(second.IsVisible);
         }
-        finally { first.Close(); second.Close(); }
+        finally { first.Close(); second.Close(); other.Close(); }
     });
 
     [TestMethod]

@@ -4,7 +4,7 @@
              xmlns:services="clr-namespace:Altong.Client.Services"
              FontFamily="{x:Static services:AppTypography.BodyFont}"
              Foreground="{DynamicResource BlackText}"
-             Background="{DynamicResource BlackCanvas}"
+             Background="Transparent"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
     <UserControl.Resources>

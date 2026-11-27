@@ -1,23 +1,45 @@
 <UserControl x:Class="Altong.Client.SummaryBlendView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:services="clr-namespace:Altong.Client.Services"
-             Focusable="False" AutomationProperties.Name="AI가 알림을 섞어 요약하는 중">
+             Focusable="False" IsHitTestVisible="False" AutomationProperties.Name="AI 알림 요약 중">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="/Altong.Client;component/Themes/BlackTheme.xaml" />
             </ResourceDictionary.MergedDictionaries>
-            <services:AppIconConverter x:Key="AppIcon" />
+            <Style x:Key="NotificationShape" TargetType="Control">
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="Width" Value="56" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="VerticalAlignment" Value="Top" />
+                <Setter Property="Template"><Setter.Value>
+                    <ControlTemplate TargetType="Control">
+                        <Border CornerRadius="8" BorderThickness="1" BorderBrush="{StaticResource BlackRule}"
+                                Background="{StaticResource BlackSurface}" Padding="9,6">
+                            <StackPanel VerticalAlignment="Center">
+                                <Border Height="3" CornerRadius="1.5" Background="{StaticResource BlackAccentText}" />
+                                <Border Width="22" Height="3" CornerRadius="1.5" Margin="0,4,0,0" HorizontalAlignment="Left"
+                                        Background="{StaticResource BlackMuted}" />
+                            </StackPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value></Setter>
+            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
-    <!-- 위쪽 알림 카드들이 차례로 가운데 요약 카드로 모여 섞인다. 동작 줄이기에서는 움직임 없이 놓아 둔다. -->
-    <Grid x:Name="Stage" Height="196" ClipToBounds="True">
-        <Canvas x:Name="ChipLayer" />
-        <Border x:Name="SummaryTarget" Width="236" Height="76" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,4"
-                CornerRadius="12" BorderThickness="1" Background="{StaticResource BlackSelection}" BorderBrush="{StaticResource BlackSelectionRule}"
-                RenderTransformOrigin="0.5,0.5">
-            <Border.RenderTransform><ScaleTransform x:Name="TargetScale" /></Border.RenderTransform>
+    <Grid Height="146" ClipToBounds="True">
+        <Control x:Name="LeftNotification" Style="{StaticResource NotificationShape}">
+            <Control.RenderTransform><TranslateTransform X="-72" /></Control.RenderTransform>
+        </Control>
+        <Control x:Name="MiddleNotification" Style="{StaticResource NotificationShape}">
+            <Control.RenderTransform><TranslateTransform /></Control.RenderTransform>
+        </Control>
+        <Control x:Name="RightNotification" Style="{StaticResource NotificationShape}">
+            <Control.RenderTransform><TranslateTransform X="72" /></Control.RenderTransform>
+        </Control>
+        <Border Width="236" Height="76" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,4"
+                CornerRadius="12" BorderThickness="1" Background="{StaticResource BlackSelection}" BorderBrush="{StaticResource BlackSelectionRule}">
             <Grid Margin="14,12">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <Border Width="30" Height="30" CornerRadius="15" Background="{StaticResource BlackAction}" VerticalAlignment="Top" Margin="0,0,12,0">

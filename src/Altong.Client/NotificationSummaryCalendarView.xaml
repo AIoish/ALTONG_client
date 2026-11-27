@@ -6,7 +6,6 @@
     <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/Altong.Client;component/Themes/BlackTheme.xaml" /></ResourceDictionary.MergedDictionaries>
         <BooleanToVisibilityConverter x:Key="CalendarBoolVisibility" />
         <SolidColorBrush x:Key="SummaryCardSurface" Color="{StaticResource BlackSurfaceColor}" />
-        <services:AppIconConverter x:Key="SummaryAppIcon" />
         <Style TargetType="Expander" BasedOn="{StaticResource BlackExpander}" />
         <Style TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{x:Static services:AppTypography.BodyFont}" />
@@ -87,24 +86,7 @@
         <ItemsControl x:Name="SummaryItemsControl"><ItemsControl.ItemTemplate><DataTemplate>
             <Border Background="{DynamicResource SummaryCardSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,12">
                 <StackPanel>
-                    <Grid Margin="0,0,0,12">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="42" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource BlackInput}" HorizontalAlignment="Left" VerticalAlignment="Top">
-                            <Image Source="{Binding AppName, Converter={StaticResource SummaryAppIcon}}" Width="24" Height="24" />
-                        </Border>
-                        <StackPanel Grid.Column="1" Margin="0,0,10,0">
-                            <TextBlock Text="{Binding AppDisplayName}" ToolTip="{Binding AppName}" FontSize="14" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding SourceLabel}" FontSize="12" Margin="0,4,0,0" Foreground="{StaticResource BlackAccentText}">
-                                <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}"><Style.Triggers><DataTrigger Binding="{Binding SourceLabel}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-                            </TextBlock>
-                            <TextBlock Text="{Binding SourceMetadata}" Style="{StaticResource CalendarMuted}" FontSize="11" />
-                        </StackPanel>
-                        <Border Grid.Column="2" Background="{StaticResource BlackInput}" CornerRadius="6" Padding="7,4" VerticalAlignment="Top">
-                            <TextBlock Text="{Binding CardLabel}" FontSize="11">
-                                <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource BlackMuted}" /><Style.Triggers><DataTrigger Binding="{Binding IsScheduleRelated}" Value="True"><Setter Property="Foreground" Value="{StaticResource BlackSuccess}" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-                            </TextBlock>
-                        </Border>
-                    </Grid>
+                    <TextBlock Text="{Binding AppDisplayName}" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6" />
                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{StaticResource BlackText}" FontSize="14" LineHeight="22" />
                     <ItemsControl ItemsSource="{Binding Schedules}"><ItemsControl.ItemTemplate><DataTemplate>
                     <StackPanel Visibility="{Binding IsScheduleRelated, Converter={StaticResource CalendarBoolVisibility}}" Margin="0,10,0,0">

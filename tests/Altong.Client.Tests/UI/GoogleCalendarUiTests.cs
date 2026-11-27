@@ -244,7 +244,7 @@ public sealed class GoogleCalendarUiTests
             WriteBatch(folder, "late", supplied);
             Reload(report);
             Assert.AreEqual(3, Cards(report).Items.Length);
-            Assert.AreEqual(Visibility.Collapsed, ((StackPanel)report.FindName("LegacySummaryPanel")).Visibility);
+            Assert.IsFalse(((Expander)report.FindName("NotificationsExpander")).IsExpanded);
             File.WriteAllText(Path.Combine(folder, "late.json"), "{invalid-json");
             Reload(report);
             Assert.AreEqual(3, Cards(report).Items.Length);

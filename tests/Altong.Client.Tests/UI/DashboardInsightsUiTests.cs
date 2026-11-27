@@ -74,6 +74,11 @@ public sealed class DashboardInsightsUiTests
             var scroll = (ScrollViewer)view.FindName("InsightsScroll");
             Assert.IsTrue(scroll.ScrollableWidth <= 1, $"몰입 현황 탭 가로 잘림이 없어야 합니다: {size.Width}");
         }
+        var corner = new System.Windows.Media.Imaging.RenderTargetBitmap(1, 1, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        corner.Render(view);
+        var pixel = new byte[4];
+        corner.CopyPixels(pixel, 4, 0);
+        Assert.AreEqual((byte)0, pixel[3], "인사이트 탭 여백에는 대시보드 배경이 비쳐야 합니다.");
 
         Assert.AreEqual(Visibility.Collapsed, ((Border)view.FindName("EmptyStateCard")).Visibility);
         Assert.AreEqual(Visibility.Visible, ((FrameworkElement)view.FindName("KpiRow")).Visibility);
@@ -383,6 +388,9 @@ public sealed class DashboardInsightsUiTests
         {
             var tabs = (TabControl)window.FindName("DashboardTabs");
             Assert.AreEqual(6, tabs.Items.Count);
+            var hosts = new[] { "NotificationsHost", "ReportCalendarHost", "InsightsHost" }
+                .Select(name => (ContentControl)window.FindName(name)).ToArray();
+            Assert.IsTrue(hosts.All(host => host.Content is null));
             Assert.AreEqual("홈", ((TabItem)tabs.Items[0]).Header);
             Assert.AreEqual("알림 확인", ((TabItem)tabs.Items[1]).Header);
             Assert.AreEqual("활동 일지", ((TabItem)tabs.Items[2]).Header);
@@ -406,6 +414,9 @@ public sealed class DashboardInsightsUiTests
             var insightsHost = (ContentControl)window.FindName("InsightsHost");
             Assert.IsInstanceOfType<DashboardInsightsView>(insightsHost.Content);
             Until(() => repo.CallCount > 0);
+            Assert.IsNull(hosts[0].Content);
+            Assert.IsNull(hosts[1].Content);
+            var firstVisit = insightsHost.Content;
 
             // Tabs 0..4 still work identically
             ((Button)window.FindName("NavCalendarButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -416,6 +427,8 @@ public sealed class DashboardInsightsUiTests
             Assert.AreEqual(0, tabs.SelectedIndex);
             // 홈 제목은 시간대와 상관없이 "나만의 집중 공간"이다.
             Assert.AreEqual("나만의 집중 공간", ((TextBlock)window.FindName("PageTitleText")).Text);
+            tabs.SelectedIndex = 5;
+            Assert.AreSame(firstVisit, insightsHost.Content);
         }
         finally { window.Close(); }
     });

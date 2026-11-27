@@ -209,33 +209,17 @@
                         </Border>
                         <TextBlock Text="{Binding NotificationSummary}" Style="{StaticResource Muted}" />
                         <local:SummaryBlendView x:Name="SummaryBlend" Visibility="Collapsed" Margin="0,12,0,0" />
-                        <StackPanel x:Name="LegacySummaryPanel">
-                        <TextBlock x:Name="LegacySummaryLabel" Text="원본 알림 미리보기" Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0" />
-                        <ItemsControl x:Name="LegacyHighlightItemsControl" Margin="0,12,0,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{StaticResource GlassPane}" BorderBrush="{StaticResource GlassRim}" BorderThickness="1" CornerRadius="16" Padding="12" Margin="0,0,0,12">
-                                        <StackPanel>
-                                            <Grid Margin="0,0,0,10">
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="42" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource BlackInput}" HorizontalAlignment="Left">
-                                                    <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="24" Height="24" />
-                                                </Border>
-                                                <TextBlock Grid.Column="1" Text="{Binding AppDisplayName}" ToolTip="{Binding AppName}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                            </Grid>
-                                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" LineHeight="22" />
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        </StackPanel>
                         <ContentControl x:Name="CalendarSummaryHost" Visibility="Collapsed" Margin="0,10,0,0" />
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource DetailSection}">
-                    <Expander x:Name="NotificationsExpander" Header="원본 알림" Foreground="{StaticResource BlackSoft}" FontWeight="SemiBold" Style="{StaticResource ReportSectionExpander}">
+                    <Expander x:Name="NotificationsExpander" Expanded="NotificationsExpander_Expanded" Header="원본 알림" Foreground="{StaticResource BlackSoft}" FontWeight="SemiBold" Style="{StaticResource ReportSectionExpander}">
                     <StackPanel Margin="0,8,0,0">
+                        <ItemsControl x:Name="LegacyHighlights">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         <ItemsControl x:Name="NotificationItemsControl">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -306,18 +290,7 @@
                         <TextBlock x:Name="CopyStatusText" Style="{StaticResource Muted}" Margin="0,8,0,0" services:MotionBehavior.TextFeedback="True"
                                    AutomationProperties.LiveSetting="Polite" />
                         <Button x:Name="MoreNotificationsButton" Click="MoreNotifications_Click" HorizontalAlignment="Left" Margin="0,8" Visibility="Collapsed" />
-                        <TextBlock Text="알림 없음">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource Muted}">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasItems, ElementName=NotificationItemsControl}" Value="False">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                        <TextBlock x:Name="EmptyNotificationsText" Text="알림 없음" Style="{StaticResource Muted}" Visibility="Collapsed" />
                     </StackPanel></Expander>
                 </Border>
                 <Border Style="{StaticResource DetailSection}">
