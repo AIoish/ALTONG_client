@@ -455,7 +455,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <Grid x:Name="StreakHeatmapGrid" AutomationProperties.Name="최근 10주 집중 잔디밭">
+                            <Grid x:Name="StreakHeatmapGrid" AutomationProperties.Name="최근 10주 집중 잔디밭" SizeChanged="StreakHeatmapGrid_SizeChanged">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="22" />
                                     <ColumnDefinition Width="*" />
@@ -469,7 +469,7 @@
                                     <TextBlock Text="금" FontSize="10" Style="{StaticResource Muted}" VerticalAlignment="Center" HorizontalAlignment="Center" />
                                     <TextBlock Text="" FontSize="10" Style="{StaticResource Muted}" VerticalAlignment="Center" HorizontalAlignment="Center" />
                                 </UniformGrid>
-                                <ItemsControl x:Name="StreakHeatmapItems" Grid.Column="1">
+                                <ItemsControl x:Name="StreakHeatmapItems" Grid.Column="1" HorizontalAlignment="Left">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <UniformGrid Rows="7" Columns="10" />
@@ -477,7 +477,7 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Height="16" Margin="2" CornerRadius="3.5"
+                                            <Border Height="{DynamicResource HeatmapCellHeight}" Margin="2" CornerRadius="3.5"
                                                     ToolTipService.InitialShowDelay="0"
                                                     IsHitTestVisible="{Binding IsInteractive}"
                                                     Focusable="{Binding IsInteractive}"

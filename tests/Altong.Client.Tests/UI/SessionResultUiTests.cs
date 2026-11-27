@@ -142,17 +142,20 @@ public sealed class SessionResultUiTests
                     var tabs = (TabControl)window.FindName("DashboardTabs");
                     tabs.ApplyTemplate();
                     var home = tabs.SelectedContent;
-                    var shortcuts = new[] { "HomeNotificationsShortcut", "HomeJournalShortcut", "HomeCalendarShortcut" }
+                    // 벤토 칸은 누르면 그 탭으로 간다(리포트가 없으면 [최근 리포트]는 캘린더로).
+                    var tiles = new[] { "HomeNotificationsShortcut", "HomeJournalShortcut", "HomeStreakShortcut", "HomeCalendarShortcut", "HomeReportShortcut" }
                         .Select(name => (Button)window.FindName(name)).ToArray();
-                    CollectionAssert.AreEqual(new[] { "알림 확인", "활동 일지", "캘린더" },
-                        shortcuts.Select(AutomationProperties.GetName).ToArray());
-                    var expectedTabs = new[] { 1, 2, 4 };
-                    for (int i = 0; i < shortcuts.Length; i++)
+                    CollectionAssert.AreEqual(new[] { "집중 중 받은 알림", "오늘 집중", "연속 집중", "다음 일정", "최근 리포트" },
+                        tiles.Select(AutomationProperties.GetName).ToArray());
+                    var expectedTabs = new[] { 1, 2, 5, 4, 4 };
+                    for (int i = 0; i < tiles.Length; i++)
                     {
                         tabs.SelectedIndex = 0;
-                        shortcuts[i].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        tiles[i].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         Assert.AreEqual(expectedTabs[i], tabs.SelectedIndex);
                     }
+                    var shortcuts = new[] { "HomeNotificationsShortcut", "HomeCalendarShortcut", "HomeReportShortcut" }
+                        .Select(name => (Button)window.FindName(name)).ToArray();
                     tabs.SelectedIndex = 0;
                     Assert.AreEqual(6, tabs.Items.Count);
                     Assert.AreEqual("알림 확인", ((TabItem)tabs.Items[1]).Header);
@@ -196,150 +199,60 @@ public sealed class SessionResultUiTests
                     }
                     Assert.AreSame(home, tabs.SelectedContent);
                     tabs.SelectedIndex = 3;
-                    Assert.AreEqual(Visibility.Visible, ((FrameworkElement)window.FindName("SettingsQuickPanel")).Visibility, "설정은 빠른 토글 화면으로 시작합니다.");
-                    window.ShowSettingsDetails(true);
-                    var sections = new[] { "TimerSettingsExpander", "AutoDndSettingsExpander", "SystemSettingsExpander", "NotificationSettingsExpander" }
-                        .Select(name => (Expander)window.FindName(name)).ToArray();
-                    Assert.IsTrue(sections.All(section => !section.IsExpanded), "설정은 처음에 제목과 설명만 표시합니다.");
-                    Assert.AreEqual("타이머 꺼짐", AutomationProperties.GetItemStatus(sections[0]));
-                    Assert.AreEqual("설정 켜짐", AutomationProperties.GetItemStatus(sections[1]));
-                    Assert.AreEqual("자동 실행 확인 불가", AutomationProperties.GetItemStatus(sections[2]));
-                    Assert.AreEqual("연결 안 됨", AutomationProperties.GetItemStatus(sections[3]));
-                    root.Measure(new Size(640, 520));
-                    root.Arrange(new Rect(0, 0, 640, 520));
-                    root.UpdateLayout();
-                    PumpBindings();
-                    var settingsViewport = (ScrollViewer)tabs.SelectedContent;
-                    foreach (var section in sections)
-                    {
-                        var bounds = section.TransformToAncestor(settingsViewport).TransformBounds(new Rect(section.RenderSize));
-                        Assert.IsTrue(bounds.Top >= 0 && bounds.Bottom <= settingsViewport.ViewportHeight,
-                            "최소 창에서 접힌 네 개 설정의 제목을 모두 볼 수 있어야 합니다.");
-                        var icon = Descendants(section).OfType<TextBlock>().Single(text => text.Name == "SettingsIcon");
-                        var summary = Descendants(section).OfType<TextBlock>().Single(text => text.Name == "SettingsSummary");
-                        Assert.AreEqual("Segoe MDL2 Assets", icon.FontFamily.Source);
-                        Assert.IsFalse(string.IsNullOrWhiteSpace(icon.Text));
-                        Assert.AreEqual(AutomationProperties.GetItemStatus(section), summary.Text,
-                            "표시된 요약은 실제 설정 상태와 일치해야 합니다.");
-                        var peer = new System.Windows.Automation.Peers.ExpanderAutomationPeer(section);
-                        Assert.AreEqual(section.Header, peer.GetName());
-                        var provider = (System.Windows.Automation.Provider.IExpandCollapseProvider)peer
-                            .GetPattern(System.Windows.Automation.Peers.PatternInterface.ExpandCollapse);
-                        provider.Expand();
-                        root.UpdateLayout();
-                        Assert.AreEqual(window.FindResource("BlackSelection"), ((Border)section.Parent).Background,
-                            "펼친 설정은 배경으로 구분해야 합니다.");
-                        Assert.AreEqual(ExpandCollapseState.Expanded, provider.ExpandCollapseState);
-                        var content = (FrameworkElement)section.Template.FindName("ExpandedContent", section);
-                        Assert.AreEqual(Visibility.Visible, content.Visibility);
-                        provider.Collapse();
-                        root.UpdateLayout();
-                        Assert.AreEqual(ExpandCollapseState.Collapsed, provider.ExpandCollapseState);
-                        Assert.AreEqual(Visibility.Collapsed, content.Visibility);
-                    }
-                    SavePreview(root, "settings-collapsed-640.png", new Size(640, 520));
-                    var timerSection = sections[0];
-                    var timerPeer = new System.Windows.Automation.Peers.ExpanderAutomationPeer(timerSection);
-                    Assert.AreEqual("집중·휴식 루틴", timerPeer.GetName());
-                    var timerProvider = (System.Windows.Automation.Provider.IExpandCollapseProvider)timerPeer
-                        .GetPattern(System.Windows.Automation.Peers.PatternInterface.ExpandCollapse);
-                    Assert.AreEqual(ExpandCollapseState.Collapsed, timerProvider.ExpandCollapseState);
-                    timerProvider.Expand();
-                    Assert.IsTrue(timerSection.IsExpanded);
-                    sections[1].IsExpanded = true;
-                    Assert.IsTrue(timerSection.IsExpanded && sections[1].IsExpanded, "관련 설정은 각각 독립적으로 펼칠 수 있습니다.");
-                    var autoDndCheck = (CheckBox)window.FindName("AutoDndEnabledCheckBox");
-                    autoDndCheck.IsChecked = false;
-                    autoDndCheck.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-                    Assert.IsFalse(autoDndSettings.Current.Enabled, "자동 집중 설정은 펼친 화면에서도 즉시 저장해야 합니다.");
-                    Assert.AreEqual("꺼짐", AutomationProperties.GetItemStatus(sections[1]));
-                    sections[1].IsExpanded = false;
-                    sections[1].IsExpanded = true;
-                    Assert.AreEqual(false, autoDndCheck.IsChecked);
-                    autoDndCheck.IsChecked = true;
-                    autoDndCheck.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                    foreach (var removed in new[] { "SettingsDetailPanel", "TimerSettingsExpander", "AutoDndSettingsExpander", "SystemSettingsExpander", "NotificationSettingsExpander", "SaveTimerSettingsButton" })
+                        Assert.IsNull(window.FindName(removed), $"세부 설정 화면은 없앴습니다: {removed}");
+                    var timerCard = (Button)window.FindName("QuickTimerCard");
+                    var autoCard = (Button)window.FindName("QuickAutoDndCard");
+                    Assert.AreEqual("타이머 꺼짐", AutomationProperties.GetItemStatus(timerCard));
+                    Assert.AreEqual("설정 켜짐", AutomationProperties.GetItemStatus(autoCard));
+                    Assert.AreEqual("자동 실행 확인 불가", AutomationProperties.GetItemStatus((Button)window.FindName("QuickStartupCard")));
+                    Assert.AreEqual("연결 안 됨", AutomationProperties.GetItemStatus((Border)window.FindName("BlockedAppsPane")));
+
+                    // 자동 집중 카드는 누르는 즉시 저장한다.
+                    autoCard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Assert.IsFalse(autoDndSettings.Current.Enabled);
+                    Assert.AreEqual("꺼짐", AutomationProperties.GetItemStatus(autoCard));
+                    autoCard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     Assert.IsTrue(autoDndSettings.Current.Enabled);
-                    Assert.AreEqual("설정 켜짐", AutomationProperties.GetItemStatus(sections[1]));
-                    sections[1].IsExpanded = false;
-                    root.UpdateLayout();
-                    var timerOption = (CheckBox)window.FindName("TimerEnabledCheckBox");
-                    var timerOptions = (StackPanel)window.FindName("TimerOptionsPanel");
-                    var focusInput = (TextBox)window.FindName("FocusSessionDurationSetting");
-                    var restInput = (TextBox)window.FindName("BreakDurationSetting");
-                    var saveTimer = (Button)window.FindName("SaveTimerSettingsButton");
-                    string originalInput = focusInput.Text;
-                    var originalSaved = settings.Current;
-                    focusInput.Text = "37";
-                    timerProvider.Collapse();
-                    Assert.AreEqual(ExpandCollapseState.Collapsed, timerProvider.ExpandCollapseState);
-                    timerProvider.Expand();
-                    root.UpdateLayout();
-                    Assert.AreEqual("37", focusInput.Text, "접었다 다시 열어도 편집 중인 입력은 유지합니다.");
-                    Assert.AreEqual(originalSaved, settings.Current, "펼침·접힘은 설정을 저장하지 않습니다.");
-                    focusInput.Text = originalInput;
-                    void PreviewTimerSettings(string state)
-                    {
-                        foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
-                        {
-                            root.Measure(size);
-                            root.Arrange(new Rect(size));
-                            root.UpdateLayout();
-                            PumpBindings();
-                            var viewport = (ScrollViewer)tabs.SelectedContent;
-                            viewport.ScrollToTop();
-                            root.UpdateLayout();
-                            Assert.IsTrue(viewport.ScrollableWidth <= 1,
-                                "타이머 설정은 기본·최소 창 크기에서 가로로 잘리지 않아야 합니다.");
-                            var badge = Descendants(timerSection).OfType<TextBlock>().Single(text => text.Name == "SettingsSummary");
-                            Assert.AreEqual(AutomationProperties.GetItemStatus(timerSection), badge.Text, "저장 후 헤더 요약도 갱신해야 합니다.");
-                            var badgeBounds = badge.TransformToAncestor(timerSection).TransformBounds(new Rect(badge.RenderSize));
-                            Assert.IsTrue(badgeBounds.Right <= timerSection.ActualWidth + 1,
-                                $"설정 요약이 머리글 밖으로 넘어가면 안 됩니다: {badgeBounds.Right:F1}/{timerSection.ActualWidth:F1}");
-                            var measured = new System.Windows.Media.FormattedText(badge.Text, System.Globalization.CultureInfo.CurrentCulture,
-                                FlowDirection.LeftToRight, new System.Windows.Media.Typeface(badge.FontFamily, badge.FontStyle, badge.FontWeight, badge.FontStretch),
-                                badge.FontSize, System.Windows.Media.Brushes.White, 1);
-                            Assert.IsTrue(badge.ActualWidth + 1 >= measured.WidthIncludingTrailingWhitespace,
-                                $"설정 요약이 잘리지 않아야 합니다: {badge.Text} ({badge.ActualWidth:F1}/{measured.WidthIncludingTrailingWhitespace:F1})");
-                            SavePreview(root, $"settings-{state}-{size.Width}.png", size);
-                            saveTimer.BringIntoView();
-                            PumpBindings();
-                            root.UpdateLayout();
-                            var bounds = saveTimer.TransformToAncestor(viewport).TransformBounds(new Rect(saveTimer.RenderSize));
-                            Assert.IsTrue(bounds.Top >= -1 && bounds.Bottom <= viewport.ViewportHeight + 1,
-                                "타이머 설정이 길어져도 루틴 저장 버튼까지 스크롤할 수 있어야 합니다.");
-                            SavePreview(root, $"settings-{state}-save-{size.Width}.png", size);
-                        }
-                    }
-                    Assert.AreEqual(false, timerOption.IsChecked);
-                    Assert.AreEqual(Visibility.Collapsed, timerOptions.Visibility);
-                    PreviewTimerSettings("disabled");
-                    timerOption.IsChecked = true;
-                    Assert.AreEqual("타이머 꺼짐", AutomationProperties.GetItemStatus(timerSection), "저장 전 입력을 저장된 상태로 표시하지 않습니다.");
-                    Assert.AreEqual(Visibility.Visible, timerOptions.Visibility);
+                    Assert.AreEqual("설정 켜짐", AutomationProperties.GetItemStatus(autoCard));
+
+                    // 타이머가 꺼져 있으면 루틴 입력은 숨고, 켜면 바로 보인다.
+                    var routineOptions = (FrameworkElement)window.FindName("RoutineOptions");
+                    Assert.AreEqual(Visibility.Collapsed, routineOptions.Visibility);
+                    timerCard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Assert.IsTrue(settings.Current.TimerEnabled);
+                    Assert.AreEqual(Visibility.Visible, routineOptions.Visibility);
+
+                    // 루틴 고르기·직접 입력은 저장 버튼 없이 바로 저장한다. 잘못된 값은 저장하지 않는다.
+                    var presets = (UniformGrid)window.FindName("RoutinePresetGrid");
+                    ((Button)presets.Children[1]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Assert.AreEqual(new FocusTimerSettings(50, 10, true), settings.Current);
+                    Assert.AreEqual("선택됨", AutomationProperties.GetItemStatus(presets.Children[1]));
+                    var focusInput = (TextBox)window.FindName("RoutineFocusInput");
+                    var restInput = (TextBox)window.FindName("RoutineBreakInput");
                     focusInput.Text = "30";
                     restInput.Text = "";
-                    saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    Assert.AreEqual(new FocusTimerSettings(30, 0, true), settings.Current,
-                        "휴식시간을 비워두어도 집중 타이머 설정을 저장할 수 있어야 합니다.");
-                    Assert.AreEqual("집중 30분 · 휴식 없음", AutomationProperties.GetItemStatus(timerSection));
-                    PreviewTimerSettings("focus-only");
-                    restInput.Text = "5";
-                    saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    Assert.AreEqual(new FocusTimerSettings(30, 5, true), settings.Current);
-                    Assert.AreEqual("집중 30분 · 휴식 5분", AutomationProperties.GetItemStatus(timerSection));
-                    PreviewTimerSettings("routine");
+                    window.CommitRoutineInputs();
+                    Assert.AreEqual(new FocusTimerSettings(30, 0, true), settings.Current, "휴식을 비우면 휴식 없이 저장합니다.");
+                    Assert.AreEqual("집중 30분 · 휴식 없음", AutomationProperties.GetItemStatus(timerCard));
                     restInput.Text = "99";
-                    saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    Assert.AreEqual(new FocusTimerSettings(30, 5, true), settings.Current,
-                        "잘못된 시간 입력은 저장한 설정을 덮어쓰지 않아야 합니다.");
-                    Assert.AreEqual("집중 30분 · 휴식 5분", AutomationProperties.GetItemStatus(timerSection));
-                    PreviewTimerSettings("invalid");
-                    timerOption.IsChecked = false;
-                    focusInput.Text = "";
-                    saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    Assert.AreEqual(new FocusTimerSettings(30, 5, false), settings.Current,
-                        "타이머를 끌 때는 시간 입력을 요구하지 않아야 합니다.");
-                    Assert.AreEqual(Visibility.Collapsed, timerOptions.Visibility);
+                    window.CommitRoutineInputs();
+                    Assert.AreEqual(new FocusTimerSettings(30, 0, true), settings.Current, "잘못된 입력은 저장한 설정을 덮어쓰지 않습니다.");
+                    StringAssert.Contains(((TextBlock)window.FindName("RoutineFeedbackText")).Text, "입력해 주세요");
+                    restInput.Text = "0";
+                    foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
+                    {
+                        root.Measure(size);
+                        root.Arrange(new Rect(size));
+                        root.UpdateLayout();
+                        PumpBindings();
+                        var viewport = (ScrollViewer)tabs.SelectedContent;
+                        Assert.IsTrue(viewport.ScrollableWidth <= 1, "설정은 기본·최소 창 크기에서 가로로 잘리지 않아야 합니다.");
+                        SavePreview(root, $"settings-routine-{size.Width}.png", size);
+                    }
+                    timerCard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Assert.AreEqual(new FocusTimerSettings(30, 0, false), settings.Current, "타이머를 꺼도 루틴 값은 남깁니다.");
+                    Assert.AreEqual(Visibility.Collapsed, routineOptions.Visibility);
                     tabs.SelectedIndex = 0;
                     Assert.IsNull(window.FindName("HomeApplicationText"));
                     Assert.IsNull(window.FindName("HomeTimerStateText"));
@@ -350,7 +263,7 @@ public sealed class SessionResultUiTests
                     var focusStatusDot = (System.Windows.Shapes.Ellipse)window.FindName("HomeFocusStatusDot");
                     Assert.AreEqual("집중모드 꺼짐", focusStatus.Text);
                     var offIndicatorColor = ((System.Windows.Media.SolidColorBrush)focusStatusDot.Fill).Color;
-                    Assert.IsNotNull(window.FindName("HomeFlowCard"), "홈에는 오늘의 흐름이 있어야 합니다.");
+                    Assert.IsNotNull(window.FindName("HomeJournalShortcut"), "홈에는 오늘 집중 칸이 있어야 합니다.");
                     foreach (var size in new[] { new Size(1100, 780), new Size(920, 780), new Size(640, 520) })
                     {
                         root.Measure(size);
@@ -372,11 +285,12 @@ public sealed class SessionResultUiTests
                         Assert.IsTrue(homeViewport.ScrollableWidth <= 1);
                         if (homeViewport.ActualWidth >= 740) Assert.IsTrue(homeViewport.ScrollableHeight <= 1, "넓은 홈은 한 화면에 표시합니다.");
                         var homeLayout = (Grid)window.FindName("HomeLayout");
-                        var tiles = shortcuts.Select(tile => tile.TransformToAncestor(homeLayout).TransformBounds(new Rect(tile.RenderSize))).ToArray();
-                        Assert.IsTrue(tiles.All(tile => Math.Abs(tile.Top - tiles[0].Top) <= 1 && Math.Abs(tile.Bottom - tiles[0].Bottom) <= 1),
-                            "바로가기 세 개는 한 줄에 같은 높이로 둡니다.");
+                        var rowBounds = shortcuts.Select(tile => tile.TransformToAncestor(homeLayout).TransformBounds(new Rect(tile.RenderSize))).ToArray();
+                        var sameRow = homeViewport.ActualWidth >= 600 ? rowBounds : rowBounds.Skip(1).ToArray();
+                        Assert.IsTrue(sameRow.All(tile => Math.Abs(tile.Top - sameRow[0].Top) <= 1 && Math.Abs(tile.Bottom - sameRow[0].Bottom) <= 1),
+                            "아래 줄 칸은 같은 높이로 나란히 둡니다(좁으면 알림 칸 아래에 일정·리포트가 나란히).");
                         var focusCard = (FrameworkElement)window.FindName("HomeFocusCard");
-                        var flowCard = (FrameworkElement)window.FindName("HomeFlowCard");
+                        var flowCard = (FrameworkElement)window.FindName("HomeJournalShortcut");
                         var focusBounds = focusCard.TransformToAncestor(homeLayout).TransformBounds(new Rect(focusCard.RenderSize));
                         var flowBounds = flowCard.TransformToAncestor(homeLayout).TransformBounds(new Rect(flowCard.RenderSize));
                         if (homeViewport.ActualWidth >= 600)
@@ -615,6 +529,58 @@ public sealed class SessionResultUiTests
                     finally { report.Close(); }
                 }
                 finally { window.Close(); if (File.Exists(autoDndFile)) File.Delete(autoDndFile); }
+            }
+            catch (Exception ex) { failure = ex; }
+            finally { Dispatcher.CurrentDispatcher.InvokeShutdown(); }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.IsBackground = true;
+        thread.Start();
+        Assert.IsTrue(thread.Join(TimeSpan.FromSeconds(15)), "WPF check timed out.");
+        if (failure is not null) throw new AssertFailedException(failure.ToString(), failure);
+    }
+
+    [TestMethod]
+    public void Dashboard_FocusOn_WarmsTheWindow_AndCoolsWhenOff()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+            try
+            {
+                using var database = SqliteDatabase.CreateInMemory();
+                database.Initialize();
+                var results = new SessionResultsService(database, new SqliteFocusSessionRepository(database));
+                var settings = new FocusSettingsStore(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
+                var focusMode = new FocusModeService();
+                using var tracker = new StubActiveWindowTracker();
+                var window = new DashboardWindow(settings, new FocusRoutineService(focusMode, settings), results, tracker, focusModeService: focusMode);
+                try
+                {
+                    var rim = (Border)window.FindName("FocusRim");
+                    var backdrop = (GlassBackdrop)window.FindName("Backdrop");
+                    var card = (Border)window.FindName("HomeFocusCard");
+                    Assert.AreEqual(0, rim.Opacity, "집중이 꺼져 있으면 테두리는 데워지지 않습니다.");
+                    Assert.AreEqual(0, backdrop.EmberLevel);
+                    focusMode.Start();
+                    Assert.AreEqual(1, rim.Opacity, "집중을 켜면 창 테두리가 호박빛으로 데워집니다.");
+                    Assert.AreEqual(1, backdrop.EmberLevel, "창 뒤 불씨가 켜집니다.");
+                    Assert.AreSame(window.FindResource("FocusRimBrush"), card.BorderBrush, "타이머 카드 테두리도 같은 빛을 씁니다.");
+                    var root = (FrameworkElement)window.Content;
+                    foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
+                    {
+                        root.Measure(size);
+                        root.Arrange(new Rect(size));
+                        root.UpdateLayout();
+                        SavePreview(root, $"focus-on-{size.Width}.png", size);
+                    }
+                    focusMode.Stop();
+                    Assert.AreEqual(0, rim.Opacity, "집중을 끄면 다시 식습니다.");
+                    Assert.AreEqual(0, backdrop.EmberLevel);
+                    Assert.AreSame(window.FindResource("GlassRim"), card.BorderBrush);
+                }
+                finally { window.Close(); }
             }
             catch (Exception ex) { failure = ex; }
             finally { Dispatcher.CurrentDispatcher.InvokeShutdown(); }

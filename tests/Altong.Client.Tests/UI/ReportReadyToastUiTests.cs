@@ -22,8 +22,8 @@ public sealed class ReportReadyToastUiTests
             Assert.IsFalse(toast.IsActive, "말풍선이 작업 중인 창의 포커스를 가져가면 안 됩니다.");
             Assert.AreEqual(title, ((TextBlock)toast.FindName("TitleText")).Text);
             var area = SystemParameters.WorkArea;
-            Assert.AreEqual(area.Right, toast.Left + toast.ActualWidth, 1, "작업 영역 오른쪽 끝(알림 영역 쪽)에 붙어야 합니다.");
-            Assert.AreEqual(area.Bottom, toast.Top + toast.ActualHeight, 1, "작업 영역 아래쪽(작업 표시줄 위)에 붙어야 합니다.");
+            Assert.AreEqual(SystemParameters.PrimaryScreenWidth / 2, toast.Left + toast.ActualWidth / 2, 1, "집중 제안 카드와 같은 화면 위 가운데에 떠야 합니다.");
+            Assert.AreEqual(Math.Max(0, area.Top) + 10, toast.Top, 1, "작업 영역 위쪽에 붙어 나옵니다.");
             SavePreview(toast, succeeded ? "report-toast-success.png" : "report-toast-failure.png");
         }
         finally { toast.Close(); }

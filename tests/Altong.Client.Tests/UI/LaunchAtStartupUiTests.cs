@@ -36,23 +36,20 @@ public sealed class LaunchAtStartupUiTests
                     startupRegistration: registration);
                 try
                 {
-                    var check = (CheckBox)window.FindName("LaunchAtStartupCheckBox");
-                    var status = (TextBlock)window.FindName("LaunchAtStartupStatusText");
-                    var section = (Expander)window.FindName("SystemSettingsExpander");
-                    Assert.AreEqual("자동 실행 꺼짐", System.Windows.Automation.AutomationProperties.GetItemStatus(section));
-                    Assert.AreEqual(Visibility.Visible, check.Visibility);
-                    Assert.AreEqual(false, check.IsChecked, "기본은 꺼짐");
+                    var card = (Button)window.FindName("QuickStartupCard");
+                    var text = (TextBlock)window.FindName("QuickStartupText");
+                    Assert.AreEqual("자동 실행 꺼짐", System.Windows.Automation.AutomationProperties.GetItemStatus(card));
+                    Assert.IsTrue(card.IsEnabled);
+                    Assert.AreEqual(false, card.Tag, "기본은 꺼짐");
 
-                    // 마우스 클릭과 같은 순서: IsChecked가 먼저 바뀌고 Click이 발생한다.
-                    check.IsChecked = true;
-                    check.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-                    Assert.IsTrue(registration.IsEnabled, status.Text);
-                    Assert.AreEqual("자동 실행 켜짐", System.Windows.Automation.AutomationProperties.GetItemStatus(section));
+                    card.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                    Assert.IsTrue(registration.IsEnabled, text.Text);
+                    Assert.AreEqual(true, card.Tag);
+                    Assert.AreEqual("자동 실행 켜짐", System.Windows.Automation.AutomationProperties.GetItemStatus(card));
 
-                    check.IsChecked = false;
-                    check.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-                    Assert.IsFalse(registration.IsEnabled, status.Text);
-                    Assert.AreEqual("자동 실행 꺼짐", System.Windows.Automation.AutomationProperties.GetItemStatus(section));
+                    card.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                    Assert.IsFalse(registration.IsEnabled, text.Text);
+                    Assert.AreEqual("자동 실행 꺼짐", System.Windows.Automation.AutomationProperties.GetItemStatus(card));
                 }
                 finally { window.Close(); }
             });

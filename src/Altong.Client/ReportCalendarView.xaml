@@ -24,7 +24,7 @@
             <Setter Property="CornerRadius" Value="16" /><Setter Property="Padding" Value="14,12" />
         </Style>
         <Style x:Key="Weekday" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource TimelineHour}" /><Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{StaticResource TimelineHour}" /><Setter Property="FontSize" Value="{StaticResource TypeCaption}" />
             <Setter Property="HorizontalAlignment" Value="Center" />
         </Style>
         <Style TargetType="Button">
@@ -32,7 +32,7 @@
             <Setter Property="Foreground" Value="{StaticResource BlackText}" /><Setter Property="Background" Value="{StaticResource GlassPaneHover}" />
             <Setter Property="BorderBrush" Value="{StaticResource NavSelectedRule}" /><Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="11,0" /><Setter Property="MinHeight" Value="32" /><Setter Property="MinWidth" Value="32" /><Setter Property="Cursor" Value="Hand" />
-            <Setter Property="FontSize" Value="12" /><Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="FontSize" Value="{StaticResource TypeControl}" /><Setter Property="FontWeight" Value="Medium" />
             <Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
                 <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
@@ -56,7 +56,7 @@
             <StackPanel>
                 <TextBlock Text="리포트·메모·일정을 모두 삭제할까요?" FontWeight="SemiBold" />
                 <TextBlock Text="저장된 리포트·메모·일정을 모두 삭제합니다. 현재 집중의 메모, 원본 알림·집중 기록과 Google Calendar 일정은 유지됩니다."
-                           Style="{StaticResource CalendarMuted}" FontSize="12" Margin="0,6,0,10" />
+                           Style="{StaticResource CalendarMuted}" FontSize="{StaticResource TypeLabel}" Margin="0,6,0,10" />
                 <WrapPanel>
                     <Button x:Name="CancelResetButton" Content="취소" Click="CancelReset_Click" Margin="0,0,8,0" />
                     <Button x:Name="ConfirmResetButton" Content="모두 삭제" Click="ConfirmReset_Click"
@@ -77,23 +77,23 @@
                                 <Button x:Name="TodayButton" Content="오늘" Click="Today_Click" Margin="4,0" />
                                 <Button x:Name="NextMonthButton" Content="›" Click="NextMonth_Click" AutomationProperties.Name="다음 달" />
                             </StackPanel>
-                            <TextBlock x:Name="MonthText" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap" />
+                            <TextBlock x:Name="MonthText" FontSize="{StaticResource TypeTitle}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap" />
                         </DockPanel>
                         <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource GlassDivider}" BorderThickness="0,1,0,0" Margin="0,12,0,0" Padding="0,12,0,0">
                             <StackPanel>
-                                <TextBlock Text="다음 일정" Style="{StaticResource CalendarMuted}" FontSize="12" />
-                                <TextBlock x:Name="NextScheduleText" FontSize="14" FontWeight="SemiBold" Margin="0,4,0,0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="다음 일정" Style="{StaticResource CalendarMuted}" FontSize="{StaticResource TypeLabel}" />
+                                <TextBlock x:Name="NextScheduleText" FontSize="{StaticResource TypeBody}" FontWeight="SemiBold" Margin="0,4,0,0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                         </Border>
                         <!-- 달력 칸 표시 설명: 리포트는 동그라미, 일정은 막대. 달력 바로 아래에 둬서 바로 읽히게 한다 -->
                         <WrapPanel x:Name="CalendarLegend" DockPanel.Dock="Bottom" Margin="2,10,0,0" ToolTip="리포트는 집중이 끝난 날, 일정은 시작하는 날에 표시돼요">
                             <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
                                 <Ellipse Width="7" Height="7" Fill="{StaticResource BlackAction}" VerticalAlignment="Center" Margin="0,0,7,0" />
-                                <TextBlock Text="집중 리포트" Style="{StaticResource CalendarMuted}" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Text="집중 리포트" Style="{StaticResource CalendarMuted}" FontSize="{StaticResource TypeLabel}" VerticalAlignment="Center" />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                                 <Border Width="12" Height="4" CornerRadius="2" Background="{StaticResource BlackSuccess}" VerticalAlignment="Center" Margin="0,0,7,0" />
-                                <TextBlock Text="저장한 일정" Style="{StaticResource CalendarMuted}" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Text="저장한 일정" Style="{StaticResource CalendarMuted}" FontSize="{StaticResource TypeLabel}" VerticalAlignment="Center" />
                             </StackPanel>
                         </WrapPanel>
                         <StackPanel VerticalAlignment="Top">
@@ -111,9 +111,9 @@
                 <Border x:Name="ListCard" Grid.Column="2" Style="{StaticResource CalendarCard}" Padding="20,18">
                     <DockPanel>
                         <DockPanel DockPanel.Dock="Top">
-                            <TextBlock x:Name="DaySummaryText" DockPanel.Dock="Right" Style="{StaticResource CalendarMuted}" FontSize="12" VerticalAlignment="Bottom" Margin="8,0,0,2" />
+                            <TextBlock x:Name="DaySummaryText" DockPanel.Dock="Right" Style="{StaticResource CalendarMuted}" FontSize="{StaticResource TypeLabel}" VerticalAlignment="Bottom" Margin="8,0,0,2" />
                             <TextBlock TextWrapping="NoWrap" TextTrimming="CharacterEllipsis">
-                                <Run x:Name="SelectedDateRun" FontSize="18" FontWeight="SemiBold" /><Run x:Name="SelectedDayHintRun" FontSize="12" Foreground="{StaticResource BlackAccentText}" />
+                                <Run x:Name="SelectedDateRun" FontSize="{StaticResource TypeTitle}" FontWeight="SemiBold" /><Run x:Name="SelectedDayHintRun" FontSize="{StaticResource TypeLabel}" Foreground="{StaticResource BlackAccentText}" />
                             </TextBlock>
                         </DockPanel>
                         <Border x:Name="DayActionsBar" DockPanel.Dock="Bottom" BorderBrush="{StaticResource GlassDivider}" BorderThickness="0,1,0,0" Padding="0,10,0,0">
@@ -128,7 +128,7 @@
                                     AutomationProperties.Name="그날 시간표" />
                             <StackPanel x:Name="DayListPanel" Visibility="Collapsed" Margin="0,14,0,0">
                                 <Expander x:Name="SchedulesExpander" IsExpanded="True">
-                                <Expander.Header><TextBlock x:Name="ScheduleCountText" Foreground="{StaticResource BlackSuccess}" FontSize="13" FontWeight="SemiBold" /></Expander.Header>
+                                <Expander.Header><TextBlock x:Name="ScheduleCountText" Foreground="{StaticResource BlackSuccess}" FontSize="{StaticResource TypeBody}" FontWeight="SemiBold" /></Expander.Header>
                                 <StackPanel>
                                 <ListBox x:Name="ScheduleList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource BlackText}">
                                     <ListBox.Template><ControlTemplate TargetType="ListBox"><ItemsPresenter /></ControlTemplate></ListBox.Template>
@@ -142,13 +142,13 @@
                                     <ListBox.ItemTemplate><DataTemplate>
                                         <Border Style="{StaticResource ItemCard}">
                                             <StackPanel>
-                                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource BlackText}" FontSize="15" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource BlackText}" FontSize="{StaticResource TypeSection}" FontWeight="SemiBold" />
                                                 <TextBlock Text="{Binding WhenText}" Foreground="{StaticResource BlackSuccess}" Margin="0,6,0,4" />
-                                                <TextBlock Text="{Binding LocationText}" Style="{StaticResource CalendarMuted}" FontSize="12" />
-                                                <Expander Header="약속 세부사항" Foreground="{StaticResource BlackMuted}" FontSize="12" Margin="0,8,0,0">
+                                                <TextBlock Text="{Binding LocationText}" Style="{StaticResource CalendarMuted}" FontSize="{StaticResource TypeLabel}" />
+                                                <Expander Header="약속 세부사항" Foreground="{StaticResource BlackMuted}" FontSize="{StaticResource TypeLabel}" Margin="0,8,0,0">
                                                     <TextBlock Text="{Binding DetailsText}" Style="{StaticResource CalendarMuted}" Margin="0,6,0,0" />
                                                 </Expander>
-                                                <TextBlock Text="{Binding SourceText}" ToolTip="{Binding AppName}" Style="{StaticResource CalendarMuted}" FontSize="11" Margin="0,8,0,0" />
+                                                <TextBlock Text="{Binding SourceText}" ToolTip="{Binding AppName}" Style="{StaticResource CalendarMuted}" FontSize="{StaticResource TypeCaption}" Margin="0,8,0,0" />
                                                 <WrapPanel Margin="0,10,0,0">
                                                     <Button Content="Google Calendar에서 작성" Tag="{Binding}" Click="OpenGoogleCalendar_Click" Background="{StaticResource BlackSuccessSurface}" Foreground="{StaticResource BlackSuccess}" BorderBrush="{StaticResource BlackSuccessRule}" Margin="0,0,8,4"
                                                             ToolTip="Google Calendar에서 확인 후 저장" />
@@ -159,10 +159,10 @@
                                     </DataTemplate></ListBox.ItemTemplate>
                                 </ListBox>
                                 <Button x:Name="LoadMoreSchedulesButton" Content="일정 더 보기" Click="LoadMoreSchedules_Click" Margin="0,4,0,12" HorizontalAlignment="Left" Visibility="Collapsed" />
-                                <TextBlock x:Name="ScheduleEmptyStateText" Text="저장한 일정 없음" Style="{StaticResource CalendarMuted}" FontSize="12" />
+                                <TextBlock x:Name="ScheduleEmptyStateText" Text="저장한 일정 없음" Style="{StaticResource CalendarMuted}" FontSize="{StaticResource TypeLabel}" />
                                 </StackPanel></Expander>
                                 <Expander x:Name="ReportsExpander" IsExpanded="True" Margin="0,14,0,0">
-                                <Expander.Header><TextBlock x:Name="ReportCountText" Style="{StaticResource CalendarMuted}" FontSize="13" /></Expander.Header>
+                                <Expander.Header><TextBlock x:Name="ReportCountText" Style="{StaticResource CalendarMuted}" FontSize="{StaticResource TypeBody}" /></Expander.Header>
                                 <StackPanel>
                                 <Grid>
                                     <ListBox x:Name="ReportList" BorderThickness="0" Background="Transparent" Foreground="{StaticResource BlackText}">
@@ -181,7 +181,7 @@
                                                         <Ellipse Width="7" Height="7" Fill="{StaticResource BlackAction}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                                         <TextBlock Text="{Binding PeriodText}" FontWeight="SemiBold" />
                                                     </StackPanel>
-                                                    <TextBlock Text="{Binding SummaryText}" Style="{StaticResource CalendarMuted}" FontSize="12" Margin="0,6,0,0" />
+                                                    <TextBlock Text="{Binding SummaryText}" Style="{StaticResource CalendarMuted}" FontSize="{StaticResource TypeLabel}" Margin="0,6,0,0" />
                                                     <WrapPanel Margin="0,10,0,0">
                                                         <Button Content="리포트 열기" Tag="{Binding}" Click="OpenReport_Click" Margin="0,0,8,4" AutomationProperties.Name="리포트 열기" />
                                                         <Button Content="삭제" Tag="{Binding}" Click="DeleteReport_Click" Margin="0,0,0,4" AutomationProperties.Name="리포트 삭제" />
@@ -203,7 +203,7 @@
             </Grid>
         </ScrollViewer>
         <StackPanel Grid.Row="2">
-            <TextBlock x:Name="HistoryStatusText" FontSize="12" Margin="2,8,0,0" AutomationProperties.LiveSetting="Polite">
+            <TextBlock x:Name="HistoryStatusText" FontSize="{StaticResource TypeLabel}" Margin="2,8,0,0" AutomationProperties.LiveSetting="Polite">
                 <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource CalendarMuted}">
                     <Style.Triggers><DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>
                 </Style></TextBlock.Style>

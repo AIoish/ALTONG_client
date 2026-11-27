@@ -8,7 +8,7 @@ using System.Windows.Threading;
 namespace Altong.Client;
 
 /// <summary>
-/// AI 요약이 끝났음을 알리는 트레이 말풍선. 작업 영역 오른쪽 아래에서 올라오고,
+/// AI 요약이 끝났음을 알리는 말풍선. 집중 제안 카드와 같은 화면 위 가운데에 내려오고,
 /// 포커스를 가져가지 않으며, 일정 시간이 지나면 저절로 닫힌다(커서를 올리면 기다린다).
 /// 언제 띄울지는 리포트 창이 정하고, 이 창은 보여 주기와 버튼 입력만 맡는다.
 /// </summary>
@@ -63,7 +63,7 @@ public partial class ReportReadyToastWindow : Window
         SlideTransform.BeginAnimation(TranslateTransform.YProperty, null);
         if (!IsVisible) Show();
         UpdateLayout();
-        PositionNearTray();
+        PositionAtTop();
         // 노치 띠 같은 다른 맨 위 창보다 앞에 둔다. ShowActivated=False라 포커스는 그대로다.
         Topmost = false;
         Topmost = true;
@@ -73,7 +73,7 @@ public partial class ReportReadyToastWindow : Window
             var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
             Root.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
             SlideTransform.BeginAnimation(TranslateTransform.YProperty,
-                new DoubleAnimation(14, 0, TimeSpan.FromMilliseconds(240)) { EasingFunction = ease });
+                new DoubleAnimation(-16, 0, TimeSpan.FromMilliseconds(220)) { EasingFunction = ease });
         }
         else
         {
@@ -98,18 +98,11 @@ public partial class ReportReadyToastWindow : Window
         var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(140));
         fade.Completed += (_, _) => Close();
         Root.BeginAnimation(OpacityProperty, fade);
-        SlideTransform.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, TimeSpan.FromMilliseconds(140)));
+        SlideTransform.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-10, TimeSpan.FromMilliseconds(140)));
     }
 
-    /// <summary>작업 표시줄 알림 영역과 가까운 작업 영역 오른쪽 아래에 둔다. 바깥 여백은 그림자 자리다.</summary>
-    internal void PositionNearTray()
-    {
-        var area = SystemParameters.WorkArea;
-        double width = ActualWidth > 0 ? ActualWidth : Width;
-        double height = ActualHeight > 0 ? ActualHeight : 160;
-        Left = Math.Round(area.Right - width);
-        Top = Math.Round(area.Bottom - height);
-    }
+    /// <summary>집중 제안 카드와 같은 화면 위 가운데. 둘이 함께 뜨면 먼저 뜬 카드 아래로 쌓인다.</summary>
+    internal void PositionAtTop() => Services.TopBanner.Place(this);
 
     private void StartCountdown()
     {

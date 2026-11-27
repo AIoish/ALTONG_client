@@ -271,7 +271,7 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
         Brush Brush(string key) => (Brush)FindResource(key);
         bool selected = date == SelectedDate, today = date == DateTime.Today;
         var cell = new StackPanel { HorizontalAlignment = System.Windows.HorizontalAlignment.Center, VerticalAlignment = System.Windows.VerticalAlignment.Center };
-        cell.Children.Add(new TextBlock { Text = day.ToString(System.Globalization.CultureInfo.InvariantCulture), FontSize = 13,
+        cell.Children.Add(new TextBlock { Text = day.ToString(System.Globalization.CultureInfo.InvariantCulture), FontSize = TypeScale.Body,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center, FontWeight = selected ? FontWeights.Bold : FontWeights.Normal,
             Foreground = selected || today ? Brush("BlackAction") : date.DayOfWeek == DayOfWeek.Sunday ? Brush("BlackError") : Brush("BlackText") });
         var dots = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
@@ -310,7 +310,7 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
         for (int hour = first; hour <= last; hour += 2)
         {
             double y = (hour - first) * perHour;
-            var label = new TextBlock { Text = $"{hour:00}", FontSize = 11, Foreground = Brush("TimelineHour") };
+            var label = new TextBlock { Text = $"{hour:00}", FontSize = TypeScale.Caption, Foreground = Brush("TimelineHour") };
             Canvas.SetTop(label, Math.Min(y, height - 16));
             DayTimelineCanvas.Children.Add(label);
             var line = new Border { Height = 1, Width = Math.Max(0, width - 40), Background = new SolidColorBrush(Color.FromArgb(0x0F, 0xFF, 0xF0, 0xDC)) };
@@ -339,9 +339,10 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
         {
             var entry = reports[index];
             bool selected = entry.SessionId == SelectedReport()?.SessionId;
-            string title = $"집중 {FormatMinutes(entry.EndedAt - entry.StartedAt)}" + (entry.IsSaved ? " · 리포트 저장됨" : "");
-            string detail = $"{entry.StartedAt.ToLocalTime():HH:mm} – {entry.EndedAt.ToLocalTime():HH:mm}" + (entry.BlockedCount > 0 ? $" · 차단 {entry.BlockedCount}" : "");
-            var block = Block(title, detail, $"{entry.StartedAt.ToLocalTime():HH:mm}", reportSlots[index].Height, Brush("BlackText"), Brush("BlackMuted"),
+            string title = $"집중 {FormatMinutes(entry.EndedAt - entry.StartedAt)}";
+            string period = $"{entry.StartedAt.ToLocalTime():HH:mm} – {entry.EndedAt.ToLocalTime():HH:mm}";
+            string detail = period + (entry.BlockedCount > 0 ? $" · 차단 {entry.BlockedCount}" : "");
+            var block = Block(title, detail, period, reportSlots[index].Height, Brush("BlackText"), Brush("BlackMuted"),
                 Color.FromArgb(entry.IsSaved || selected ? (byte)0x42 : (byte)0x29, 0xE9, 0xC9, 0x95),
                 selected ? Brush("BlackAction") : new SolidColorBrush(Color.FromArgb(0x66, 0xE9, 0xC9, 0x95)));
             block.Width = Math.Max(0, width * 0.46);
@@ -364,7 +365,7 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
             string detail = $"{start:HH:mm} – {entry.Schedule.End!.Value.LocalDateTime:HH:mm}"
                 + (string.IsNullOrWhiteSpace(entry.Schedule.Location) ? "" : $" · {entry.Schedule.Location!.Trim()}");
             bool selected = ReferenceEquals(entry, SelectedSchedule());
-            var block = Block(entry.Title.Trim(), detail, $"{start:HH:mm}", scheduleSlots[index].Height,
+            var block = Block(entry.Title.Trim(), detail, $"{start:HH:mm} – {entry.Schedule.End!.Value.LocalDateTime:HH:mm}", scheduleSlots[index].Height,
                 new SolidColorBrush(Color.FromArgb(0xFF, 0xDC, 0xEB, 0xE0)), Brush("BlackSuccessMuted"), Color.FromArgb(0x24, 0xB9, 0xD6, 0xC2),
                 selected && schedules.Length > 1 ? Brush("BlackSuccess") : new SolidColorBrush(Color.FromArgb(0x66, 0xB9, 0xD6, 0xC2)));
             block.Width = Math.Max(0, width * 0.48);
@@ -383,16 +384,20 @@ public partial class ReportCalendarView : System.Windows.Controls.UserControl
         var content = new StackPanel();
         if (height >= 36)
         {
-            content.Children.Add(new TextBlock { Text = title, FontSize = 12, FontWeight = FontWeights.Bold, Foreground = titleBrush,
+            content.Children.Add(new TextBlock { Text = title, FontSize = TypeScale.Label, FontWeight = FontWeights.Bold, Foreground = titleBrush,
                 TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis });
-            content.Children.Add(new TextBlock { Text = detail, FontSize = 12, Foreground = detailBrush,
+            content.Children.Add(new TextBlock { Text = detail, FontSize = TypeScale.Label, Foreground = detailBrush,
                 TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis });
         }
         else
         {
-            var line = new TextBlock { FontSize = 12, Foreground = titleBrush, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis };
-            line.Inlines.Add(new System.Windows.Documents.Run(title) { FontWeight = FontWeights.Bold });
-            line.Inlines.Add(new System.Windows.Documents.Run(" " + shortTime) { Foreground = detailBrush });
+            // 한 줄: 시각은 오른쪽에 붙여 잘리지 않게 하고, 칸이 좁으면 제목 쪽을 줄인다.
+            var line = new DockPanel { LastChildFill = true };
+            var time = new TextBlock { Text = shortTime, FontSize = TypeScale.Label, Foreground = detailBrush, TextWrapping = TextWrapping.NoWrap, Margin = new Thickness(6, 0, 0, 0) };
+            DockPanel.SetDock(time, Dock.Right);
+            line.Children.Add(time);
+            line.Children.Add(new TextBlock { Text = title, FontSize = TypeScale.Label, FontWeight = FontWeights.Bold, Foreground = titleBrush,
+                TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis });
             content.Children.Add(line);
         }
         return new Border { Height = height, CornerRadius = new CornerRadius(12), Padding = height >= 36 ? new Thickness(10, 6, 10, 5) : new Thickness(10, 6, 10, 6),

@@ -13,7 +13,7 @@
             <Setter Property="services:MotionBehavior.ButtonFeedback" Value="True" />
             <Setter Property="Background" Value="{StaticResource GlassPaneHover}" /><Setter Property="Foreground" Value="{StaticResource BlackText}" />
             <Setter Property="BorderBrush" Value="{StaticResource NavSelectedRule}" /><Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="14,0" /><Setter Property="MinHeight" Value="36" /><Setter Property="Cursor" Value="Hand" /><Setter Property="FontSize" Value="13" /><Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Padding" Value="14,0" /><Setter Property="MinHeight" Value="36" /><Setter Property="Cursor" Value="Hand" /><Setter Property="FontSize" Value="{StaticResource TypeControl}" /><Setter Property="FontWeight" Value="Medium" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
                 <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="{TemplateBinding Padding}">
@@ -35,12 +35,12 @@
             <Style.Triggers><DataTrigger Binding="{Binding Record.IsPassed}" Value="True"><Setter Property="Background" Value="#1FB9D6C2" /></DataTrigger></Style.Triggers>
         </Style>
         <Style x:Key="StateTagText" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="11" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="{StaticResource BlackAction}" />
+            <Setter Property="FontSize" Value="{StaticResource TypeCaption}" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="{StaticResource BlackAction}" />
             <Style.Triggers><DataTrigger Binding="{Binding Record.IsPassed}" Value="True"><Setter Property="Foreground" Value="{StaticResource BlackSuccess}" /></DataTrigger></Style.Triggers>
         </Style>
         <Style x:Key="FilterTab" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{StaticResource BlackMuted}" /><Setter Property="Cursor" Value="Hand" />
-            <Setter Property="FontSize" Value="13" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Padding" Value="12,0" /><Setter Property="Height" Value="32" />
+            <Setter Property="FontSize" Value="{StaticResource TypeControl}" /><Setter Property="FontWeight" Value="Medium" /><Setter Property="Padding" Value="12,0" /><Setter Property="Height" Value="32" />
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton">
                 <Border x:Name="Surface" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="10" Padding="{TemplateBinding Padding}">
                     <ContentPresenter VerticalAlignment="Center" />
@@ -95,7 +95,7 @@
             </ControlTemplate></Setter.Value></Setter>
         </Style>
         <Style TargetType="ComboBox">
-            <Setter Property="Foreground" Value="{StaticResource BlackText}" /><Setter Property="FontSize" Value="13" /><Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Foreground" Value="{StaticResource BlackText}" /><Setter Property="FontSize" Value="{StaticResource TypeControl}" /><Setter Property="FontWeight" Value="Medium" />
             <Setter Property="Height" Value="36" /><Setter Property="MaxWidth" Value="200" />
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
                 <Grid>
@@ -133,8 +133,8 @@
             <Border Grid.Column="2" Background="{StaticResource GlassInput}" BorderBrush="#24FFF0DC" BorderThickness="1" CornerRadius="12" Height="36">
                 <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                     <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{StaticResource BlackMuted}" VerticalAlignment="Center" Margin="12,0,8,0" />
-                    <TextBox x:Name="SearchBox" Grid.Column="1" Background="Transparent" Foreground="{StaticResource BlackText}" CaretBrush="{StaticResource BlackText}" BorderThickness="0" Padding="0,0,10,0" VerticalContentAlignment="Center" FontSize="13" MaxLength="200" TextChanged="Search_TextChanged" AutomationProperties.Name="알림 검색 · 발신자, 제목, 본문" ToolTip="발신자·제목·본문 검색" />
-                    <TextBlock Grid.Column="1" Text="발신자·제목·본문 검색" Foreground="{StaticResource BlackMuted}" FontSize="13" VerticalAlignment="Center" Margin="2,0,10,0" IsHitTestVisible="False" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis">
+                    <TextBox x:Name="SearchBox" Grid.Column="1" Background="Transparent" Foreground="{StaticResource BlackText}" CaretBrush="{StaticResource BlackText}" BorderThickness="0" Padding="0,0,10,0" VerticalContentAlignment="Center" FontSize="{StaticResource TypeControl}" MaxLength="200" TextChanged="Search_TextChanged" AutomationProperties.Name="알림 검색 · 발신자, 제목, 본문" ToolTip="발신자·제목·본문 검색" />
+                    <TextBlock Grid.Column="1" Text="발신자·제목·본문 검색" Foreground="{StaticResource BlackMuted}" FontSize="{StaticResource TypeControl}" VerticalAlignment="Center" Margin="2,0,10,0" IsHitTestVisible="False" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis">
                         <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value=""><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
                     </TextBlock>
                 </Grid>
@@ -144,10 +144,10 @@
         <!-- ⋯ 메뉴의 [여러 개 선택]을 켰거나 고른 알림이 있을 때만 나온다 -->
         <Border x:Name="SelectionBar" Grid.Row="1" Visibility="Collapsed" Margin="0,0,0,10" Padding="5" CornerRadius="13" Background="#0DFFF0DC" BorderBrush="#1AFFF0DC" BorderThickness="1">
             <DockPanel>
-                <Button x:Name="DoneSelectingButton" DockPanel.Dock="Right" Content="완료" Click="DoneSelecting_Click" MinHeight="30" Padding="12,0" FontSize="12" />
-                <Button x:Name="SelectPageButton" Content="페이지 전체 선택" Click="SelectPage_Click" MinHeight="30" Padding="12,0" FontSize="12" />
-                <Button x:Name="DismissSelectedButton" Content="선택 제거" Click="DismissSelected_Click" MinHeight="30" Padding="12,0" FontSize="12" Margin="6,0" />
-                <TextBlock x:Name="SelectedCountText" FontSize="12" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="4,0,0,0" />
+                <Button x:Name="DoneSelectingButton" DockPanel.Dock="Right" Content="완료" Click="DoneSelecting_Click" MinHeight="30" Padding="12,0" FontSize="{StaticResource TypeLabel}" />
+                <Button x:Name="SelectPageButton" Content="페이지 전체 선택" Click="SelectPage_Click" MinHeight="30" Padding="12,0" FontSize="{StaticResource TypeLabel}" />
+                <Button x:Name="DismissSelectedButton" Content="선택 제거" Click="DismissSelected_Click" MinHeight="30" Padding="12,0" FontSize="{StaticResource TypeLabel}" Margin="6,0" />
+                <TextBlock x:Name="SelectedCountText" FontSize="{StaticResource TypeLabel}" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="4,0,0,0" />
             </DockPanel>
         </Border>
         <Grid x:Name="ReadingLayout" Grid.Row="2" SizeChanged="ReadingLayout_SizeChanged">
@@ -163,7 +163,7 @@
                             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
                                 <StackPanel>
                                     <!-- 같은 집중의 첫 알림 위에만: "오늘 18:27 – 18:56 집중 · 6개" -->
-                                    <TextBlock x:Name="GroupHeader" Text="{Binding GroupHeaderText}" FontSize="12" Foreground="{StaticResource BlackMuted}" Padding="14,12,14,4" Visibility="Collapsed" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock x:Name="GroupHeader" Text="{Binding GroupHeaderText}" FontSize="{StaticResource TypeLabel}" Foreground="{StaticResource BlackMuted}" Padding="14,12,14,4" Visibility="Collapsed" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                                     <Border x:Name="Row" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="14"><ContentPresenter /></Border>
                                 </StackPanel>
                                 <ControlTemplate.Triggers>
@@ -189,10 +189,10 @@
                                 </Border>
                                 <StackPanel Grid.Column="2">
                                     <DockPanel>
-                                        <TextBlock DockPanel.Dock="Right" Text="{Binding RowTimeText}" ToolTip="{Binding TimeText}" Style="{StaticResource Muted}" FontSize="11" Margin="8,2,0,0" />
-                                        <TextBlock Text="{Binding RowTitleText}" FontSize="14" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding AppName}" />
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding RowTimeText}" ToolTip="{Binding TimeText}" Style="{StaticResource Muted}" FontSize="{StaticResource TypeCaption}" Margin="8,2,0,0" />
+                                        <TextBlock Text="{Binding RowTitleText}" FontSize="{StaticResource TypeBody}" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding AppName}" />
                                     </DockPanel>
-                                    <TextBlock Text="{Binding PreviewText}" Foreground="{StaticResource BlackSoft}" FontSize="13" Margin="0,2,0,0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding PreviewText}" Foreground="{StaticResource BlackSoft}" FontSize="{StaticResource TypeBody}" Margin="0,2,0,0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                                 <Border Grid.Column="3" Style="{StaticResource StateTag}" VerticalAlignment="Top" Margin="12,1,0,0"><TextBlock Text="{Binding ClassificationText}" Style="{StaticResource StateTagText}" /></Border>
                             </Grid>
@@ -206,7 +206,7 @@
             </Border>
             <Border x:Name="DetailPane" Grid.Column="2" Background="{StaticResource GlassPane}" BorderBrush="{StaticResource GlassRim}" BorderThickness="1" CornerRadius="22" ClipToBounds="True">
                 <Grid>
-                    <TextBlock x:Name="DetailEmptyText" Text="알림을 고르면 내용이 여기에 보여요" Style="{StaticResource Muted}" FontSize="13" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
+                    <TextBlock x:Name="DetailEmptyText" Text="알림을 고르면 내용이 여기에 보여요" Style="{StaticResource Muted}" FontSize="{StaticResource TypeBody}" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
                     <Grid x:Name="DetailContent" Visibility="Collapsed" Margin="20">
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <Button x:Name="BackToListButton" Content="‹ 목록으로" Click="BackToList_Click" HorizontalAlignment="Left" Visibility="Collapsed" Margin="0,0,0,12" />
@@ -218,22 +218,22 @@
                                         <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="22" Height="22" />
                                     </Border>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding SenderText}" FontSize="15" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding DetailMetaText}" Style="{StaticResource Muted}" FontSize="12" ToolTip="{Binding AppName}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding SenderText}" FontSize="{StaticResource TypeBody}" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding DetailMetaText}" Style="{StaticResource Muted}" FontSize="{StaticResource TypeLabel}" ToolTip="{Binding AppName}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                 </Grid>
-                                <TextBlock Text="{Binding TitleText}" FontSize="16" FontWeight="SemiBold" Margin="0,18,0,0" />
-                                <TextBlock x:Name="DetailBodyText" Text="{Binding BodyText}" FontSize="14" LineHeight="24" Foreground="{StaticResource BlackSoft}" Margin="0,8,0,0" />
+                                <TextBlock Text="{Binding TitleText}" FontSize="{StaticResource TypeSection}" FontWeight="SemiBold" Margin="0,18,0,0" />
+                                <TextBlock x:Name="DetailBodyText" Text="{Binding BodyText}" FontSize="{StaticResource TypeBody}" LineHeight="24" Foreground="{StaticResource BlackSoft}" Margin="0,8,0,0" />
                                 <Border x:Name="FoundSchedulePanel" Visibility="Collapsed" Margin="0,16,0,0" Padding="14,12" CornerRadius="14" Background="#1AB9D6C2" BorderBrush="#47B9D6C2" BorderThickness="1">
                                     <StackPanel>
-                                        <TextBlock Text="찾은 일정" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource BlackSuccess}" />
-                                        <TextBlock x:Name="FoundScheduleText" FontSize="14" FontWeight="SemiBold" Margin="0,4,0,0" />
+                                        <TextBlock Text="찾은 일정" FontSize="{StaticResource TypeLabel}" FontWeight="SemiBold" Foreground="{StaticResource BlackSuccess}" />
+                                        <TextBlock x:Name="FoundScheduleText" FontSize="{StaticResource TypeBody}" FontWeight="SemiBold" Margin="0,4,0,0" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
                         </ScrollViewer>
                         <StackPanel Grid.Row="2" Margin="0,12,0,0">
-                            <TextBlock Text="답장 문구" Style="{StaticResource Muted}" FontSize="12" Margin="0,0,0,8" />
+                            <TextBlock Text="답장 문구" Style="{StaticResource Muted}" FontSize="{StaticResource TypeLabel}" Margin="0,0,0,8" />
                             <Button x:Name="CopyReplyButton" Click="CopyReply_Click" HorizontalContentAlignment="Left" AutomationProperties.Name="답장 문구 복사">
                                 <TextBlock x:Name="CopyReplyText" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                             </Button>
@@ -248,15 +248,15 @@
         </Grid>
         <!-- 도안에 없는 줄: 페이지가 둘 이상이거나 안내·재시도·새 알림이 있을 때만 보인다 -->
         <DockPanel Grid.Row="3">
-            <Button x:Name="NewArrivalsButton" DockPanel.Dock="Right" Click="Refresh_Click" Foreground="{StaticResource BlackAccentText}" Background="{StaticResource BlackSelection}" BorderBrush="{StaticResource BlackSelectionRule}" MinHeight="30" Padding="12,0" FontSize="12" Margin="8,10,0,0" Visibility="Collapsed" />
-            <Button x:Name="RetryButton" DockPanel.Dock="Right" Content="다시 시도" Click="Retry_Click" Visibility="Collapsed" MinHeight="30" Padding="12,0" FontSize="12" Margin="8,10,0,0" />
+            <Button x:Name="NewArrivalsButton" DockPanel.Dock="Right" Click="Refresh_Click" Foreground="{StaticResource BlackAccentText}" Background="{StaticResource BlackSelection}" BorderBrush="{StaticResource BlackSelectionRule}" MinHeight="30" Padding="12,0" FontSize="{StaticResource TypeLabel}" Margin="8,10,0,0" Visibility="Collapsed" />
+            <Button x:Name="RetryButton" DockPanel.Dock="Right" Content="다시 시도" Click="Retry_Click" Visibility="Collapsed" MinHeight="30" Padding="12,0" FontSize="{StaticResource TypeLabel}" Margin="8,10,0,0" />
             <StackPanel x:Name="PaginationPanel" DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,10,0,0" Visibility="Collapsed">
-                <TextBlock x:Name="ResultCountText" Style="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0" />
-                <Button x:Name="PreviousPageButton" Content="이전" Click="PreviousPage_Click" MinHeight="30" Padding="12,0" FontSize="12" />
-                <TextBlock x:Name="PageNumberText" FontSize="12" Margin="10,0" VerticalAlignment="Center" />
-                <Button x:Name="NextPageButton" Content="다음" Click="NextPage_Click" MinHeight="30" Padding="12,0" FontSize="12" />
+                <TextBlock x:Name="ResultCountText" Style="{StaticResource Muted}" FontSize="{StaticResource TypeCaption}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                <Button x:Name="PreviousPageButton" Content="이전" Click="PreviousPage_Click" MinHeight="30" Padding="12,0" FontSize="{StaticResource TypeLabel}" />
+                <TextBlock x:Name="PageNumberText" FontSize="{StaticResource TypeLabel}" Margin="10,0" VerticalAlignment="Center" />
+                <Button x:Name="NextPageButton" Content="다음" Click="NextPage_Click" MinHeight="30" Padding="12,0" FontSize="{StaticResource TypeLabel}" />
             </StackPanel>
-            <TextBlock x:Name="StatusText" FontSize="11" VerticalAlignment="Center" Margin="2,10,0,0" AutomationProperties.LiveSetting="Polite">
+            <TextBlock x:Name="StatusText" FontSize="{StaticResource TypeCaption}" VerticalAlignment="Center" Margin="2,10,0,0" AutomationProperties.LiveSetting="Polite">
                 <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource Muted}">
                     <Style.Triggers><DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>
                 </Style></TextBlock.Style>

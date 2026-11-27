@@ -36,6 +36,7 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         _coaching = coaching;
         _activeSessionProvider = activeSessionProvider;
         InitializeComponent();
+        StreakHeatmapItems.Resources["HeatmapCellHeight"] = 16d; // 크기를 재기 전 기본값
         _ready = true;
 
         ApplySnapshot(CreateEmptySnapshot(_selectedPeriod));
@@ -584,6 +585,19 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
     private async void GenerateCoachingButton_Click(object sender, RoutedEventArgs e)
     {
         await GenerateCoachingAsync();
+    }
+
+    /// <summary>
+    /// 잔디밭 칸을 정사각형으로 유지한다. 칸 크기는 카드 폭을 따라 14–26px 사이에서 정하고,
+    /// 폭이 남으면 요일 글자 옆에 붙여 왼쪽에 둔다(넓은 창에서 칸이 가로로 늘어나지 않게).
+    /// </summary>
+    private void StreakHeatmapGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        const double labelColumn = 22, columns = 10, gap = 4;
+        double available = Math.Max(0, StreakHeatmapGrid.ActualWidth - labelColumn);
+        double cell = Math.Clamp(Math.Floor(available / columns), 14, 26);
+        StreakHeatmapItems.Width = cell * columns;
+        StreakHeatmapItems.Resources["HeatmapCellHeight"] = cell - gap;
     }
 
     private void InsightsScroll_SizeChanged(object sender, SizeChangedEventArgs e)

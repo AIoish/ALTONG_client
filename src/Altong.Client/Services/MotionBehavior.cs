@@ -20,6 +20,8 @@ public static class MotionBehavior
         DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock));
     internal static bool? AnimationOverride { get; set; }
     private static bool MotionAllowed => AnimationOverride ?? SystemParameters.ClientAreaAnimation;
+    /// <summary>Windows "애니메이션 효과 표시"가 켜져 있는지. 꺼져 있으면 움직임 대신 짧은 페이드만 쓴다.</summary>
+    public static bool IsMotionAllowed => MotionAllowed;
     private static readonly Duration FeedbackDuration = TimeSpan.FromMilliseconds(160);
     private static readonly Duration TransitionDuration = TimeSpan.FromMilliseconds(190);
     private static readonly DependencyProperty TransitionTransformProperty = DependencyProperty.RegisterAttached(

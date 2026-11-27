@@ -35,7 +35,6 @@ public partial class AutoDndSuggestionWindow : Window
     private const int WS_EX_NOACTIVATE = 0x08000000;
     private const int WM_MOUSEACTIVATE = 0x0021;
     private const int MA_NOACTIVATE = 3;
-    private const double TopMargin = 10;
 
     private HwndSource? _source;
     private bool _closing;
@@ -62,6 +61,8 @@ public partial class AutoDndSuggestionWindow : Window
         MessageText.Text = Prompt.Message;
         AcceptButton.Content = Prompt.AcceptText;
         DeclineButton.Content = Prompt.DeclineText;
+        // 진입 제안은 방해 금지(달), 타이머 종료는 스톱워치.
+        IconGlyph.Text = Prompt == AutoDndPrompt.TimerFinished ? "\uE916" : "\uE708";
         System.Windows.Automation.AutomationProperties.SetName(Card, Prompt.Title);
         System.Windows.Automation.AutomationProperties.SetName(AcceptButton, Prompt.AcceptText);
         System.Windows.Automation.AutomationProperties.SetName(DeclineButton, Prompt.DeclineText);
@@ -133,15 +134,8 @@ public partial class AutoDndSuggestionWindow : Window
         Close();
     }
 
-    private void PositionAtTopCenter()
-    {
-        var area = SystemParameters.WorkArea;
-        double screenWidth = SystemParameters.PrimaryScreenWidth;
-        Left = Math.Round((screenWidth - ActualWidthOrWidth()) / 2);
-        Top = Math.Max(0, area.Top) + TopMargin;
-    }
-
-    private double ActualWidthOrWidth() => ActualWidth > 0 ? ActualWidth : Width;
+    // AI 요약 완료 말풍선과 같은 자리(화면 위 가운데). 둘이 함께 뜨면 겹치지 않게 아래로 쌓는다.
+    private void PositionAtTopCenter() => Services.TopBanner.Place(this);
 
     private void AcceptButton_Click(object sender, RoutedEventArgs e)
     {

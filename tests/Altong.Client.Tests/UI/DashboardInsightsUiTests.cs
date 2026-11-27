@@ -414,8 +414,8 @@ public sealed class DashboardInsightsUiTests
 
             ((Button)window.FindName("NavHomeButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.AreEqual(0, tabs.SelectedIndex);
-            // 홈 제목은 시간대 인사("좋은 아침이에요" 등)다.
-            Assert.AreEqual(DashboardWindow.Greeting(DateTime.Now), ((TextBlock)window.FindName("PageTitleText")).Text);
+            // 홈 제목은 시간대와 상관없이 "나만의 집중 공간"이다.
+            Assert.AreEqual("나만의 집중 공간", ((TextBlock)window.FindName("PageTitleText")).Text);
         }
         finally { window.Close(); }
     });
