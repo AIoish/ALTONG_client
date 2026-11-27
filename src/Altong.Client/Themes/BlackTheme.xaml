@@ -22,6 +22,10 @@
     <Color x:Key="BlackSuccessSurfaceColor">#26332B</Color>
     <Color x:Key="BlackSuccessRuleColor">#7FA18C</Color>
     <Color x:Key="BlackSuccessMutedColor">#AFC4B6</Color>
+    <Color x:Key="BlackHeatmap1Color">#1D3B2E</Color>
+    <Color x:Key="BlackHeatmap2Color">#245E43</Color>
+    <Color x:Key="BlackHeatmap3Color">#2D8A5B</Color>
+    <Color x:Key="BlackHeatmap4Color">#39B874</Color>
     <Color x:Key="BlackErrorColor">#EBB0A6</Color>
     <Color x:Key="BlackShadowColor">#000000</Color>
     <SolidColorBrush x:Key="BlackCanvas" Color="{StaticResource BlackCanvasColor}" />
@@ -44,6 +48,10 @@
     <SolidColorBrush x:Key="BlackSuccessSurface" Color="{StaticResource BlackSuccessSurfaceColor}" />
     <SolidColorBrush x:Key="BlackSuccessRule" Color="{StaticResource BlackSuccessRuleColor}" />
     <SolidColorBrush x:Key="BlackSuccessMuted" Color="{StaticResource BlackSuccessMutedColor}" />
+    <SolidColorBrush x:Key="BlackHeatmap1" Color="{StaticResource BlackHeatmap1Color}" />
+    <SolidColorBrush x:Key="BlackHeatmap2" Color="{StaticResource BlackHeatmap2Color}" />
+    <SolidColorBrush x:Key="BlackHeatmap3" Color="{StaticResource BlackHeatmap3Color}" />
+    <SolidColorBrush x:Key="BlackHeatmap4" Color="{StaticResource BlackHeatmap4Color}" />
     <SolidColorBrush x:Key="BlackError" Color="{StaticResource BlackErrorColor}" />
     <SolidColorBrush x:Key="BlackShadow" Color="{StaticResource BlackShadowColor}" />
     <!-- 흑연 유리(E): 창은 번진 빛 배경 위 반투명 흑연, 카드는 그 위의 옅은 유리 판. 떠 있는 창·팝업은 불투명에 가깝게. -->

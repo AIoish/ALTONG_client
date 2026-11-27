@@ -11,6 +11,10 @@ namespace Altong.Client;
 
 public partial class DashboardInsightsView : System.Windows.Controls.UserControl
 {
+    private const int HeatmapWeeks = 20;
+    private const int HeatmapDaysCount = HeatmapWeeks * 7;
+    private static readonly string[] KoreanDayLabels = ["일", "월", "화", "수", "목", "금", "토"];
+
     private readonly IFocusInsightRepository? _repository;
     private readonly IFocusInsightCoachingService? _coaching;
     private readonly Func<FocusSessionRecord?>? _activeSessionProvider;
@@ -36,7 +40,7 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         _coaching = coaching;
         _activeSessionProvider = activeSessionProvider;
         InitializeComponent();
-        StreakHeatmapItems.Resources["HeatmapCellHeight"] = 16d; // 크기를 재기 전 기본값
+        StreakHeatmapItems.Resources["HeatmapCellHeight"] = 14d; // 크기를 재기 전 기본값
         _ready = true;
 
         ApplySnapshot(CreateEmptySnapshot(_selectedPeriod));
@@ -126,7 +130,7 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         {
             if (revision != _refreshRevision || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
                 return;
-            StatusErrorText.Text = "집중 인사이트를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.";
+            StatusErrorText.Text = "집중 데이터를 불러오지 못했습니다. 다시 시도하세요.";
             StatusErrorText.Visibility = Visibility.Visible;
         }
         finally
@@ -190,7 +194,7 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         {
             if (revision != _coachingRevision || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
                 return;
-            CoachingErrorText.Text = "AI 코칭 생성에 실패했어요. 잠시 후 다시 시도해 주세요.";
+            CoachingErrorText.Text = "AI 분석 실패. 다시 시도하세요.";
             CoachingErrorText.Visibility = Visibility.Visible;
         }
         finally
@@ -222,21 +226,15 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
             _coachingFingerprint = null;
         }
 
-        SectionSubtitleText.Text = snapshot.Period switch
-        {
-            InsightPeriod.Today => "오늘 · 집중 패턴 · 방해 차단 · Gemma AI 코칭",
-            InsightPeriod.AllTime => "전체 기간 · 집중 패턴 · 방해 차단 · Gemma AI 코칭",
-            _ => "최근 7일 · 집중 패턴 · 방해 차단 · Gemma AI 코칭"
-        };
-
         bool hasData = snapshot.HasData;
         EmptyStateCard.Visibility = hasData ? Visibility.Collapsed : Visibility.Visible;
-        KpiRow.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
-        QualityTrendRow.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
+        HeroBentoRow.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
+        KpiStrip.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
+        QualityCard.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
         HourlyChartCard.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
         TopListsRow.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
 
-        // Row 1: 4 KPI Cards
+        // Row 2: 4 KPI Cards (total focus, block rate, flow protection applied inside ApplyQualityMetrics, selective passed)
         KpiTotalFocusText.Text = FormatDuration(snapshot.TotalFocusDuration);
         KpiSessionCountText.Text = $"세션 {snapshot.FocusSessionCount}회";
 
@@ -244,10 +242,11 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         KpiBlockRateText.Text = snapshot.TotalNotifications == 0 ? "0%" : $"{Math.Round(blockRate):0}%";
         KpiBlockRateSubText.Text = $"차단 {snapshot.BlockedCount} / 전체 {snapshot.TotalNotifications}건";
 
-        KpiUrgentPassedText.Text = $"{snapshot.UrgentPassedCount}건";
-        KpiRelevancePassedText.Text = $"{snapshot.RelevancePassedCount}건";
+        int selectedPassed = snapshot.UrgentPassedCount + snapshot.RelevancePassedCount;
+        KpiPassedTotalText.Text = $"{selectedPassed}건";
+        KpiPassedSplitText.Text = $"긴급 {snapshot.UrgentPassedCount} · 관련 {snapshot.RelevancePassedCount}";
 
-        // Row 2: Coaching (initial rule-based or cached AI)
+        // Row 3: Coaching (initial rule-based or cached AI)
         if (periodOrDataChanged || _currentCoaching is null)
         {
             CoachingErrorText.Visibility = Visibility.Collapsed;
@@ -260,8 +259,9 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
             UpdateCoachingButtonState();
         }
 
-        // Row 3 (Overview): Quality & 7-Day Trend/Streak
-        ApplyQualityMetrics(snapshot.Quality);
+        // Row 1 & Row 3 Right (Overview): Streak/Heatmap Bento + Flow Protection KPI + Work Purity Donut/Self-Distraction
+        ApplyQualityMetrics(snapshot.Quality, snapshot.Period);
+        UpdateResponsiveLayout();
 
         // Sub-Tab 2: 24-Hour Distribution
         if (snapshot.GoldenHour is { } goldenHour)
@@ -304,7 +304,7 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         TopWorkContextsEmptyText.Visibility = contexts.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void ApplyQualityMetrics(InsightQualityMetrics? quality)
+    private void ApplyQualityMetrics(InsightQualityMetrics? quality, InsightPeriod period)
     {
         if (quality is not null && quality.FlowProtectionEligibleCount > 0)
         {
@@ -312,14 +312,14 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
             FlowProtectionRateText.Text = string.Format(CultureInfo.InvariantCulture, "{0:0.#}%", Math.Round(flowRate, 1));
             FlowProtectionSubText.Text = string.Format(
                 CultureInfo.InvariantCulture,
-                "차단 {0:N0}건 중 {1:N0}건 흐름 유지",
+                "차단 {0:N0}건 중 {1:N0}건 유지",
                 quality.FlowProtectionEligibleCount,
                 quality.FlowProtectedCount);
         }
         else
         {
             FlowProtectionRateText.Text = "-";
-            FlowProtectionSubText.Text = "차단 알림 매칭 기록 없음";
+            FlowProtectionSubText.Text = "매칭 기록 없음";
         }
 
         double workPct = quality is null ? 0 : SanitizePercent(quality.WorkPurityPercent);
@@ -329,37 +329,52 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
 
         if (purityTotal > 0)
         {
-            WorkPurityBarGrid.ColumnDefinitions[0].Width = new GridLength(workPct, GridUnitType.Star);
-            WorkPurityBarGrid.ColumnDefinitions[1].Width = new GridLength(neutralPct, GridUnitType.Star);
-            WorkPurityBarGrid.ColumnDefinitions[2].Width = new GridLength(leisurePct, GridUnitType.Star);
+            double workSweep = workPct / purityTotal * 360.0;
+            double neutralSweep = neutralPct / purityTotal * 360.0;
+            double leisureSweep = Math.Max(0.0, 360.0 - workSweep - neutralSweep);
+
+            double cursorDeg = -90.0;
+            WorkPurityArcPath.Data = BuildRingArcGeometry(48.0, 48.0, 43.0, cursorDeg, workSweep);
+            cursorDeg += workSweep;
+            NeutralPurityArcPath.Data = BuildRingArcGeometry(48.0, 48.0, 43.0, cursorDeg, neutralSweep);
+            cursorDeg += neutralSweep;
+            LeisurePurityArcPath.Data = BuildRingArcGeometry(48.0, 48.0, 43.0, cursorDeg, leisureSweep);
+            WorkPurityCenterText.Text = $"{Math.Round(workPct):0}%";
         }
         else
         {
-            WorkPurityBarGrid.ColumnDefinitions[0].Width = new GridLength(0, GridUnitType.Pixel);
-            WorkPurityBarGrid.ColumnDefinitions[1].Width = new GridLength(0, GridUnitType.Pixel);
-            WorkPurityBarGrid.ColumnDefinitions[2].Width = new GridLength(0, GridUnitType.Pixel);
+            WorkPurityArcPath.Data = System.Windows.Media.Geometry.Empty;
+            NeutralPurityArcPath.Data = System.Windows.Media.Geometry.Empty;
+            LeisurePurityArcPath.Data = System.Windows.Media.Geometry.Empty;
+            WorkPurityCenterText.Text = "-";
         }
 
+        WorkPurityPercentText.Text = $"{Math.Round(workPct):0}%";
+        NeutralPurityPercentText.Text = $"{Math.Round(neutralPct):0}%";
+        LeisurePurityPercentText.Text = $"{Math.Round(leisurePct):0}%";
+
         string legendText = $"순수 작업 {Math.Round(workPct):0}% · 메신저·웹 {Math.Round(neutralPct):0}% · 비작업 {Math.Round(leisurePct):0}%";
-        WorkPurityLegendText.Text = legendText;
-        AutomationProperties.SetName(WorkPurityBarGrid, $"작업 순도: {legendText}");
+        AutomationProperties.SetName(WorkPurityDonutGrid, $"작업 순도: {legendText}");
 
         if (!string.IsNullOrWhiteSpace(quality?.TopSelfDistractionApp))
         {
-            SelfDistractionText.Text = $"직접 확인 최다 · {quality.TopSelfDistractionApp} ({FormatDuration(quality.TopSelfDistractionDuration)})";
+            SelfDistractionText.Text = $"{quality.TopSelfDistractionApp} · {FormatDuration(quality.TopSelfDistractionDuration)}";
             SelfDistractionCallout.Visibility = Visibility.Visible;
+            ApplySelfDistractionChangeBadge(quality.SelfDistractionChangePercent, period);
         }
         else
         {
             SelfDistractionText.Text = "";
             SelfDistractionCallout.Visibility = Visibility.Collapsed;
+            SelfDistractionChangeBadgeText.Text = "";
+            SelfDistractionChangeBadge.Visibility = Visibility.Collapsed;
         }
 
         int deepFocusCount = Math.Max(0, quality?.DeepFocusSessionCount ?? 0);
         TimeSpan avgDuration = quality is not null && quality.AverageSessionDuration > TimeSpan.Zero
             ? quality.AverageSessionDuration
             : TimeSpan.Zero;
-        DeepFocusSummaryText.Text = $"깊은 몰입(25분+) {deepFocusCount}회 · 평균 세션 {FormatDuration(avgDuration)}";
+        DeepFocusSummaryText.Text = $"깊은 몰입(25분+) {deepFocusCount}회 · 평균 {FormatDuration(avgDuration)}";
 
         int streakDays = Math.Max(0, quality?.CurrentStreakDays ?? 0);
         int bestStreak = Math.Max(0, quality?.BestStreakDays ?? 0);
@@ -376,46 +391,39 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
             BestStreakBadge.Visibility = Visibility.Collapsed;
         }
 
-        if (streakDays > 0)
-        {
-            StreakBadgeText.Text = $"{streakDays}일 연속 집중";
-            StreakBadge.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            StreakBadgeText.Text = "";
-            StreakBadge.Visibility = Visibility.Collapsed;
-        }
-
         if (streakDays > 0 && isTodayFocused)
         {
-            StreakHeroBox.Background = (Brush)FindResource("BlackSuccessSurface");
-            StreakHeroBox.BorderBrush = (Brush)FindResource("BlackSuccessRule");
             StreakHeroTitleText.Foreground = (Brush)FindResource("BlackSuccess");
-            StreakHeroTitleText.Text = $"🔥 {streakDays}일 연속 집중 중";
-            StreakMotivationText.Text = streakDays >= 7
-                ? "오늘도 잔디를 심어 1주 이상 연속 기록을 이어가고 있어요!"
-                : streakDays >= 2
-                    ? "오늘 잔디를 심었어요. 내일도 이어가면 기록이 더 단단해져요!"
-                    : "오늘 첫 잔디를 심었어요. 내일도 이어서 연속 기록을 시작해 보세요!";
+            StreakHeroTitleText.Text = $"🔥 {streakDays}일";
+            StreakStateSubtitleText.Text = "연속 집중 중";
+
+            var todayCell = quality?.HeatmapDays?.FirstOrDefault(d => d.IsToday);
+            int todayMinutes = todayCell is not null
+                ? Math.Max(0, (int)Math.Floor(todayCell.FocusDuration.TotalMinutes))
+                : 0;
+            StreakMotivationText.Text = todayMinutes < 30
+                ? $"오늘 +{30 - todayMinutes}분 → 2단계"
+                : todayMinutes < 60
+                    ? $"오늘 +{60 - todayMinutes}분 → 3단계"
+                    : todayMinutes < 120
+                        ? $"오늘 +{120 - todayMinutes}분 → 4단계"
+                        : "오늘 4단계 달성";
         }
         else if (streakDays > 0)
         {
-            StreakHeroBox.Background = (Brush)FindResource("BlackSelection");
-            StreakHeroBox.BorderBrush = (Brush)FindResource("BlackAction");
             StreakHeroTitleText.Foreground = (Brush)FindResource("BlackFocus");
-            StreakHeroTitleText.Text = $"⚡ {streakDays}일 연속 기록 유지 중";
-            StreakMotivationText.Text = $"오늘 한 번만 집중하면 {streakDays + 1}일 연속으로 이어져요. 기록을 지켜보세요!";
+            StreakHeroTitleText.Text = $"{streakDays}일";
+            StreakStateSubtitleText.Text = "연속 유지 중";
+            StreakMotivationText.Text = $"오늘 집중 시 {streakDays + 1}일 연속";
         }
         else
         {
-            StreakHeroBox.Background = (Brush)FindResource("BlackInput");
-            StreakHeroBox.BorderBrush = (Brush)FindResource("BlackRule");
             StreakHeroTitleText.Foreground = (Brush)FindResource("BlackText");
-            StreakHeroTitleText.Text = "🌱 연속 집중을 시작해 보세요";
+            StreakHeroTitleText.Text = "0일";
+            StreakStateSubtitleText.Text = "연속 기록 없음";
             StreakMotivationText.Text = bestStreak > 0
-                ? $"최장 {bestStreak}일 연속 기록이 있어요. 오늘 첫 잔디를 다시 심어 보세요!"
-                : "집중 세션을 마치면 오늘 칸에 첫 잔디가 채워져요.";
+                ? "오늘 집중으로 재시작"
+                : "오늘 첫 집중 대기";
         }
 
         if (quality?.PeriodChangePercent is { } rawChange &&
@@ -444,7 +452,41 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
             PeriodChangeBadge.Visibility = Visibility.Collapsed;
         }
 
-        StreakHeatmapItems.ItemsSource = BuildHeatmapGridRows(quality?.HeatmapDays);
+        var normalizedDays = ResolveHeatmapDays(quality?.HeatmapDays);
+        HeatmapMonthItems.ItemsSource = BuildHeatmapMonthLabels(normalizedDays);
+        StreakHeatmapItems.ItemsSource = BuildHeatmapGridRows(normalizedDays);
+    }
+
+    private void ApplySelfDistractionChangeBadge(double? rawChange, InsightPeriod period)
+    {
+        if (rawChange is not { } value || double.IsNaN(value) || double.IsInfinity(value) ||
+            period is not (InsightPeriod.Today or InsightPeriod.Last7Days))
+        {
+            SelfDistractionChangeBadgeText.Text = "";
+            SelfDistractionChangeBadge.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        long rounded = (long)Math.Round(value);
+        string prefix = period == InsightPeriod.Today ? "어제 대비" : "지난주 대비";
+        string sign = rounded > 0 ? "+" : "";
+        string arrow = rounded < 0 ? " ↓" : rounded > 0 ? " ↑" : "";
+        SelfDistractionChangeBadgeText.Text = $"{prefix} {sign}{rounded}%{arrow}";
+
+        if (rounded <= 0)
+        {
+            SelfDistractionChangeBadge.Background = (Brush)FindResource("BlackSuccessSurface");
+            SelfDistractionChangeBadge.BorderBrush = (Brush)FindResource("BlackSuccessRule");
+            SelfDistractionChangeBadgeText.Foreground = (Brush)FindResource("BlackSuccess");
+        }
+        else
+        {
+            SelfDistractionChangeBadge.Background = (Brush)FindResource("BlackInput");
+            SelfDistractionChangeBadge.BorderBrush = (Brush)FindResource("BlackError");
+            SelfDistractionChangeBadgeText.Foreground = (Brush)FindResource("BlackError");
+        }
+
+        SelfDistractionChangeBadge.Visibility = Visibility.Visible;
     }
 
     private void SetRefreshingState(bool isLoading)
@@ -452,9 +494,10 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         PeriodLoadingBadge.Visibility = isLoading ? Visibility.Visible : Visibility.Collapsed;
         double opacity = isLoading ? 0.55 : 1.0;
         EmptyStateCard.Opacity = opacity;
-        KpiRow.Opacity = opacity;
+        HeroBentoRow.Opacity = opacity;
+        KpiStrip.Opacity = opacity;
         CoachingCard.Opacity = opacity;
-        QualityTrendRow.Opacity = opacity;
+        QualityCard.Opacity = opacity;
         HourlyChartCard.Opacity = opacity;
         TopListsRow.Opacity = opacity;
     }
@@ -464,22 +507,16 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         if (result is { IsAiGenerated: true, IsFromCache: true })
         {
             CoachingStatusBadgeText.Text = "저장된 AI 코칭";
-            CoachingStatusBadge.Background = (Brush)FindResource("BlackSelection");
-            CoachingStatusBadge.BorderBrush = (Brush)FindResource("BlackSelectionRule");
             CoachingStatusBadgeText.Foreground = (Brush)FindResource("BlackAccentText");
         }
         else if (result is { IsAiGenerated: true })
         {
             CoachingStatusBadgeText.Text = "AI 코칭";
-            CoachingStatusBadge.Background = (Brush)FindResource("BlackSuccessSurface");
-            CoachingStatusBadge.BorderBrush = (Brush)FindResource("BlackSuccessRule");
             CoachingStatusBadgeText.Foreground = (Brush)FindResource("BlackSuccess");
         }
         else
         {
             CoachingStatusBadgeText.Text = "규칙 요약";
-            CoachingStatusBadge.Background = (Brush)FindResource("BlackInput");
-            CoachingStatusBadge.BorderBrush = (Brush)FindResource("BlackRule");
             CoachingStatusBadgeText.Foreground = (Brush)FindResource("BlackMuted");
         }
     }
@@ -516,12 +553,10 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         {
             CoachingLoadingBanner.Visibility = Visibility.Visible;
             CoachingStatusBadgeText.Text = "분석 중…";
-            CoachingStatusBadge.Background = (Brush)FindResource("BlackSelection");
-            CoachingStatusBadge.BorderBrush = (Brush)FindResource("BlackSelectionRule");
             CoachingStatusBadgeText.Foreground = (Brush)FindResource("BlackAccentText");
             GenerateCoachingButton.IsEnabled = false;
-            GenerateCoachingButton.Content = "Gemma 분석 중…";
-            GenerateCoachingButton.ToolTip = "Gemma AI가 집중·방해 패턴을 분석하고 있습니다.";
+            GenerateCoachingButton.Content = "분석 중…";
+            GenerateCoachingButton.ToolTip = "AI 분석 중";
             return;
         }
 
@@ -535,7 +570,7 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         {
             GenerateCoachingButton.IsEnabled = false;
             GenerateCoachingButton.Content = "AI 코칭 분석";
-            GenerateCoachingButton.ToolTip = "집중 기록이 쌓이면 AI 코칭을 분석할 수 있어요.";
+            GenerateCoachingButton.ToolTip = "기록 없음";
             return;
         }
 
@@ -543,13 +578,13 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         {
             GenerateCoachingButton.IsEnabled = false;
             GenerateCoachingButton.Content = "AI 코칭 분석";
-            GenerateCoachingButton.ToolTip = "로컬 Gemma AI 모델을 사용할 수 없어 규칙 요약만 표시합니다.";
+            GenerateCoachingButton.ToolTip = "로컬 AI 모델 없음";
             return;
         }
 
         GenerateCoachingButton.IsEnabled = true;
         GenerateCoachingButton.Content = _currentCoaching?.IsAiGenerated == true ? "다시 분석" : "AI 코칭 분석";
-        GenerateCoachingButton.ToolTip = "현재 기간의 집중·방해 기록을 Gemma AI로 분석합니다.";
+        GenerateCoachingButton.ToolTip = "현재 기간 AI 분석";
     }
 
     private void SubTabButton_Checked(object sender, RoutedEventArgs e)
@@ -588,16 +623,25 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
     }
 
     /// <summary>
-    /// 잔디밭 칸을 정사각형으로 유지한다. 칸 크기는 카드 폭을 따라 14–26px 사이에서 정하고,
-    /// 폭이 남으면 요일 글자 옆에 붙여 왼쪽에 둔다(넓은 창에서 칸이 가로로 늘어나지 않게).
+    /// 잔디밭 칸을 정사각형으로 유지한다. 칸 크기는 카드 폭과 20주 열 수에 맞춰 8–22px 사이에서 정하고,
+    /// 월 라벨과 그리드 너비를 동일하게 맞춰 왼쪽 정렬한다.
     /// </summary>
     private void StreakHeatmapGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        const double labelColumn = 22, columns = 10, gap = 4;
+        UpdateHeatmapCellSize();
+    }
+
+    private void UpdateHeatmapCellSize()
+    {
+        const double labelColumn = 22, gap = 4;
         double available = Math.Max(0, StreakHeatmapGrid.ActualWidth - labelColumn);
-        double cell = Math.Clamp(Math.Floor(available / columns), 14, 26);
-        StreakHeatmapItems.Width = cell * columns;
-        StreakHeatmapItems.Resources["HeatmapCellHeight"] = cell - gap;
+        if (available <= 0)
+            return;
+        double cell = Math.Clamp(Math.Floor(available / HeatmapWeeks), 8, 22);
+        double gridWidth = cell * HeatmapWeeks;
+        StreakHeatmapItems.Width = gridWidth;
+        HeatmapMonthItems.Width = gridWidth;
+        StreakHeatmapItems.Resources["HeatmapCellHeight"] = Math.Max(6, cell - gap);
     }
 
     private void InsightsScroll_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -607,64 +651,189 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
 
     private void UpdateResponsiveLayout()
     {
-        if (KpiRow is null || QualityTrendRow is null || TopListsRow is null)
+        if (HeroBentoRow is null || KpiRow is null || QualityInnerGrid is null || TopListsRow is null)
             return;
 
         bool compact = InsightsScroll.ActualWidth > 0 && InsightsScroll.ActualWidth < 680;
-        KpiRow.Columns = compact ? 2 : 4;
+        ApplyKpiStripLayout(compact);
 
-        ApplyTwoColumnLayout(QualityTrendRow, TrendCard, compact);
-        ApplyTwoColumnLayout(TopListsRow, TopWorkContextsCard, compact);
+        ApplyWeightedTwoColumnLayout(HeroBentoRow, HeatmapTileCard, 2.8, 7.2, compact);
+
+        QualityInnerGrid.ColumnDefinitions[0].Width = new GridLength(compact ? 1.0 : 5.5, GridUnitType.Star);
+        QualityInnerGrid.ColumnDefinitions[1].Width = new GridLength(compact ? 0 : 20);
+        QualityInnerGrid.ColumnDefinitions[2].Width = new GridLength(compact ? 0 : 4.5, compact ? GridUnitType.Pixel : GridUnitType.Star);
+        Grid.SetColumn(QualityRightColumn, compact ? 0 : 2);
+        Grid.SetRow(QualityRightColumn, compact ? 1 : 0);
+        QualityRightColumn.BorderThickness = compact ? new Thickness(0, 1, 0, 0) : new Thickness(1, 0, 0, 0);
+        QualityRightColumn.Padding = compact ? new Thickness(0, 12, 0, 0) : new Thickness(20, 4, 0, 4);
+        QualityRightColumn.Margin = compact ? new Thickness(0, 14, 0, 0) : new Thickness(0);
+
+        ApplyWeightedTwoColumnLayout(TopListsRow, TopWorkContextsCard, 1.0, 1.0, compact);
     }
 
-    private static void ApplyTwoColumnLayout(Grid rowGrid, FrameworkElement secondCard, bool compact)
+    private void ApplyKpiStripLayout(bool compact)
     {
-        rowGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+        KpiRow.Columns = compact ? 2 : 4;
+        if (KpiCell0 is null || KpiCell1 is null || KpiCell2 is null || KpiCell3 is null)
+            return;
+
+        if (compact)
+        {
+            KpiCell0.BorderThickness = new Thickness(0);
+            KpiCell0.Padding = new Thickness(0, 4, 12, 10);
+
+            KpiCell1.BorderThickness = new Thickness(1, 0, 0, 0);
+            KpiCell1.Padding = new Thickness(14, 4, 0, 10);
+
+            KpiCell2.BorderThickness = new Thickness(0, 1, 0, 0);
+            KpiCell2.Padding = new Thickness(0, 10, 12, 4);
+
+            KpiCell3.BorderThickness = new Thickness(1, 1, 0, 0);
+            KpiCell3.Padding = new Thickness(14, 10, 0, 4);
+        }
+        else
+        {
+            KpiCell0.BorderThickness = new Thickness(0);
+            KpiCell0.Padding = new Thickness(0, 2, 12, 2);
+
+            KpiCell1.BorderThickness = new Thickness(1, 0, 0, 0);
+            KpiCell1.Padding = new Thickness(16, 2, 12, 2);
+
+            KpiCell2.BorderThickness = new Thickness(1, 0, 0, 0);
+            KpiCell2.Padding = new Thickness(16, 2, 12, 2);
+
+            KpiCell3.BorderThickness = new Thickness(1, 0, 0, 0);
+            KpiCell3.Padding = new Thickness(16, 2, 0, 2);
+        }
+    }
+
+    private static void ApplyWeightedTwoColumnLayout(
+        Grid rowGrid,
+        FrameworkElement secondCard,
+        double leftWeight,
+        double rightWeight,
+        bool compact)
+    {
+        rowGrid.ColumnDefinitions[0].Width = new GridLength(compact ? 1.0 : leftWeight, GridUnitType.Star);
         rowGrid.ColumnDefinitions[1].Width = new GridLength(compact ? 0 : 16);
-        rowGrid.ColumnDefinitions[2].Width = new GridLength(compact ? 0 : 1, compact ? GridUnitType.Pixel : GridUnitType.Star);
+        rowGrid.ColumnDefinitions[2].Width = new GridLength(compact ? 0 : rightWeight, compact ? GridUnitType.Pixel : GridUnitType.Star);
 
         Grid.SetColumn(secondCard, compact ? 0 : 2);
         Grid.SetRow(secondCard, compact ? 1 : 0);
         secondCard.Margin = new Thickness(0, compact ? 16 : 0, 0, 0);
     }
 
-    private static HeatmapCellViewModel[] BuildHeatmapGridRows(IReadOnlyList<InsightHeatmapDay>? heatmapDays)
+    private static System.Windows.Media.Geometry BuildRingArcGeometry(
+        double centerX,
+        double centerY,
+        double radius,
+        double startDeg,
+        double sweepDeg)
     {
-        IReadOnlyList<InsightHeatmapDay> source;
-        if (heatmapDays is { Count: 70 })
+        if (sweepDeg <= 0.1 || double.IsNaN(sweepDeg) || double.IsInfinity(sweepDeg))
+            return System.Windows.Media.Geometry.Empty;
+
+        if (sweepDeg >= 359.9)
         {
-            source = heatmapDays;
-        }
-        else
-        {
-            var today = DateTime.Now.Date;
-            int todayDow = (int)today.DayOfWeek;
-            var gridStart = today.AddDays(-todayDow - 9 * 7);
-            var fallback = new InsightHeatmapDay[70];
-            for (int offset = 0; offset < 70; offset++)
+            double topRad = -Math.PI / 2.0;
+            double bottomRad = Math.PI / 2.0;
+            var top = new System.Windows.Point(centerX + radius * Math.Cos(topRad), centerY + radius * Math.Sin(topRad));
+            var bottom = new System.Windows.Point(centerX + radius * Math.Cos(bottomRad), centerY + radius * Math.Sin(bottomRad));
+            var arcSize = new System.Windows.Size(radius, radius);
+
+            var fullGeom = new System.Windows.Media.StreamGeometry();
+            using (var ctx = fullGeom.Open())
             {
-                var date = gridStart.AddDays(offset);
-                bool isFuture = date > today;
-                bool isToday = date == today;
-                fallback[offset] = new InsightHeatmapDay(
-                    LocalDate: date,
-                    FocusDuration: TimeSpan.Zero,
-                    IntensityLevel: 0,
-                    IsToday: isToday,
-                    IsFuture: isFuture,
-                    TooltipText: isFuture ? string.Empty : $"{date:M월 d일} · 집중 기록 없음");
+                ctx.BeginFigure(top, isFilled: false, isClosed: true);
+                ctx.ArcTo(bottom, arcSize, 0, false, System.Windows.Media.SweepDirection.Clockwise, isStroked: true, isSmoothJoin: false);
+                ctx.ArcTo(top, arcSize, 0, false, System.Windows.Media.SweepDirection.Clockwise, isStroked: true, isSmoothJoin: false);
             }
-            source = fallback;
+            fullGeom.Freeze();
+            return fullGeom;
         }
 
-        // UniformGrid(Rows=7, Columns=10)은 행 우선(row-major)으로 채우므로
-        // (요일 row 0..6, 주 col 0..9) 순서로 재배열한다.
-        var gridCells = new HeatmapCellViewModel[70];
+        double startRad = startDeg * Math.PI / 180.0;
+        double endRad = (startDeg + sweepDeg) * Math.PI / 180.0;
+        var startPt = new System.Windows.Point(centerX + radius * Math.Cos(startRad), centerY + radius * Math.Sin(startRad));
+        var endPt = new System.Windows.Point(centerX + radius * Math.Cos(endRad), centerY + radius * Math.Sin(endRad));
+        bool isLargeArc = sweepDeg > 180.0;
+
+        var geom = new System.Windows.Media.StreamGeometry();
+        using (var ctx = geom.Open())
+        {
+            ctx.BeginFigure(startPt, isFilled: false, isClosed: false);
+            ctx.ArcTo(endPt, new System.Windows.Size(radius, radius), 0, isLargeArc, System.Windows.Media.SweepDirection.Clockwise, isStroked: true, isSmoothJoin: false);
+        }
+        geom.Freeze();
+        return geom;
+    }
+
+    private static IReadOnlyList<InsightHeatmapDay> ResolveHeatmapDays(IReadOnlyList<InsightHeatmapDay>? heatmapDays)
+    {
+        if (heatmapDays is { Count: HeatmapDaysCount })
+            return heatmapDays;
+
+        var today = DateTime.Now.Date;
+        int todayDow = (int)today.DayOfWeek;
+        var gridStart = today.AddDays(-todayDow - (HeatmapWeeks - 1) * 7);
+        var fallback = new InsightHeatmapDay[HeatmapDaysCount];
+        for (int offset = 0; offset < HeatmapDaysCount; offset++)
+        {
+            var date = gridStart.AddDays(offset);
+            bool isFuture = date > today;
+            bool isToday = date == today;
+            fallback[offset] = new InsightHeatmapDay(
+                LocalDate: date,
+                FocusDuration: TimeSpan.Zero,
+                IntensityLevel: 0,
+                IsToday: isToday,
+                IsFuture: isFuture,
+                TooltipText: isFuture ? string.Empty : $"{date:M월 d일} · 기록 없음");
+        }
+        return fallback;
+    }
+
+    private static string[] BuildHeatmapMonthLabels(IReadOnlyList<InsightHeatmapDay> days)
+    {
+        var labels = new string[HeatmapWeeks];
+        int lastMonth = -1;
+        int lastLabeledWeek = -10;
+
+        for (int week = 0; week < HeatmapWeeks; week++)
+        {
+            var weekStart = days[week * 7].LocalDate;
+            if (week == 0 || weekStart.Month != lastMonth)
+            {
+                if (week == 0 || week - lastLabeledWeek >= 2)
+                {
+                    labels[week] = $"{weekStart.Month}월";
+                    lastLabeledWeek = week;
+                }
+                else
+                {
+                    labels[week] = string.Empty;
+                }
+                lastMonth = weekStart.Month;
+            }
+            else
+            {
+                labels[week] = string.Empty;
+            }
+        }
+
+        return labels;
+    }
+
+    private static HeatmapCellViewModel[] BuildHeatmapGridRows(IReadOnlyList<InsightHeatmapDay> source)
+    {
+        // UniformGrid(Rows=7, Columns=20)은 행 우선(row-major)으로 채우므로
+        // (요일 row 0..6, 주 col 0..19) 순서로 재배열한다.
+        var gridCells = new HeatmapCellViewModel[HeatmapDaysCount];
         for (int dow = 0; dow < 7; dow++)
         {
-            for (int week = 0; week < 10; week++)
+            for (int week = 0; week < HeatmapWeeks; week++)
             {
-                gridCells[dow * 10 + week] = new HeatmapCellViewModel(source[week * 7 + dow]);
+                gridCells[dow * HeatmapWeeks + week] = new HeatmapCellViewModel(source[week * 7 + dow]);
             }
         }
         return gridCells;
@@ -717,7 +886,7 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
             TopDistractors: [],
             TopWorkContexts: [],
             DataFingerprint: "empty",
-            RuleSummaryLine: "아직 분석할 집중 기록이 없어요.");
+            RuleSummaryLine: "집중 기록 없음");
     }
 
     private static InsightCoachingResult CreateFallbackCoaching(FocusInsightSnapshot snapshot)
@@ -725,9 +894,9 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         if (!snapshot.HasData)
         {
             return new InsightCoachingResult(
-                Headline: "집중 기록이 쌓이면 맞춤 코칭을 제공해요.",
-                Findings: ["집중 모드를 완료하면 시간대별 몰입도와 방해 패턴을 자동으로 분석합니다."],
-                ActionTip: "홈 화면에서 집중 모드를 켜고 첫 번째 세션을 시작해 보세요.",
+                Headline: "집중 기록 없음",
+                Findings: ["집중 세션 완료 시 패턴·방해 집계"],
+                ActionTip: "집중 모드 시작 후 기록 생성",
                 IsAiGenerated: false,
                 IsFromCache: false,
                 GeneratedAtUtc: DateTime.UtcNow,
@@ -736,16 +905,16 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
 
         return new InsightCoachingResult(
             Headline: string.IsNullOrWhiteSpace(snapshot.RuleSummaryLine)
-                ? $"총 {FormatDuration(snapshot.TotalFocusDuration)} 집중하며 방해 알림 {snapshot.BlockedCount}건을 차단했어요."
+                ? $"총 {FormatDuration(snapshot.TotalFocusDuration)} 집중 · 알림 {snapshot.BlockedCount}건 차단"
                 : snapshot.RuleSummaryLine,
             Findings:
             [
-                $"세션 {snapshot.FocusSessionCount}회 동안 방해 차단율 {Math.Round(SanitizePercent(snapshot.BlockRatePercent)):0}%를 기록했습니다.",
-                $"긴급 알림 {snapshot.UrgentPassedCount}건, 작업 관련 알림 {snapshot.RelevancePassedCount}건만 선별 통과했습니다."
+                $"세션 {snapshot.FocusSessionCount}회 · 차단율 {Math.Round(SanitizePercent(snapshot.BlockRatePercent)):0}%",
+                $"긴급 {snapshot.UrgentPassedCount}건 · 작업 관련 {snapshot.RelevancePassedCount}건 통과"
             ],
             ActionTip: snapshot.GoldenHour is { } gh
-                ? $"{gh:00}시 전후 골든타임에 핵심 작업을 배치해 보세요."
-                : "집중 루틴을 꾸준히 기록하면 나만의 골든타임을 찾을 수 있어요.",
+                ? $"{gh:00}시 골든타임에 핵심 작업 배치 권장"
+                : "집중 세션 기록 유지",
             IsAiGenerated: false,
             IsFromCache: false,
             GeneratedAtUtc: DateTime.UtcNow,
@@ -792,10 +961,23 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
             IsToday = day.IsToday;
             IsFuture = day.IsFuture;
             IsInteractive = !day.IsFuture;
+
+            string dayLabel = KoreanDayLabels[(int)day.LocalDate.DayOfWeek];
+            DateHeaderText = day.IsToday
+                ? $"{day.LocalDate:M월 d일} ({dayLabel}) · 오늘"
+                : $"{day.LocalDate:M월 d일} ({dayLabel})";
+            LevelLabelText = IntensityLevel == 0 ? "기록 없음" : $"{IntensityLevel}단계";
+            FocusDurationText = FormatDuration(day.FocusDuration);
+            SessionCountText = $"{Math.Max(0, day.SessionCount)}회";
+            BlockedCountText = $"{Math.Max(0, day.BlockedCount)}건";
+            WorkPurityText = day.WorkPurityPercent is { } wp && !double.IsNaN(wp) && !double.IsInfinity(wp)
+                ? $"{Math.Round(SanitizePercent(wp)):0}%"
+                : "-";
+
             TooltipText = day.IsFuture
                 ? string.Empty
                 : string.IsNullOrWhiteSpace(day.TooltipText)
-                    ? $"{day.LocalDate:M월 d일} · 집중 {FormatDuration(day.FocusDuration)}"
+                    ? $"{day.LocalDate:M월 d일} ({dayLabel}) · 집중 {FocusDurationText}"
                     : day.TooltipText;
         }
 
@@ -803,6 +985,12 @@ public partial class DashboardInsightsView : System.Windows.Controls.UserControl
         public bool IsToday { get; }
         public bool IsFuture { get; }
         public bool IsInteractive { get; }
+        public string DateHeaderText { get; }
+        public string LevelLabelText { get; }
+        public string FocusDurationText { get; }
+        public string SessionCountText { get; }
+        public string BlockedCountText { get; }
+        public string WorkPurityText { get; }
         public string TooltipText { get; }
     }
 

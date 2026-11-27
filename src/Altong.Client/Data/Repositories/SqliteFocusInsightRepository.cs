@@ -17,6 +17,8 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
 {
     private const double MaxBarHeight = 88.0;
     private const double MaxDailyTrendBarHeight = 72.0;
+    private const int HeatmapWeeks = 20;
+    private const int HeatmapDaysCount = HeatmapWeeks * 7;
     private static readonly TimeSpan BoundarySkewTolerance = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan FlowProtectionStayThreshold = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan FlowProtectionSameAppGapTolerance = TimeSpan.FromSeconds(5);
@@ -44,14 +46,35 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
         var now = AsUtc(nowUtc);
         var (fromUtc, toUtc) = ResolveRange(period, now, zone);
         var limit = toUtc.HasValue && toUtc.Value < now ? toUtc.Value : now;
+        var localToday = TimeZoneInfo.ConvertTimeFromUtc(now, zone).Date;
+        var heatmapStartLocal = localToday.AddDays(-(int)localToday.DayOfWeek - (HeatmapWeeks - 1) * 7);
+        var heatmapStartUtc = ConvertLocalMidnightToUtc(heatmapStartLocal, zone);
+        DateTime? queryFromUtc = fromUtc.HasValue
+            ? (fromUtc.Value < heatmapStartUtc ? fromUtc.Value : heatmapStartUtc)
+            : null;
 
         using var connection = _database.CreateOpenConnection();
 
         var allFocusRecords = await ReadFocusSessionsAsync(connection, null, null, ct).ConfigureAwait(false);
-        var notifications = await ReadNotificationsAsync(connection, fromUtc, toUtc, ct).ConfigureAwait(false);
-        var windowSessions = await ReadFocusWindowSessionsAsync(connection, fromUtc, toUtc, ct).ConfigureAwait(false);
+        var allRangeNotifications = await ReadNotificationsAsync(connection, queryFromUtc, toUtc, ct).ConfigureAwait(false);
+        var allRangeWindows = await ReadFocusWindowSessionsAsync(connection, queryFromUtc, toUtc, ct).ConfigureAwait(false);
 
         ct.ThrowIfCancellationRequested();
+
+        List<NotificationRow> notifications;
+        List<WindowSessionRow> windowSessions;
+        if (fromUtc.HasValue)
+        {
+            var periodFromUtc = fromUtc.Value;
+            var paddedWindowFrom = periodFromUtc - BoundarySkewTolerance;
+            notifications = allRangeNotifications.Where(n => n.ReceivedAtUtc >= periodFromUtc).ToList();
+            windowSessions = allRangeWindows.Where(ws => ws.EndedAtUtc > paddedWindowFrom).ToList();
+        }
+        else
+        {
+            notifications = allRangeNotifications;
+            windowSessions = allRangeWindows;
+        }
 
         // 1. 집중 세션 구간 병합 및 시간대별 버킷 집계
         var (totalFocusDuration, focusSessionCount, deepFocusSessionCount, hourlyFocusTicks, latestFocusEnd) =
@@ -139,9 +162,16 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
         // 5. 작업 맥락별 보호 현황 TOP 5 + 몰입 유지율 + 집중 순도 + 자기 방해 앱 분석
         var windowAnalysis = AnalyzeWindowContexts(notifications, windowSessions, fromUtc, limit);
 
-        // 6. 연속 집중 일수, 최장 스트릭, 10주 잔디밭, 최근 7일 일별 추이, 전기 대비 증감률 계산
-        var (currentStreakDays, bestStreakDays, isTodayFocused, periodChangePercent, dailyTrends, heatmapDays) =
-            BuildTrendAndStreakMetrics(allFocusRecords, activeSession, period, now, zone);
+        // 6. 연속 집중 일수, 최장 스트릭, 20주 잔디밭(세션·차단·순도 포함), 자발적 이탈 증감률, 최근 7일 일별 추이 계산
+        var heatmapContext = BuildDailyHeatmapContext(
+            allRangeNotifications,
+            allRangeWindows,
+            heatmapStartUtc,
+            limit,
+            zone);
+
+        var (currentStreakDays, bestStreakDays, isTodayFocused, periodChangePercent, selfDistractionChangePercent, dailyTrends, heatmapDays) =
+            BuildTrendAndStreakMetrics(allFocusRecords, activeSession, period, now, zone, heatmapContext);
 
         TimeSpan averageSessionDuration = focusSessionCount > 0
             ? TimeSpan.FromTicks(totalFocusDuration.Ticks / focusSessionCount)
@@ -166,7 +196,8 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
             DailyTrends: dailyTrends,
             BestStreakDays: bestStreakDays,
             IsTodayFocused: isTodayFocused,
-            HeatmapDays: heatmapDays);
+            HeatmapDays: heatmapDays,
+            SelfDistractionChangePercent: selfDistractionChangePercent);
 
         // 7. 결정적 데이터 지문 및 1줄 규칙 요약
         string dataFingerprint = ComputeFingerprint(
@@ -454,11 +485,107 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
         return merged;
     }
 
+    private sealed record DailyHeatmapContext(
+        Dictionary<DateTime, int> DailyBlockedCounts,
+        Dictionary<DateTime, long> DailyWorkTicks,
+        Dictionary<DateTime, long> DailyTotalWindowTicks,
+        Dictionary<DateTime, long> DailySelfDistractionTicks);
+
+    private static DailyHeatmapContext BuildDailyHeatmapContext(
+        IReadOnlyList<NotificationRow> notifications,
+        IReadOnlyList<WindowSessionRow> windowSessions,
+        DateTime heatmapStartUtc,
+        DateTime limit,
+        TimeZoneInfo zone)
+    {
+        var dailyBlocked = new Dictionary<DateTime, int>();
+        foreach (var n in notifications)
+        {
+            if (n.IsPassed || n.ReceivedAtUtc < heatmapStartUtc || n.ReceivedAtUtc > limit)
+                continue;
+
+            var localDate = TimeZoneInfo.ConvertTimeFromUtc(n.ReceivedAtUtc, zone).Date;
+            dailyBlocked[localDate] = dailyBlocked.GetValueOrDefault(localDate) + 1;
+        }
+
+        var dailyWork = new Dictionary<DateTime, long>();
+        var dailyTotal = new Dictionary<DateTime, long>();
+        var dailySelfDistraction = new Dictionary<DateTime, long>();
+
+        foreach (var ws in windowSessions)
+        {
+            var category = WorkContextClassifier.Classify(ws.ProcessName);
+            bool isWork = category == WorkCategory.Work;
+            bool isSelfDistraction = !isWork && IsTrackableSelfDistraction(ws.ProcessName);
+
+            if (ws.EndedAtUtc > ws.StartedAtUtc)
+            {
+                var start = ws.StartedAtUtc < heatmapStartUtc ? heatmapStartUtc : ws.StartedAtUtc;
+                var end = ws.EndedAtUtc > limit ? limit : ws.EndedAtUtc;
+                if (end <= start)
+                    continue;
+
+                AccumulateLocalDailyTicks(start, end, zone, (localDate, ticks) =>
+                {
+                    dailyTotal[localDate] = dailyTotal.GetValueOrDefault(localDate) + ticks;
+                    if (isWork)
+                        dailyWork[localDate] = dailyWork.GetValueOrDefault(localDate) + ticks;
+                    if (isSelfDistraction)
+                        dailySelfDistraction[localDate] = dailySelfDistraction.GetValueOrDefault(localDate) + ticks;
+                });
+            }
+            else if (ws.DurationSeconds > 0 && ws.StartedAtUtc >= heatmapStartUtc && ws.StartedAtUtc <= limit)
+            {
+                var localDate = TimeZoneInfo.ConvertTimeFromUtc(ws.StartedAtUtc, zone).Date;
+                long ticks = TimeSpan.FromSeconds(ws.DurationSeconds).Ticks;
+                dailyTotal[localDate] = dailyTotal.GetValueOrDefault(localDate) + ticks;
+                if (isWork)
+                    dailyWork[localDate] = dailyWork.GetValueOrDefault(localDate) + ticks;
+                if (isSelfDistraction)
+                    dailySelfDistraction[localDate] = dailySelfDistraction.GetValueOrDefault(localDate) + ticks;
+            }
+        }
+
+        return new DailyHeatmapContext(dailyBlocked, dailyWork, dailyTotal, dailySelfDistraction);
+    }
+
+    private static bool IsTrackableSelfDistraction(string? processName)
+    {
+        string normalizedKey = NormalizeProcessKey(processName);
+        return !string.IsNullOrEmpty(normalizedKey)
+            && !string.Equals(normalizedKey, "Altong.Client", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedKey, "explorer", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void AccumulateLocalDailyTicks(
+        DateTime startUtc,
+        DateTime endUtc,
+        TimeZoneInfo zone,
+        Action<DateTime, long> onSlice)
+    {
+        var cursor = startUtc;
+        while (cursor < endUtc)
+        {
+            var localDate = TimeZoneInfo.ConvertTimeFromUtc(cursor, zone).Date;
+            var nextDayUtc = ConvertLocalMidnightToUtc(localDate.AddDays(1), zone);
+            if (nextDayUtc <= cursor)
+                nextDayUtc = cursor.AddHours(1);
+
+            var sliceEnd = nextDayUtc < endUtc ? nextDayUtc : endUtc;
+            long ticks = (sliceEnd - cursor).Ticks;
+            if (ticks > 0)
+                onSlice(localDate, ticks);
+
+            cursor = sliceEnd;
+        }
+    }
+
     private static (
         int CurrentStreakDays,
         int BestStreakDays,
         bool IsTodayFocused,
         double? PeriodChangePercent,
+        double? SelfDistractionChangePercent,
         IReadOnlyList<InsightDailyTrendItem> DailyTrends,
         IReadOnlyList<InsightHeatmapDay> HeatmapDays)
         BuildTrendAndStreakMetrics(
@@ -466,9 +593,11 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
             FocusSessionRecord? activeSession,
             InsightPeriod period,
             DateTime nowUtc,
-            TimeZoneInfo zone)
+            TimeZoneInfo zone,
+            DailyHeatmapContext heatmapContext)
     {
         var intervals = new List<(DateTime Start, DateTime End)>();
+        var dailySessionIds = new Dictionary<DateTime, HashSet<string>>();
         var candidates = activeSession is null ? records : records.Append(activeSession);
         foreach (var record in candidates)
         {
@@ -484,6 +613,17 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
                 continue;
 
             intervals.Add((start, clippedEnd));
+
+            string sessionKey = string.IsNullOrWhiteSpace(record.SessionId) ? Guid.NewGuid().ToString("N") : record.SessionId;
+            AccumulateLocalDailyTicks(start, clippedEnd, zone, (localDate, _) =>
+            {
+                if (!dailySessionIds.TryGetValue(localDate, out var ids))
+                {
+                    ids = new HashSet<string>(StringComparer.Ordinal);
+                    dailySessionIds[localDate] = ids;
+                }
+                ids.Add(sessionKey);
+            });
         }
 
         var merged = MergeIntervals(intervals);
@@ -491,21 +631,8 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
 
         foreach (var interval in merged)
         {
-            var cursor = interval.Start;
-            while (cursor < interval.End)
-            {
-                var localDate = TimeZoneInfo.ConvertTimeFromUtc(cursor, zone).Date;
-                var nextDayUtc = ConvertLocalMidnightToUtc(localDate.AddDays(1), zone);
-                if (nextDayUtc <= cursor)
-                    nextDayUtc = cursor.AddHours(1);
-
-                var sliceEnd = nextDayUtc < interval.End ? nextDayUtc : interval.End;
-                long ticks = (sliceEnd - cursor).Ticks;
-                if (ticks > 0)
-                    dailyTicks[localDate] = dailyTicks.GetValueOrDefault(localDate) + ticks;
-
-                cursor = sliceEnd;
-            }
+            AccumulateLocalDailyTicks(interval.Start, interval.End, zone, (localDate, ticks) =>
+                dailyTicks[localDate] = dailyTicks.GetValueOrDefault(localDate) + ticks);
         }
 
         var localToday = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, zone).Date;
@@ -522,7 +649,7 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
         }
 
         int bestStreakDays = ComputeBestStreakDays(dailyTicks);
-        var heatmapDays = BuildHeatmapDays(dailyTicks, localToday);
+        var heatmapDays = BuildHeatmapDays(dailyTicks, dailySessionIds, heatmapContext, localToday);
 
         long maxTrendTicks = 0;
         var trendDays = new (DateTime Date, long Ticks)[7];
@@ -558,15 +685,27 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
                 TooltipText: tooltip);
         }
 
-        double? periodChangePercent = null;
+        double? periodChangePercent = ComputePeriodDeltaPercent(dailyTicks, period, localToday);
+        double? selfDistractionChangePercent = ComputePeriodDeltaPercent(heatmapContext.DailySelfDistractionTicks, period, localToday);
+
+        return (currentStreakDays, bestStreakDays, isTodayFocused, periodChangePercent, selfDistractionChangePercent, dailyTrends, heatmapDays);
+    }
+
+    private static double? ComputePeriodDeltaPercent(
+        Dictionary<DateTime, long> dailyTicks,
+        InsightPeriod period,
+        DateTime localToday)
+    {
         if (period == InsightPeriod.Today)
         {
             long currentTicks = dailyTicks.GetValueOrDefault(localToday);
             long previousTicks = dailyTicks.GetValueOrDefault(localToday.AddDays(-1));
-            if (previousTicks > 0)
-                periodChangePercent = Math.Round((double)(currentTicks - previousTicks) * 100.0 / previousTicks, 1);
+            return previousTicks > 0
+                ? Math.Round((double)(currentTicks - previousTicks) * 100.0 / previousTicks, 1)
+                : null;
         }
-        else if (period == InsightPeriod.Last7Days)
+
+        if (period == InsightPeriod.Last7Days)
         {
             long currentTicks = 0;
             for (int d = -6; d <= 0; d++)
@@ -576,11 +715,12 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
             for (int d = -13; d <= -7; d++)
                 previousTicks += dailyTicks.GetValueOrDefault(localToday.AddDays(d));
 
-            if (previousTicks > 0)
-                periodChangePercent = Math.Round((double)(currentTicks - previousTicks) * 100.0 / previousTicks, 1);
+            return previousTicks > 0
+                ? Math.Round((double)(currentTicks - previousTicks) * 100.0 / previousTicks, 1)
+                : null;
         }
 
-        return (currentStreakDays, bestStreakDays, isTodayFocused, periodChangePercent, dailyTrends, heatmapDays);
+        return null;
     }
 
     private static int ComputeBestStreakDays(Dictionary<DateTime, long> dailyTicks)
@@ -618,14 +758,16 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
 
     private static IReadOnlyList<InsightHeatmapDay> BuildHeatmapDays(
         Dictionary<DateTime, long> dailyTicks,
+        Dictionary<DateTime, HashSet<string>> dailySessionIds,
+        DailyHeatmapContext heatmapContext,
         DateTime localToday)
     {
         int todayDow = (int)localToday.DayOfWeek; // 0 = Sunday .. 6 = Saturday
         var currentWeekSunday = localToday.AddDays(-todayDow);
-        var gridStart = currentWeekSunday.AddDays(-9 * 7);
+        var gridStart = currentWeekSunday.AddDays(-(HeatmapWeeks - 1) * 7);
 
-        var days = new InsightHeatmapDay[70];
-        for (int offset = 0; offset < 70; offset++)
+        var days = new InsightHeatmapDay[HeatmapDaysCount];
+        for (int offset = 0; offset < HeatmapDaysCount; offset++)
         {
             var date = gridStart.AddDays(offset);
             bool isFuture = date > localToday;
@@ -639,12 +781,19 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
                 : duration.TotalMinutes < 120 ? 3
                 : 4;
 
+            int sessionCount = !isFuture && dailySessionIds.TryGetValue(date, out var ids) ? ids.Count : 0;
+            int blockedCount = !isFuture ? heatmapContext.DailyBlockedCounts.GetValueOrDefault(date) : 0;
+            long totalWindowTicks = !isFuture ? heatmapContext.DailyTotalWindowTicks.GetValueOrDefault(date) : 0;
+            double? workPurityPercent = !isFuture && totalWindowTicks > 0
+                ? ComputeTicksPercent(heatmapContext.DailyWorkTicks.GetValueOrDefault(date), totalWindowTicks)
+                : null;
+
             string dayLabel = KoreanDayLabels[(int)date.DayOfWeek];
             string tooltip = isFuture
                 ? string.Empty
-                : duration <= TimeSpan.Zero
-                    ? $"{date:M월 d일} ({dayLabel}) · 집중 기록 없음"
-                    : $"{date:M월 d일} ({dayLabel}) · 집중 {FocusUsageHour.FormatDuration(duration)}";
+                : duration <= TimeSpan.Zero && sessionCount == 0
+                    ? $"{date:M월 d일} ({dayLabel}) · 기록 없음"
+                    : $"{date:M월 d일} ({dayLabel}) · 집중 {FocusUsageHour.FormatDuration(duration)} · 세션 {sessionCount}회 · 차단 {blockedCount}건";
 
             days[offset] = new InsightHeatmapDay(
                 LocalDate: date,
@@ -652,7 +801,10 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
                 IntensityLevel: level,
                 IsToday: isToday,
                 IsFuture: isFuture,
-                TooltipText: tooltip);
+                TooltipText: tooltip,
+                SessionCount: sessionCount,
+                BlockedCount: blockedCount,
+                WorkPurityPercent: workPurityPercent);
         }
 
         return days;
@@ -1053,7 +1205,7 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
         int? goldenHour)
     {
         if (focusSessionCount == 0 && totalNotifications == 0)
-            return "아직 분석할 집중 세션이나 알림 기록이 없습니다.";
+            return "집중 세션·알림 기록 없음";
 
         string periodLabel = period switch
         {
@@ -1065,16 +1217,16 @@ public sealed class SqliteFocusInsightRepository : IFocusInsightRepository
         if (totalFocusDuration > TimeSpan.Zero && totalNotifications > 0)
         {
             string goldenPart = goldenHour.HasValue ? $" · 골든타임 {goldenHour.Value:00}시" : string.Empty;
-            return $"{periodLabel} {FocusUsageHour.FormatDuration(totalFocusDuration)} 집중하며 알림 {totalNotifications}건 중 {blockedCount}건을 차단했어요 ({blockRatePercent:0.#}%{goldenPart}).";
+            return $"{periodLabel} {FocusUsageHour.FormatDuration(totalFocusDuration)} 집중 · 알림 {blockedCount}/{totalNotifications}건 차단 ({blockRatePercent:0.#}%{goldenPart})";
         }
 
         if (totalFocusDuration > TimeSpan.Zero)
         {
-            string goldenPart = goldenHour.HasValue ? $" (골든타임 {goldenHour.Value:00}시)" : string.Empty;
-            return $"{periodLabel} 총 {FocusUsageHour.FormatDuration(totalFocusDuration)} 동안 방해 알림 없이 몰입했어요{goldenPart}.";
+            string goldenPart = goldenHour.HasValue ? $" · 골든타임 {goldenHour.Value:00}시" : string.Empty;
+            return $"{periodLabel} {FocusUsageHour.FormatDuration(totalFocusDuration)} 집중 · 방해 알림 없음{goldenPart}";
         }
 
-        return $"{periodLabel} 알림 {totalNotifications}건 중 {blockedCount}건을 차단하고 {passedCount}건을 통과시켰어요 ({blockRatePercent:0.#}% 차단).";
+        return $"{periodLabel} 알림 {totalNotifications}건 중 {blockedCount}건 차단 · {passedCount}건 통과 ({blockRatePercent:0.#}%)";
     }
 
     private static double ComputePercent(int numerator, int denominator)

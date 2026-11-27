@@ -22,18 +22,18 @@
                 <Setter Property="Foreground" Value="{StaticResource BlackMuted}" />
             </Style>
             <Style x:Key="InsightCard" TargetType="Border">
-                <Setter Property="Background" Value="{StaticResource BlackSurface}" />
-                <Setter Property="BorderBrush" Value="{StaticResource BlackRule}" />
+                <Setter Property="Background" Value="{StaticResource GlassPane}" />
+                <Setter Property="BorderBrush" Value="{StaticResource GlassRim}" />
                 <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="14" />
+                <Setter Property="CornerRadius" Value="20" />
                 <Setter Property="Padding" Value="18" />
                 <Setter Property="Margin" Value="0,0,0,16" />
             </Style>
             <Style x:Key="KpiCard" TargetType="Border">
-                <Setter Property="Background" Value="{StaticResource BlackSurface}" />
-                <Setter Property="BorderBrush" Value="{StaticResource BlackRule}" />
+                <Setter Property="Background" Value="{StaticResource GlassPane}" />
+                <Setter Property="BorderBrush" Value="{StaticResource GlassRim}" />
                 <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="14" />
+                <Setter Property="CornerRadius" Value="20" />
                 <Setter Property="Padding" Value="16,14" />
                 <Setter Property="Margin" Value="0,0,10,10" />
             </Style>
@@ -156,15 +156,15 @@
                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel x:Name="InsightsContent" Margin="0,2,8,16">
             <!-- Top Bar Row A: 2-way Sub-Tab Switcher + Loading Badge + 3-way Period Switcher -->
-            <Grid Margin="0,0,0,8">
+            <Grid Margin="0,0,0,14">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <WrapPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                    <Border Background="{StaticResource BlackInput}"
-                            BorderBrush="{StaticResource BlackRule}" BorderThickness="1"
-                            CornerRadius="10" Padding="3" VerticalAlignment="Center">
+                    <Border Background="{StaticResource GlassInput}"
+                            BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="1"
+                            CornerRadius="12" Padding="3" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">
                             <RadioButton x:Name="SubTabOverviewButton" GroupName="InsightSubTabGroup" Tag="Overview"
                                          Content="몰입 현황" IsChecked="True" Checked="SubTabButton_Checked"
@@ -181,15 +181,15 @@
                             Margin="10,4,0,4" VerticalAlignment="Center"
                             Visibility="Collapsed">
                         <TextBlock x:Name="PeriodLoadingText"
-                                   Text="집중 기록 불러오는 중…"
+                                   Text="불러오는 중…"
                                    Foreground="{StaticResource BlackAccentText}"
                                    FontSize="11" FontWeight="SemiBold"
                                    TextWrapping="NoWrap" />
                     </Border>
                 </WrapPanel>
-                <Border Grid.Column="1" Background="{StaticResource BlackInput}"
-                        BorderBrush="{StaticResource BlackRule}" BorderThickness="1"
-                        CornerRadius="10" Padding="3" VerticalAlignment="Center">
+                <Border Grid.Column="1" Background="{StaticResource GlassInput}"
+                        BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="1"
+                        CornerRadius="12" Padding="3" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <RadioButton x:Name="PeriodTodayButton" GroupName="InsightPeriodGroup" Tag="Today"
                                      Content="오늘" Checked="PeriodButton_Checked"
@@ -204,12 +204,6 @@
                 </Border>
             </Grid>
 
-            <!-- Top Bar Row B: Period Subtitle -->
-            <TextBlock x:Name="SectionSubtitleText"
-                       Text="집중 패턴 · 방해 차단 · Gemma AI 코칭"
-                       Style="{StaticResource Muted}" FontSize="12"
-                       Margin="0,0,0,14" />
-
             <!-- Empty State Card (shown only when !snapshot.HasData) -->
             <Border x:Name="EmptyStateCard" Style="{StaticResource InsightCard}" Padding="28,32" Visibility="Collapsed">
                 <StackPanel HorizontalAlignment="Center" MaxWidth="440">
@@ -220,242 +214,104 @@
                                    Foreground="{StaticResource BlackAccentText}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
-                    <TextBlock x:Name="EmptyStateTitleText" Text="아직 쌓인 집중 기록이 없어요"
+                    <TextBlock x:Name="EmptyStateTitleText" Text="집중 기록 없음"
                                FontSize="17" FontWeight="SemiBold" TextAlignment="Center" />
                     <TextBlock x:Name="EmptyStateBodyText"
-                               Text="집중 모드를 한 번 마치면 나만의 몰입·방해 인사이트가 자동으로 분석됩니다."
+                               Text="집중 세션 완료 후 데이터가 표시됩니다."
                                Style="{StaticResource Muted}" FontSize="13" TextAlignment="Center"
                                Margin="0,8,0,0" LineHeight="20" />
                 </StackPanel>
             </Border>
 
-            <!-- Sub-Tab 1: 몰입 현황 -->
+            <!-- Sub-Tab 1: 몰입 현황 (Asymmetric Bento Grid) -->
             <StackPanel x:Name="OverviewSubTabPanel" Visibility="Visible">
-                <!-- Row 1: 4 KPI Cards (pure numbers & short labels, NO prose) -->
-                <UniformGrid x:Name="KpiRow" Columns="4" Margin="0,0,-10,6">
-                    <Border Style="{StaticResource KpiCard}">
-                        <StackPanel>
-                            <TextBlock Text="총 집중 시간" Style="{StaticResource Muted}" FontSize="12" />
-                            <TextBlock x:Name="KpiTotalFocusText" Text="0분" FontSize="22" FontWeight="SemiBold"
-                                       Margin="0,8,0,4" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                            <TextBlock x:Name="KpiSessionCountText" Text="세션 0회" Style="{StaticResource Muted}" FontSize="11" />
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource KpiCard}">
-                        <StackPanel>
-                            <TextBlock Text="방해 차단율" Style="{StaticResource Muted}" FontSize="12" />
-                            <TextBlock x:Name="KpiBlockRateText" Text="0%" FontSize="22" FontWeight="SemiBold"
-                                       Foreground="{StaticResource BlackAction}"
-                                       Margin="0,8,0,4" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                            <TextBlock x:Name="KpiBlockRateSubText" Text="차단 0 / 전체 0건" Style="{StaticResource Muted}" FontSize="11" />
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource KpiCard}">
-                        <StackPanel>
-                            <TextBlock Text="긴급 통과" Style="{StaticResource Muted}" FontSize="12" />
-                            <TextBlock x:Name="KpiUrgentPassedText" Text="0건" FontSize="22" FontWeight="SemiBold"
-                                       Foreground="{StaticResource BlackError}"
-                                       Margin="0,8,0,4" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Text="긴급도 4 이상" Style="{StaticResource Muted}" FontSize="11" />
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource KpiCard}">
-                        <StackPanel>
-                            <TextBlock Text="작업 관련 통과" Style="{StaticResource Muted}" FontSize="12" />
-                            <TextBlock x:Name="KpiRelevancePassedText" Text="0건" FontSize="22" FontWeight="SemiBold"
-                                       Foreground="{StaticResource BlackSuccess}"
-                                       Margin="0,8,0,4" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Text="관련도 3" Style="{StaticResource Muted}" FontSize="11" />
-                        </StackPanel>
-                    </Border>
-                </UniformGrid>
-
-                <!-- Row 2: Gemma AI 집중 코칭 Card (sole prose/advice area) -->
-                <Border x:Name="CoachingCard" Style="{StaticResource InsightCard}">
-                    <StackPanel>
-                        <Grid Margin="0,0,0,14">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <WrapPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                                <TextBlock Text="AI 집중 코칭" FontSize="15" FontWeight="SemiBold"
-                                           VerticalAlignment="Center" Margin="0,0,10,0" />
-                                <Border x:Name="CoachingStatusBadge" Background="{StaticResource BlackInput}"
-                                        BorderBrush="{StaticResource BlackRule}" BorderThickness="1"
-                                        CornerRadius="6" Padding="8,3" VerticalAlignment="Center">
-                                    <TextBlock x:Name="CoachingStatusBadgeText" Text="규칙 요약"
-                                               Foreground="{StaticResource BlackMuted}" FontSize="11" FontWeight="SemiBold" />
-                                </Border>
-                            </WrapPanel>
-                            <Button x:Name="GenerateCoachingButton" Grid.Column="1" Content="AI 코칭 분석"
-                                    Style="{StaticResource ActionButton}" Click="GenerateCoachingButton_Click"
-                                    ToolTipService.ShowOnDisabled="True"
-                                    AutomationProperties.Name="AI 코칭 분석" />
-                        </Grid>
-
-                        <Border x:Name="CoachingLoadingBanner"
-                                Background="{StaticResource BlackSelection}"
-                                BorderBrush="{StaticResource BlackSelectionRule}"
-                                BorderThickness="1" CornerRadius="8"
-                                Padding="12,8" Margin="0,0,0,12"
-                                Visibility="Collapsed">
-                            <TextBlock x:Name="CoachingLoadingText"
-                                       Text="로컬 Gemma AI가 집중 패턴을 분석하고 있어요…"
-                                       Foreground="{StaticResource BlackAccentText}"
-                                       FontSize="12" FontWeight="Medium" />
-                        </Border>
-
-                        <TextBlock x:Name="CoachingHeadlineText" FontSize="15" FontWeight="SemiBold"
-                                   LineHeight="22" Margin="0,0,0,10" />
-
-                        <ItemsControl x:Name="CoachingFindingsItems" Margin="0,0,0,12">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,3">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="14" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="•" Foreground="{StaticResource BlackAccentText}" FontSize="13" />
-                                        <TextBlock Grid.Column="1" Text="{Binding}" Foreground="{StaticResource BlackSoft}"
-                                                   FontSize="13" LineHeight="20" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <Border x:Name="CoachingActionTipBox" Background="{StaticResource BlackSuccessSurface}"
-                                BorderBrush="{StaticResource BlackSuccessRule}" BorderThickness="1"
-                                CornerRadius="10" Padding="14,10">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="실천 팁" Foreground="{StaticResource BlackSuccess}" FontSize="12"
-                                           FontWeight="SemiBold" Margin="0,1,10,0" VerticalAlignment="Top" />
-                                <TextBlock x:Name="CoachingActionTipText" Grid.Column="1"
-                                           Foreground="{StaticResource BlackText}" FontSize="13" LineHeight="20" />
-                            </Grid>
-                        </Border>
-
-                        <TextBlock x:Name="CoachingErrorText" Foreground="{StaticResource BlackError}"
-                                   FontSize="12" Margin="0,10,0,0" Visibility="Collapsed"
-                                   AutomationProperties.LiveSetting="Polite" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Row 3: 2-Column Quality & 7-Day Trend/Streak Row -->
-                <Grid x:Name="QualityTrendRow">
+                <!-- Row 1: 2.8 : 7.2 Bento Hero (Streak Tile + 20-Week Grass Heatmap Tile) -->
+                <Grid x:Name="HeroBentoRow">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="2.8*" />
                         <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="7.2*" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <!-- Left Card: Focus Quality & Defense Effect -->
-                    <Border x:Name="QualityCard" Grid.Column="0" Grid.Row="0" Style="{StaticResource InsightCard}" Margin="0">
-                        <StackPanel>
-                            <TextBlock Text="몰입 품질 · 방어 효과" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,14" />
+                    <!-- Left Bento Tile: Giant Streak Typographic Anchor -->
+                    <Border x:Name="StreakTileCard" Grid.Column="0" Grid.Row="0" Style="{StaticResource InsightCard}" Margin="0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                            <TextBlock Text="몰입 유지율" Style="{StaticResource Muted}" FontSize="12" />
-                            <TextBlock x:Name="FlowProtectionRateText" Text="-" FontSize="26" FontWeight="SemiBold"
-                                       Foreground="{StaticResource BlackAction}"
-                                       Margin="0,4,0,2" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                            <TextBlock x:Name="FlowProtectionSubText" Text="차단 알림 매칭 기록 없음"
-                                       Style="{StaticResource Muted}" FontSize="11" />
-
-                            <Border Height="1" Background="{StaticResource BlackRule}" Margin="0,14" />
-
-                            <TextBlock Text="작업 순도" Style="{StaticResource Muted}" FontSize="12" Margin="0,0,0,8" />
-                            <Border Height="8" CornerRadius="4" Background="{StaticResource BlackRule}"
-                                    ClipToBounds="True" Margin="0,0,0,8">
-                                <Grid x:Name="WorkPurityBarGrid">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="0" />
-                                        <ColumnDefinition Width="0" />
-                                        <ColumnDefinition Width="0" />
-                                    </Grid.ColumnDefinitions>
-                                    <Border Grid.Column="0" Background="{StaticResource BlackAction}" />
-                                    <Border Grid.Column="1" Background="{StaticResource BlackMuted}" />
-                                    <Border Grid.Column="2" Background="{StaticResource BlackError}" />
-                                </Grid>
-                            </Border>
-                            <TextBlock x:Name="WorkPurityLegendText" Text="순수 작업 0% · 메신저·웹 0% · 비작업 0%"
-                                       Style="{StaticResource Muted}" FontSize="11" />
-
-                            <Border x:Name="SelfDistractionCallout" Background="{StaticResource BlackInput}"
-                                    BorderBrush="{StaticResource BlackRule}" BorderThickness="1"
-                                    CornerRadius="8" Padding="10,7" Margin="0,10,0,0" Visibility="Collapsed">
-                                <TextBlock x:Name="SelfDistractionText" Foreground="{StaticResource BlackSoft}"
-                                           FontSize="12" FontWeight="Medium" />
-                            </Border>
-
-                            <TextBlock x:Name="DeepFocusSummaryText" Text="깊은 몰입(25분+) 0회 · 평균 세션 0분"
-                                       Style="{StaticResource Muted}" FontSize="11" Margin="0,12,0,0" />
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Right Card: GitHub Grass Heatmap & Duolingo Streak -->
-                    <Border x:Name="TrendCard" Grid.Column="2" Grid.Row="0" Style="{StaticResource InsightCard}" Margin="0">
-                        <StackPanel>
-                            <Grid Margin="0,0,0,12">
+                            <Grid Grid.Row="0">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="연속 집중 · 잔디밭" FontSize="15" FontWeight="SemiBold"
+                                <TextBlock Text="연속 집중" Style="{StaticResource Muted}" FontSize="12"
                                            VerticalAlignment="Center" Margin="0,0,8,0" />
-                                <WrapPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                    <Border x:Name="BestStreakBadge" Background="{StaticResource BlackInput}"
-                                            BorderBrush="{StaticResource BlackRule}" BorderThickness="1"
-                                            CornerRadius="7" Padding="8,3" Margin="6,2,0,2" Visibility="Collapsed">
-                                        <TextBlock x:Name="BestStreakBadgeText" Foreground="{StaticResource BlackSoft}"
-                                                   FontSize="11" FontWeight="SemiBold" TextWrapping="NoWrap" />
-                                    </Border>
-                                    <Border x:Name="PeriodChangeBadge" Background="{StaticResource BlackSelection}"
-                                            BorderBrush="{StaticResource BlackSelectionRule}" BorderThickness="1"
-                                            CornerRadius="7" Padding="8,3" Margin="6,2,0,2" Visibility="Collapsed">
-                                        <TextBlock x:Name="PeriodChangeBadgeText" Foreground="{StaticResource BlackAccentText}"
-                                                   FontSize="11" FontWeight="SemiBold" TextWrapping="NoWrap" />
-                                    </Border>
-                                </WrapPanel>
+                                <Border x:Name="PeriodChangeBadge" Grid.Column="1"
+                                        Background="{StaticResource BlackSelection}"
+                                        BorderBrush="{StaticResource BlackSelectionRule}" BorderThickness="1"
+                                        CornerRadius="6" Padding="7,2.5" VerticalAlignment="Center" Visibility="Collapsed">
+                                    <TextBlock x:Name="PeriodChangeBadgeText" Foreground="{StaticResource BlackAccentText}"
+                                               FontSize="11" FontWeight="SemiBold" TextWrapping="NoWrap" />
+                                </Border>
                             </Grid>
 
-                            <Border x:Name="StreakHeroBox" Background="{StaticResource BlackInput}"
-                                    BorderBrush="{StaticResource BlackRule}" BorderThickness="1"
-                                    CornerRadius="10" Padding="12,10" Margin="0,0,0,14">
+                            <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="0,12">
+                                <TextBlock x:Name="StreakHeroTitleText" Text="0일"
+                                           FontSize="36" FontWeight="Bold" TextWrapping="NoWrap" />
+                                <TextBlock x:Name="StreakStateSubtitleText" Text="연속 기록 없음"
+                                           Foreground="{StaticResource BlackSoft}"
+                                           FontSize="13" FontWeight="SemiBold" Margin="0,4,0,0" />
+                            </StackPanel>
+
+                            <Border Grid.Row="2" BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="0,1,0,0"
+                                    Padding="0,10,0,0">
                                 <StackPanel>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="StreakHeroTitleText" Text="🌱 연속 집중을 시작해 보세요"
-                                                   FontSize="15" FontWeight="SemiBold"
-                                                   VerticalAlignment="Center" Margin="0,0,8,0" />
-                                        <Border x:Name="StreakBadge" Grid.Column="1"
-                                                Background="{StaticResource BlackSuccessSurface}"
-                                                BorderBrush="{StaticResource BlackSuccessRule}" BorderThickness="1"
-                                                CornerRadius="7" Padding="8,3" VerticalAlignment="Center"
-                                                Visibility="Collapsed">
-                                            <TextBlock x:Name="StreakBadgeText" Foreground="{StaticResource BlackSuccess}"
-                                                       FontSize="11" FontWeight="SemiBold" TextWrapping="NoWrap" />
-                                        </Border>
-                                    </Grid>
-                                    <TextBlock x:Name="StreakMotivationText"
-                                               Text="집중 세션을 마치면 오늘 칸에 첫 잔디가 채워져요."
-                                               Foreground="{StaticResource BlackSoft}"
-                                               FontSize="12" Margin="0,4,0,0" LineHeight="18" />
+                                    <TextBlock x:Name="StreakMotivationText" Text="오늘 첫 집중 대기"
+                                               Foreground="{StaticResource BlackSoft}" FontSize="12" />
+                                    <Border x:Name="BestStreakBadge" Background="Transparent"
+                                            BorderThickness="0" Padding="0" Margin="0,4,0,0" Visibility="Collapsed">
+                                        <TextBlock x:Name="BestStreakBadgeText" Foreground="{StaticResource BlackMuted}"
+                                                   FontSize="11" TextWrapping="NoWrap" />
+                                    </Border>
                                 </StackPanel>
                             </Border>
+                        </Grid>
+                    </Border>
 
-                            <Grid x:Name="StreakHeatmapGrid" AutomationProperties.Name="최근 10주 집중 잔디밭" SizeChanged="StreakHeatmapGrid_SizeChanged">
+                    <!-- Right Bento Tile: Full 20-Week Grass Heatmap -->
+                    <Border x:Name="HeatmapTileCard" Grid.Column="2" Grid.Row="0" Style="{StaticResource InsightCard}" Margin="0">
+                        <StackPanel>
+                            <!-- Month Labels aligned to 20 week columns -->
+                            <Grid Margin="0,0,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="22" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ItemsControl x:Name="HeatmapMonthItems" Grid.Column="1" HorizontalAlignment="Left">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Rows="1" Columns="20" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" Style="{StaticResource Muted}"
+                                                       FontSize="11" FontWeight="Medium" TextWrapping="NoWrap"
+                                                       Margin="2,0,0,0" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+
+                            <!-- Weekday labels + 7x20 grass grid -->
+                            <Grid x:Name="StreakHeatmapGrid" AutomationProperties.Name="최근 20주 집중 잔디밭" SizeChanged="StreakHeatmapGrid_SizeChanged">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="22" />
                                     <ColumnDefinition Width="*" />
@@ -472,49 +328,84 @@
                                 <ItemsControl x:Name="StreakHeatmapItems" Grid.Column="1" HorizontalAlignment="Left">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
-                                            <UniformGrid Rows="7" Columns="10" />
+                                            <UniformGrid Rows="7" Columns="20" />
                                         </ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border Height="{DynamicResource HeatmapCellHeight}" Margin="2" CornerRadius="3.5"
                                                     ToolTipService.InitialShowDelay="0"
+                                                    ToolTipService.ShowDuration="15000"
+                                                    ToolTipService.Placement="Right"
+                                                    ToolTipService.HorizontalOffset="8"
+                                                    ToolTipService.VerticalOffset="-4"
                                                     IsHitTestVisible="{Binding IsInteractive}"
                                                     Focusable="{Binding IsInteractive}"
                                                     AutomationProperties.Name="{Binding TooltipText}">
                                                 <Border.ToolTip>
-                                                    <ToolTip Background="{StaticResource BlackRaised}"
-                                                             Foreground="{StaticResource BlackText}"
-                                                             BorderBrush="{StaticResource BlackRule}"
-                                                             Padding="10,6"
+                                                    <ToolTip Background="Transparent" BorderThickness="0" Padding="0" HasDropShadow="True"
                                                              FontFamily="{x:Static services:AppTypography.BodyFont}">
-                                                        <TextBlock Text="{Binding TooltipText}" />
+                                                        <Border Background="{StaticResource BlackRaised}"
+                                                                BorderBrush="{StaticResource BlackControlRule}"
+                                                                BorderThickness="1" CornerRadius="10"
+                                                                Padding="12,10" MinWidth="176">
+                                                            <StackPanel>
+                                                                <Grid Margin="0,0,0,6">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding DateHeaderText}" FontSize="12" FontWeight="SemiBold"
+                                                                               Foreground="{StaticResource BlackText}" TextWrapping="NoWrap" Margin="0,0,10,0" />
+                                                                    <TextBlock Grid.Column="1" Text="{Binding LevelLabelText}" FontSize="11" FontWeight="SemiBold"
+                                                                               Foreground="{StaticResource BlackSuccess}" TextWrapping="NoWrap" />
+                                                                </Grid>
+                                                                <Border Height="1" Background="{StaticResource BlackRule}" Margin="0,0,0,7" />
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                        <ColumnDefinition Width="*" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <Grid.RowDefinitions>
+                                                                        <RowDefinition Height="Auto" />
+                                                                        <RowDefinition Height="Auto" />
+                                                                        <RowDefinition Height="Auto" />
+                                                                        <RowDefinition Height="Auto" />
+                                                                    </Grid.RowDefinitions>
+                                                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="집중 시간" Foreground="{StaticResource BlackMuted}" FontSize="11" Margin="0,0,14,3" />
+                                                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding FocusDurationText}" Foreground="{StaticResource BlackText}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Right" TextWrapping="NoWrap" Margin="0,0,0,3" />
+                                                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="세션 수" Foreground="{StaticResource BlackMuted}" FontSize="11" Margin="0,0,14,3" />
+                                                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SessionCountText}" Foreground="{StaticResource BlackText}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Right" TextWrapping="NoWrap" Margin="0,0,0,3" />
+                                                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="차단 알림" Foreground="{StaticResource BlackMuted}" FontSize="11" Margin="0,0,14,3" />
+                                                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding BlockedCountText}" Foreground="{StaticResource BlackText}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Right" TextWrapping="NoWrap" Margin="0,0,0,3" />
+                                                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="작업 순도" Foreground="{StaticResource BlackMuted}" FontSize="11" Margin="0,0,14,0" />
+                                                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding WorkPurityText}" Foreground="{StaticResource BlackSuccess}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Right" TextWrapping="NoWrap" />
+                                                                </Grid>
+                                                            </StackPanel>
+                                                        </Border>
                                                     </ToolTip>
                                                 </Border.ToolTip>
                                                 <Border.Style>
                                                     <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="{StaticResource BlackInput}" />
-                                                        <Setter Property="BorderBrush" Value="{StaticResource BlackRule}" />
+                                                        <Setter Property="Background" Value="{StaticResource GlassInput}" />
+                                                        <Setter Property="BorderBrush" Value="{StaticResource GlassPaneRule}" />
                                                         <Setter Property="BorderThickness" Value="1" />
                                                         <Setter Property="Opacity" Value="1" />
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IntensityLevel}" Value="1">
-                                                                <Setter Property="Background" Value="{StaticResource BlackSuccessSurface}" />
-                                                                <Setter Property="BorderBrush" Value="{StaticResource BlackSuccessRule}" />
-                                                                <Setter Property="BorderThickness" Value="0.5" />
+                                                                <Setter Property="Background" Value="{StaticResource BlackHeatmap1}" />
+                                                                <Setter Property="BorderThickness" Value="0" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IntensityLevel}" Value="2">
-                                                                <Setter Property="Background" Value="{StaticResource BlackSuccessRule}" />
+                                                                <Setter Property="Background" Value="{StaticResource BlackHeatmap2}" />
                                                                 <Setter Property="BorderThickness" Value="0" />
-                                                                <Setter Property="Opacity" Value="0.55" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IntensityLevel}" Value="3">
-                                                                <Setter Property="Background" Value="{StaticResource BlackSuccessRule}" />
+                                                                <Setter Property="Background" Value="{StaticResource BlackHeatmap3}" />
                                                                 <Setter Property="BorderThickness" Value="0" />
-                                                                <Setter Property="Opacity" Value="0.9" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IntensityLevel}" Value="4">
-                                                                <Setter Property="Background" Value="{StaticResource BlackSuccess}" />
+                                                                <Setter Property="Background" Value="{StaticResource BlackHeatmap4}" />
                                                                 <Setter Property="BorderThickness" Value="0" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsToday}" Value="True">
@@ -533,25 +424,253 @@
                                 </ItemsControl>
                             </Grid>
 
-                            <DockPanel Margin="0,10,0,0">
+                            <DockPanel Margin="0,12,0,0">
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                     <TextBlock Text="적음" Style="{StaticResource Muted}" FontSize="10" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                    <Border Width="10" Height="10" CornerRadius="2" Background="{StaticResource BlackInput}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" Margin="1.5,0" />
-                                    <Border Width="10" Height="10" CornerRadius="2" Background="{StaticResource BlackSuccessSurface}" BorderBrush="{StaticResource BlackSuccessRule}" BorderThickness="0.5" Margin="1.5,0" />
-                                    <Border Width="10" Height="10" CornerRadius="2" Background="{StaticResource BlackSuccessRule}" Opacity="0.55" Margin="1.5,0" />
-                                    <Border Width="10" Height="10" CornerRadius="2" Background="{StaticResource BlackSuccessRule}" Opacity="0.9" Margin="1.5,0" />
-                                    <Border Width="10" Height="10" CornerRadius="2" Background="{StaticResource BlackSuccess}" Margin="1.5,0" />
+                                    <Border Width="11" Height="11" CornerRadius="2.5" Background="{StaticResource GlassInput}" BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="1" Margin="1.5,0" />
+                                    <Border Width="11" Height="11" CornerRadius="2.5" Background="{StaticResource BlackHeatmap1}" Margin="1.5,0" />
+                                    <Border Width="11" Height="11" CornerRadius="2.5" Background="{StaticResource BlackHeatmap2}" Margin="1.5,0" />
+                                    <Border Width="11" Height="11" CornerRadius="2.5" Background="{StaticResource BlackHeatmap3}" Margin="1.5,0" />
+                                    <Border Width="11" Height="11" CornerRadius="2.5" Background="{StaticResource BlackHeatmap4}" Margin="1.5,0" />
                                     <TextBlock Text="많음" Style="{StaticResource Muted}" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center" />
                                 </StackPanel>
-                                <TextBlock Text="최근 10주" Style="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" />
+                                <TextBlock Text="최근 20주" Style="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" />
                             </DockPanel>
                         </StackPanel>
                     </Border>
                 </Grid>
+
+                <!-- Row 2: Borderless Flat Metric Strip (4 inline cells separated by 1px hairline rules) -->
+                <Border x:Name="KpiStrip" Background="Transparent" BorderBrush="{StaticResource GlassPaneRule}"
+                        BorderThickness="0,1,0,1" Padding="0,14" Margin="0,18,0,18">
+                    <UniformGrid x:Name="KpiRow" Columns="4">
+                        <Border x:Name="KpiCell0" Padding="0,2,12,2" BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="0">
+                            <StackPanel>
+                                <TextBlock Text="총 집중 시간" Style="{StaticResource Muted}" FontSize="12" />
+                                <TextBlock x:Name="KpiTotalFocusText" Text="0분" FontSize="24" FontWeight="Bold"
+                                           Margin="0,6,0,3" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="KpiSessionCountText" Text="세션 0회" Style="{StaticResource Muted}" FontSize="11" />
+                            </StackPanel>
+                        </Border>
+                        <Border x:Name="KpiCell1" Padding="16,2,12,2" BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="1,0,0,0">
+                            <StackPanel>
+                                <TextBlock Text="방해 차단율" Style="{StaticResource Muted}" FontSize="12" />
+                                <TextBlock x:Name="KpiBlockRateText" Text="0%" FontSize="24" FontWeight="Bold"
+                                           Foreground="{StaticResource BlackAction}"
+                                           Margin="0,6,0,3" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="KpiBlockRateSubText" Text="차단 0 / 전체 0건" Style="{StaticResource Muted}" FontSize="11" />
+                            </StackPanel>
+                        </Border>
+                        <Border x:Name="KpiCell2" Padding="16,2,12,2" BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="1,0,0,0">
+                            <StackPanel>
+                                <TextBlock Text="몰입 유지율" Style="{StaticResource Muted}" FontSize="12" />
+                                <TextBlock x:Name="FlowProtectionRateText" Text="-" FontSize="24" FontWeight="Bold"
+                                           Foreground="{StaticResource BlackAction}"
+                                           Margin="0,6,0,3" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="FlowProtectionSubText" Text="매칭 기록 없음" Style="{StaticResource Muted}" FontSize="11" />
+                            </StackPanel>
+                        </Border>
+                        <Border x:Name="KpiCell3" Padding="16,2,0,2" BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="1,0,0,0">
+                            <StackPanel>
+                                <TextBlock Text="선별 통과" Style="{StaticResource Muted}" FontSize="12" />
+                                <TextBlock x:Name="KpiPassedTotalText" Text="0건" FontSize="24" FontWeight="Bold"
+                                           Foreground="{StaticResource BlackSuccess}"
+                                           Margin="0,6,0,3" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="KpiPassedSplitText" Text="긴급 0 · 관련 0" Style="{StaticResource Muted}" FontSize="11" />
+                            </StackPanel>
+                        </Border>
+                    </UniformGrid>
+                </Border>
+
+                <!-- Row 3: Full-Width AI Coaching Card -->
+                <Border x:Name="CoachingCard" Style="{StaticResource InsightCard}" Margin="0">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <WrapPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                <TextBlock Text="AI 집중 코칭" FontSize="15" FontWeight="SemiBold"
+                                           VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <TextBlock x:Name="CoachingStatusBadgeText" Text="규칙 요약"
+                                           Foreground="{StaticResource BlackMuted}" FontSize="11" FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                            </WrapPanel>
+                            <Button x:Name="GenerateCoachingButton" Grid.Column="1" Content="AI 코칭 분석"
+                                    Style="{StaticResource ActionButton}" Click="GenerateCoachingButton_Click"
+                                    ToolTipService.ShowOnDisabled="True"
+                                    AutomationProperties.Name="AI 코칭 분석" />
+                        </Grid>
+
+                        <Border x:Name="CoachingLoadingBanner"
+                                Background="{StaticResource BlackSelection}"
+                                BorderBrush="{StaticResource BlackSelectionRule}"
+                                BorderThickness="1" CornerRadius="8"
+                                Padding="12,8" Margin="0,0,0,12"
+                                Visibility="Collapsed">
+                            <TextBlock x:Name="CoachingLoadingText"
+                                       Text="AI 분석 중…"
+                                       Foreground="{StaticResource BlackAccentText}"
+                                       FontSize="12" FontWeight="Medium" />
+                        </Border>
+
+                        <TextBlock x:Name="CoachingHeadlineText" FontSize="15" FontWeight="SemiBold"
+                                   LineHeight="22" Margin="0,0,0,10" />
+
+                        <ItemsControl x:Name="CoachingFindingsItems" Margin="0,0,0,4">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,3">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="14" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="•" Foreground="{StaticResource BlackAccentText}" FontSize="13" />
+                                        <TextBlock Grid.Column="1" Text="{Binding}" Foreground="{StaticResource BlackSoft}"
+                                                   FontSize="13" LineHeight="20" TextWrapping="Wrap" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Border x:Name="CoachingActionTipBox" Background="Transparent"
+                                BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="0,1,0,0"
+                                Padding="0,12,0,0" Margin="0,12,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="실천 팁" Foreground="{StaticResource BlackSuccess}" FontSize="12"
+                                           FontWeight="SemiBold" Margin="0,1,10,0" VerticalAlignment="Top" />
+                                <TextBlock x:Name="CoachingActionTipText" Grid.Column="1"
+                                           Foreground="{StaticResource BlackText}" FontSize="13" LineHeight="20" />
+                            </Grid>
+                        </Border>
+
+                        <TextBlock x:Name="CoachingErrorText" Foreground="{StaticResource BlackError}"
+                                   FontSize="12" Margin="0,10,0,0" Visibility="Collapsed"
+                                   AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <!-- Sub-Tab 2: 방해 · 맥락 -->
             <StackPanel x:Name="DistractionSubTabPanel" Visibility="Collapsed">
+                <!-- Row 1: Full-Width Work Purity Donut Ring + Self-Distraction Trend -->
+                <Border x:Name="QualityCard" Style="{StaticResource InsightCard}">
+                    <StackPanel>
+                        <TextBlock Text="집중 이탈 · 작업 순도" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,14" />
+                        <Grid x:Name="QualityInnerGrid">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="5.5*" />
+                                <ColumnDefinition Width="20" />
+                                <ColumnDefinition Width="4.5*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Left: Donut Ring + Vertical Legend -->
+                            <Grid x:Name="WorkPurityDonutGrid" Grid.Column="0" Grid.Row="0" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Grid Width="96" Height="96">
+                                    <Ellipse Width="96" Height="96" Stroke="{StaticResource BlackRule}" StrokeThickness="10" />
+                                    <Path x:Name="WorkPurityArcPath" Stroke="{StaticResource BlackAction}" StrokeThickness="10" />
+                                    <Path x:Name="NeutralPurityArcPath" Stroke="{StaticResource BlackMuted}" StrokeThickness="10" />
+                                    <Path x:Name="LeisurePurityArcPath" Stroke="{StaticResource BlackError}" StrokeThickness="10" />
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <TextBlock x:Name="WorkPurityCenterText" Text="-" FontSize="19" FontWeight="Bold"
+                                                   HorizontalAlignment="Center" TextWrapping="NoWrap" />
+                                        <TextBlock Text="순수 작업" FontSize="10" Foreground="{StaticResource BlackMuted}"
+                                                   HorizontalAlignment="Center" TextWrapping="NoWrap" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0,0,0">
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse Width="8" Height="8" Fill="{StaticResource BlackAction}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock Grid.Column="1" Text="순수 작업" Style="{StaticResource Muted}" FontSize="12" TextWrapping="NoWrap" />
+                                        <TextBlock x:Name="WorkPurityPercentText" Grid.Column="2" Text="0%" FontSize="12" FontWeight="SemiBold"
+                                                   TextWrapping="NoWrap" Margin="12,0,0,0" />
+                                    </Grid>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse Width="8" Height="8" Fill="{StaticResource BlackMuted}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock Grid.Column="1" Text="메신저·웹" Style="{StaticResource Muted}" FontSize="12" TextWrapping="NoWrap" />
+                                        <TextBlock x:Name="NeutralPurityPercentText" Grid.Column="2" Text="0%" FontSize="12" FontWeight="SemiBold"
+                                                   TextWrapping="NoWrap" Margin="12,0,0,0" />
+                                    </Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse Width="8" Height="8" Fill="{StaticResource BlackError}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock Grid.Column="1" Text="비작업" Style="{StaticResource Muted}" FontSize="12" TextWrapping="NoWrap" />
+                                        <TextBlock x:Name="LeisurePurityPercentText" Grid.Column="2" Text="0%" FontSize="12" FontWeight="SemiBold"
+                                                   TextWrapping="NoWrap" Margin="12,0,0,0" />
+                                    </Grid>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Right: Deep Focus Summary + Clean 2-Line Self-Distraction Callout -->
+                            <Border x:Name="QualityRightColumn" Grid.Column="2" Grid.Row="0"
+                                    BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="1,0,0,0"
+                                    Padding="20,4,0,4" VerticalAlignment="Center">
+                                <StackPanel>
+                                    <TextBlock Text="몰입 밀도" Style="{StaticResource Muted}" FontSize="11" Margin="0,0,0,4" />
+                                    <TextBlock x:Name="DeepFocusSummaryText"
+                                               Text="깊은 몰입(25분+) 0회 · 평균 0분"
+                                               Foreground="{StaticResource BlackSoft}" FontSize="13" FontWeight="Medium" />
+
+                                    <Border x:Name="SelfDistractionCallout" Background="Transparent"
+                                            BorderBrush="{StaticResource GlassPaneRule}" BorderThickness="0,1,0,0"
+                                            Padding="0,12,0,0" Margin="0,12,0,0" Visibility="Collapsed">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="직접 확인 최다" Style="{StaticResource Muted}" FontSize="11"
+                                                           VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <Border x:Name="SelfDistractionChangeBadge" Grid.Column="1"
+                                                        Background="{StaticResource BlackSuccessSurface}"
+                                                        BorderBrush="{StaticResource BlackSuccessRule}" BorderThickness="1"
+                                                        CornerRadius="6" Padding="7,2.5" VerticalAlignment="Center"
+                                                        Visibility="Collapsed">
+                                                    <TextBlock x:Name="SelfDistractionChangeBadgeText"
+                                                               Foreground="{StaticResource BlackSuccess}"
+                                                               FontSize="11" FontWeight="SemiBold" TextWrapping="NoWrap" />
+                                                </Border>
+                                            </Grid>
+                                            <TextBlock x:Name="SelfDistractionText" Foreground="{StaticResource BlackText}"
+                                                       FontSize="15" FontWeight="SemiBold" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
                 <!-- 24-Hour Focus vs Notification Distribution Card -->
                 <Border x:Name="HourlyChartCard" Style="{StaticResource InsightCard}">
                     <StackPanel>
@@ -684,7 +803,7 @@
                     <Border x:Name="TopDistractorsCard" Grid.Column="0" Grid.Row="0" Style="{StaticResource InsightCard}" Margin="0,0,0,0">
                         <StackPanel>
                             <TextBlock Text="주요 방해원 TOP 5" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,14" />
-                            <TextBlock x:Name="TopDistractorsEmptyText" Text="방해 알림 기록이 없어요"
+                            <TextBlock x:Name="TopDistractorsEmptyText" Text="방해 알림 기록 없음"
                                        Style="{StaticResource Muted}" FontSize="13" Margin="0,8" Visibility="Collapsed" />
                             <ItemsControl x:Name="TopDistractorsItems">
                                 <ItemsControl.ItemTemplate>
@@ -726,7 +845,7 @@
                     <Border x:Name="TopWorkContextsCard" Grid.Column="2" Grid.Row="0" Style="{StaticResource InsightCard}" Margin="0,0,0,0">
                         <StackPanel>
                             <TextBlock Text="작업 맥락별 보호 현황 TOP 5" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,14" />
-                            <TextBlock x:Name="TopWorkContextsEmptyText" Text="작업 중 수신된 알림이 없어요"
+                            <TextBlock x:Name="TopWorkContextsEmptyText" Text="작업 중 알림 기록 없음"
                                        Style="{StaticResource Muted}" FontSize="13" Margin="0,8" Visibility="Collapsed" />
                             <ItemsControl x:Name="TopWorkContextsItems">
                                 <ItemsControl.ItemTemplate>

@@ -89,10 +89,13 @@ public sealed class FocusInsightRepositoryTests
             Assert.AreEqual(0, q.BestStreakDays);
             Assert.IsFalse(q.IsTodayFocused);
             Assert.IsNull(q.PeriodChangePercent);
+            Assert.IsNull(q.SelfDistractionChangePercent);
             Assert.IsNotNull(q.HeatmapDays);
-            Assert.AreEqual(70, q.HeatmapDays!.Count);
+            Assert.AreEqual(140, q.HeatmapDays!.Count);
             Assert.AreEqual(1, q.HeatmapDays.Count(h => h.IsToday));
-            Assert.IsTrue(q.HeatmapDays.All(h => h.IntensityLevel == 0 && h.FocusDuration == TimeSpan.Zero));
+            Assert.IsTrue(q.HeatmapDays.All(h =>
+                h.IntensityLevel == 0 && h.FocusDuration == TimeSpan.Zero &&
+                h.SessionCount == 0 && h.BlockedCount == 0 && h.WorkPurityPercent is null));
             Assert.AreEqual(7, q.DailyTrends.Count);
             Assert.IsTrue(q.DailyTrends.All(d =>
                 d.FocusDuration == TimeSpan.Zero
@@ -639,7 +642,7 @@ public sealed class FocusInsightRepositoryTests
         Assert.AreEqual(4, qBefore.BestStreakDays);
         Assert.IsFalse(qBefore.IsTodayFocused);
         Assert.IsNotNull(qBefore.HeatmapDays);
-        Assert.AreEqual(70, qBefore.HeatmapDays!.Count);
+        Assert.AreEqual(140, qBefore.HeatmapDays!.Count);
 
         // 시간 순 오름차순 + 오늘 이후(금·토, TodayLocal=2026-11-26 목) 미래 셀 확인
         for (int i = 1; i < qBefore.HeatmapDays.Count; i++)
@@ -647,7 +650,9 @@ public sealed class FocusInsightRepositoryTests
 
         var futureCells = qBefore.HeatmapDays.Where(d => d.LocalDate > TodayLocal).ToArray();
         Assert.AreEqual(2, futureCells.Length);
-        Assert.IsTrue(futureCells.All(d => d.IsFuture && d.IntensityLevel == 0 && d.TooltipText == string.Empty));
+        Assert.IsTrue(futureCells.All(d =>
+            d.IsFuture && d.IntensityLevel == 0 && d.TooltipText == string.Empty &&
+            d.SessionCount == 0 && d.BlockedCount == 0 && d.WorkPurityPercent is null));
 
         var byDate = qBefore.HeatmapDays.ToDictionary(d => d.LocalDate);
         Assert.AreEqual(1, byDate[TodayLocal.AddDays(-20)].IntensityLevel);
@@ -656,7 +661,7 @@ public sealed class FocusInsightRepositoryTests
         Assert.AreEqual(4, byDate[TodayLocal.AddDays(-17)].IntensityLevel);
         Assert.IsTrue(byDate[TodayLocal].IsToday);
         Assert.AreEqual(0, byDate[TodayLocal].IntensityLevel);
-        StringAssert.Contains(byDate[TodayLocal].TooltipText, "집중 기록 없음");
+        StringAssert.Contains(byDate[TodayLocal].TooltipText, "기록 없음");
 
         // 오늘 2시간 집중 추가 -> CurrentStreak = 3, IsTodayFocused = true, 오늘 level = 4
         await sessions.StartSessionAsync(new FocusSessionRecord("h-0", KstToUtc(0, 15, 0), KstToUtc(0, 17, 0)));
@@ -667,6 +672,60 @@ public sealed class FocusInsightRepositoryTests
         Assert.IsTrue(qAfter.IsTodayFocused);
         var todayCell = qAfter.HeatmapDays!.Single(d => d.IsToday);
         Assert.AreEqual(4, todayCell.IntensityLevel);
+        Assert.AreEqual(1, todayCell.SessionCount);
         StringAssert.Contains(todayCell.TooltipText, "2시간");
+    }
+
+    [TestMethod]
+    public async Task Quality_HeatmapDailyDetailsAndSelfDistractionChange_ComputesAccurately()
+    {
+        using var db = SqliteDatabase.CreateInMemory();
+        db.Initialize();
+        var sessions = new SqliteFocusSessionRepository(db);
+        var notifications = new SqliteNotificationRepository(db);
+        var windows = new SqliteWindowSessionRepository(db);
+        var repo = new SqliteFocusInsightRepository(db);
+        var nowUtc = KstToUtc(0, 18, 0);
+
+        // -10일 (이전 7일 구간): 자발적 이탈 40분
+        await sessions.StartSessionAsync(new FocusSessionRecord("s-prev", KstToUtc(-10, 10, 0), KstToUtc(-10, 11, 0)));
+        await windows.InsertAsync(new WindowSessionRecord(0, "KakaoTalk.exe", "Chat", KstToUtc(-10, 10, 0), KstToUtc(-10, 10, 40), 2400, "s-prev"));
+
+        // -1일 (어제): 집중 1시간, 차단 2건, 작업(Code) 40분 + 자발적 이탈(KakaoTalk) 20분
+        await sessions.StartSessionAsync(new FocusSessionRecord("s-y1", KstToUtc(-1, 14, 0), KstToUtc(-1, 15, 0)));
+        await windows.InsertAsync(new WindowSessionRecord(0, "Code.exe", "IDE", KstToUtc(-1, 14, 0), KstToUtc(-1, 14, 40), 2400, "s-y1"));
+        await windows.InsertAsync(new WindowSessionRecord(0, "KakaoTalk.exe", "Chat", KstToUtc(-1, 14, 40), KstToUtc(-1, 15, 0), 1200, "s-y1"));
+        await notifications.InsertAsync(MakeNotification("nb1", "KakaoTalk.exe", "민수", KstToUtc(-1, 14, 10), isPassed: false, sessionId: "s-y1"));
+        await notifications.InsertAsync(MakeNotification("nb2", "Slack.exe", "팀", KstToUtc(-1, 14, 30), isPassed: false, sessionId: "s-y1"));
+        await notifications.InsertAsync(MakeNotification("np1", "Code.exe", null, KstToUtc(-1, 14, 50), isPassed: true, urgency: 5, sessionId: "s-y1"));
+
+        // 오늘: 2개 세션, 작업(Code) 50분 + 자발적 이탈(KakaoTalk) 10분 (어제 20분 -> 오늘 10분 = -50%, 지난주 40분 -> 이번주 30분 = -25%)
+        await sessions.StartSessionAsync(new FocusSessionRecord("s-t1", KstToUtc(0, 9, 0), KstToUtc(0, 9, 30)));
+        await sessions.StartSessionAsync(new FocusSessionRecord("s-t2", KstToUtc(0, 10, 0), KstToUtc(0, 10, 30)));
+        await windows.InsertAsync(new WindowSessionRecord(0, "Code.exe", "IDE", KstToUtc(0, 9, 0), KstToUtc(0, 9, 30), 1800, "s-t1"));
+        await windows.InsertAsync(new WindowSessionRecord(0, "Code.exe", "IDE", KstToUtc(0, 10, 0), KstToUtc(0, 10, 20), 1200, "s-t2"));
+        await windows.InsertAsync(new WindowSessionRecord(0, "KakaoTalk.exe", "Chat", KstToUtc(0, 10, 20), KstToUtc(0, 10, 30), 600, "s-t2"));
+        await notifications.InsertAsync(MakeNotification("nb3", "KakaoTalk.exe", "민수", KstToUtc(0, 10, 5), isPassed: false, sessionId: "s-t2"));
+
+        var todaySnap = await repo.ReadAsync(InsightPeriod.Today, nowUtc, timeZone: Korea);
+        Assert.AreEqual(-50.0, todaySnap.Quality!.SelfDistractionChangePercent);
+
+        var weekSnap = await repo.ReadAsync(InsightPeriod.Last7Days, nowUtc, timeZone: Korea);
+        Assert.AreEqual(-25.0, weekSnap.Quality!.SelfDistractionChangePercent);
+
+        var allSnap = await repo.ReadAsync(InsightPeriod.AllTime, nowUtc, timeZone: Korea);
+        Assert.IsNull(allSnap.Quality!.SelfDistractionChangePercent);
+
+        // Today 조회 시에도 20주(140일) 히트맵에는 어제/오늘의 세션·차단·순도가 모두 채워져야 함
+        var byDate = todaySnap.Quality.HeatmapDays!.ToDictionary(d => d.LocalDate);
+        var yesterdayCell = byDate[TodayLocal.AddDays(-1)];
+        Assert.AreEqual(1, yesterdayCell.SessionCount);
+        Assert.AreEqual(2, yesterdayCell.BlockedCount);
+        Assert.AreEqual(66.7, yesterdayCell.WorkPurityPercent);
+
+        var todayCell = byDate[TodayLocal];
+        Assert.AreEqual(2, todayCell.SessionCount);
+        Assert.AreEqual(1, todayCell.BlockedCount);
+        Assert.AreEqual(83.3, todayCell.WorkPurityPercent);
     }
 }
