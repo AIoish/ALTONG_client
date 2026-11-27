@@ -151,10 +151,11 @@ public sealed class SessionResultUiTests
                         Assert.AreEqual(i + 1, tabs.SelectedIndex);
                     }
                     tabs.SelectedIndex = 0;
-                    Assert.AreEqual(5, tabs.Items.Count);
+                    Assert.AreEqual(6, tabs.Items.Count);
                     Assert.AreEqual("알림 확인", ((TabItem)tabs.Items[1]).Header);
                     Assert.AreEqual("활동 일지", ((TabItem)tabs.Items[2]).Header);
                     Assert.AreEqual("캘린더", ((TabItem)tabs.Items[4]).Header);
+                    Assert.AreEqual("인사이트", ((TabItem)tabs.Items[5]).Header);
                     var rail = (StackPanel)window.FindName("NavigationRail");
                     foreach (var button in rail.Children.OfType<Button>())
                     {

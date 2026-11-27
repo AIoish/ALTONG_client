@@ -8,6 +8,7 @@ using Altong.Client.Models;
 using Altong.Client.Services;
 using Altong.Client.Services.AI.Briefing;
 using Altong.Client.Services.Focus;
+using Altong.Client.Services.Insights;
 using Altong.Client.Services.Win32;
 using Altong.Client.Services.Notifications;
 using Altong.Client.Services.NotificationControl;
@@ -83,7 +84,9 @@ public partial class App : System.Windows.Application
     private bool _routineTickInProgress;
     private SingleInstanceService? _singleInstance;
     private KlueFilterEngine? _klueFilterEngine;
+    private LlamaBriefingEngine? _briefingEngine;
     private LlamaReportSummaryProvider? _reportSummaryProvider;
+    private FocusInsightCoachingService? _insightCoachingService;
     private readonly DashboardCalendarStore _calendar = new();
 
     protected override void OnStartup(StartupEventArgs e)
@@ -203,10 +206,14 @@ public partial class App : System.Windows.Application
         LlamaBriefingEngine.ConfigureNativeLibrary(briefingGpu);
         var briefingModelPath = Path.Combine(AppContext.BaseDirectory,
             "models", "briefing", "gemma-4-E2B-it-Q4_0.gguf");
-        _reportSummaryProvider = new LlamaReportSummaryProvider(
-            NotificationRepository,
+        _briefingEngine = new LlamaBriefingEngine(
             briefingModelPath,
             gpuLayerCount: briefingGpu ? BriefingGpuPolicy.AllLayers : 0);
+        _reportSummaryProvider = new LlamaReportSummaryProvider(
+            NotificationRepository,
+            _briefingEngine,
+            ownsEngine: false);
+        _insightCoachingService = new FocusInsightCoachingService(_briefingEngine);
 
         IFilterEngine filterEngine = _klueFilterEngine;
         NotificationPipeline = new NotificationPipelineCoordinator(
@@ -311,8 +318,12 @@ public partial class App : System.Windows.Application
             NotificationPipeline.NotificationProcessed -= NotificationPipeline_NotificationProcessed;
             NotificationPipeline.Dispose();
         }
+        _dashboardWindow?.Close();
+        _dashboardWindow = null;
         _klueFilterEngine?.Dispose();
         _reportSummaryProvider?.Dispose();
+        _briefingEngine?.Dispose();
+        _briefingEngine = null;
         KakaoAudioOperator?.Dispose();
 
         if (_focusModeCoordinator is not null)
@@ -341,8 +352,6 @@ public partial class App : System.Windows.Application
 
         _trayIconService?.Dispose();
         _trayIconService = null;
-        _dashboardWindow?.Close();
-        _dashboardWindow = null;
 
         _singleInstance?.Dispose();
         _singleInstance = null;
@@ -419,7 +428,9 @@ public partial class App : System.Windows.Application
                 summaryProvider: _reportSummaryProvider,
                 autoDndSettings: AutoDndSettings,
                 startupRegistration: StartupRegistration,
-                calendar: _calendar);
+                calendar: _calendar,
+                insightRepository: SessionResults.FocusInsights,
+                insightCoaching: _insightCoachingService);
             _dashboardWindow.Closed += DashboardWindow_Closed;
             MainWindow = _dashboardWindow;
         }

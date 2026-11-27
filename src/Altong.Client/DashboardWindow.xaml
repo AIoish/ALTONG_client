@@ -248,6 +248,7 @@
                     <Button x:Name="NavHomeButton" Tag="0" Click="Navigate_Click" Content="&#xE80F;" Style="{StaticResource NavigationButton}" AutomationProperties.Name="홈" AutomationProperties.ItemStatus="선택됨" ToolTip="홈" />
                     <Button x:Name="NavNotificationsButton" Tag="1" Click="Navigate_Click" Content="&#xEA8F;" Style="{StaticResource NavigationButton}" AutomationProperties.Name="알림 확인" ToolTip="알림 확인" />
                     <Button x:Name="NavJournalButton" Tag="2" Click="Navigate_Click" Content="&#xE8A5;" Style="{StaticResource NavigationButton}" AutomationProperties.Name="활동 일지" ToolTip="활동 일지" />
+                    <Button x:Name="NavInsightsButton" Tag="5" Click="Navigate_Click" Content="&#xE9D2;" Style="{StaticResource NavigationButton}" AutomationProperties.Name="집중 인사이트" ToolTip="집중 인사이트" />
                     <Button x:Name="NavCalendarButton" Tag="4" Click="Navigate_Click" Content="&#xE787;" Style="{StaticResource NavigationButton}" AutomationProperties.Name="캘린더" ToolTip="캘린더" />
                     <Button x:Name="NavSettingsButton" Tag="3" Click="Navigate_Click" Content="&#xE713;" Style="{StaticResource NavigationButton}" AutomationProperties.Name="설정" ToolTip="설정" />
                 </StackPanel>
@@ -520,6 +521,7 @@
                         </StackPanel></ScrollViewer>
                     </TabItem>
                     <TabItem Header="캘린더"><ContentControl x:Name="ReportCalendarHost" /></TabItem>
+                    <TabItem Header="인사이트"><ContentControl x:Name="InsightsHost" /></TabItem>
                 </TabControl>
                 <TextBlock x:Name="DataErrorText" Grid.Row="2" Foreground="{StaticResource BlackError}" FontSize="12" />
             </Grid>
