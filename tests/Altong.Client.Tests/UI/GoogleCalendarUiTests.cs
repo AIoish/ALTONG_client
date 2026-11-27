@@ -123,6 +123,7 @@ public sealed class GoogleCalendarUiTests
                 var root = (FrameworkElement)report.Content;
                 Layout(root, new Size(600, 660));
                 var cards = Cards(report);
+                cards.UseModelessDialogForTests = true;
                 Assert.AreEqual(3, cards.Items.Length);
                 Assert.AreSame(report.FontFamily, cards.FontFamily);
                 Assert.AreSame(report.FontFamily, Descendants<TextBlock>(cards).Single(text => text.Text == supplied[0].Text).FontFamily,
@@ -133,31 +134,44 @@ public sealed class GoogleCalendarUiTests
                 var list = (ItemsControl)cards.FindName("SummaryItemsControl");
                 FrameworkElement Row(int index) => (FrameworkElement)list.ItemContainerGenerator.ContainerFromIndex(index);
                 Assert.IsFalse(Descendants<Button>(Row(1)).Any(button => button.Content is string text
-                    && text is "캘린더에 저장" or "캘린더에 저장됨" or "저장 중…"),
+                    && text is "일정 등록" or "✓ 등록됨" or "저장 중…"),
                     "일반 요약에는 일정 등록 버튼이 없어야 합니다.");
                 Assert.IsNull(calendar.Get("first", supplied[1].SummaryId), "일반 알림에는 일정 저장을 허용하지 않습니다.");
+
+                // 1) Row 0 (완전한 일정): slim bar [일정 등록] → 작은 팝업 → [최종 등록]
                 var save = CalendarButton(Row(0));
                 save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.IsNotNull(cards.ActiveDialog);
+                Assert.IsTrue(cards.Items[0].IsEditing);
+                ((Button)cards.ActiveDialog!.FindName("ConfirmSaveButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.IsNull(cards.ActiveDialog);
+                save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); // 이미 등록된 경우 재클릭 무시
+                Assert.IsNull(cards.ActiveDialog);
                 Assert.IsTrue(cards.Items[0].IsSaved);
                 Assert.IsFalse(save.IsEnabled);
+                Assert.AreEqual("✓ 등록됨", save.Content);
                 Assert.AreEqual(1, calendar.GetDay(supplied[0].Schedule!.Start!.Value.ToLocalTime().Date).Count);
                 Assert.AreEqual(0, links.Count, "리포트에서는 로컬 캘린더에 저장합니다.");
+
+                // 2) Row 2 (날짜·시각 미정): [일정 등록] → 팝업 열림 → 빈 값으로 [최종 등록] 시 오류 표시 후 팝업 유지
                 CalendarButton(Row(2)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var dialog = cards.ActiveDialog!;
+                Assert.IsNotNull(dialog);
                 var editing = cards.Items[2];
-                Assert.IsTrue(editing.IsEditing, "날짜·시간이 미정이면 수정 화면을 엽니다.");
-                Layout(root, new Size(480, 380));
-                var input = Descendants<TextBox>(Row(2)).First();
-                input.BringIntoView(); root.UpdateLayout();
-                SavePreview(root, "report-schedule-edit-480.png", new Size(480, 380));
-                var dateInput = Descendants<DatePicker>(Row(2)).First();
-                dateInput.BringIntoView(); root.UpdateLayout();
-                var editorScroll = (ScrollViewer)report.FindName("ReportScroll");
-                var inputBounds = dateInput.TransformToAncestor(editorScroll).TransformBounds(new Rect(dateInput.RenderSize));
-                Assert.IsTrue(inputBounds.Left >= -1 && inputBounds.Right <= editorScroll.ViewportWidth + 1);
-                Assert.IsTrue(inputBounds.Top >= -1 && inputBounds.Bottom <= editorScroll.ViewportHeight + 1);
-                SavePreview(root, "report-schedule-edit-dates-480.png", new Size(480, 380));
-                Layout(root, new Size(600, 660));
+                Assert.IsTrue(editing.IsEditing, "팝업이 열리면 편집 상태가 됩니다.");
+                ((Button)dialog.FindName("ConfirmSaveButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.AreSame(dialog, cards.ActiveDialog, "날짜·시각이 미정이면 오류가 표시되고 팝업이 닫히지 않아야 합니다.");
+                Assert.IsTrue(editing.IsEditing);
+                var dialogRoot = (FrameworkElement)dialog.Content;
+                Layout(dialogRoot, new Size(440, 560));
+                var dialogScroll = Descendants<ScrollViewer>(dialogRoot).First();
+                Assert.IsTrue(dialogScroll.ScrollableWidth <= 1, "일정 등록 팝업 가로 잘림이 없어야 합니다.");
+                var dateInput = Descendants<DatePicker>(dialogRoot).First();
+                dateInput.BringIntoView(); dialogRoot.UpdateLayout();
+                var inputBounds = dateInput.TransformToAncestor(dialogScroll).TransformBounds(new Rect(dateInput.RenderSize));
+                Assert.IsTrue(inputBounds.Left >= -1 && inputBounds.Right <= dialogScroll.ViewportWidth + 1);
+                SavePreview(dialogRoot, "schedule-popup-dialog.png", new Size(440, 560));
+
                 editing.StartDate = editing.EndDate = new DateTime(2026, 10, 6);
                 editing.StartTime = "12:00"; editing.EndTime = "13:00";
                 editing.TimeZone = "Asia/Seoul"; editing.Location = "사용자가 정한 장소";
@@ -168,10 +182,13 @@ public sealed class GoogleCalendarUiTests
                 Reload(report);
                 Assert.AreSame(editing, cards.Items[2]);
                 StringAssert.Contains(((TextBlock)report.FindName("SummaryLoadStatusText")).Text, "불러오지 못했습니다");
-                CalendarButton(Row(2)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                ((Button)dialog.FindName("ConfirmSaveButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.IsNull(cards.ActiveDialog);
                 Assert.IsTrue(editing.IsSaved);
                 Assert.IsFalse(editing.IsEditing);
                 corrected = editing.Draft;
+                StringAssert.Contains(editing.ScheduleCompactMeta, "사용자가 정한 장소");
                 Assert.IsNull(results.Reports.GetSnapshotAsync("first").GetAwaiter().GetResult()!.SummaryItems[2].Schedule!.Start,
                     "일정 수정은 리포트 원본을 덮어쓰지 않습니다.");
                 foreach (var size in new[] { new Size(600, 660), new Size(480, 380) })
@@ -210,6 +227,9 @@ public sealed class GoogleCalendarUiTests
                 calendar.Delete("first", editing.Summary.SummaryId);
                 Assert.IsFalse(editing.IsSaved, "캘린더 삭제를 리포트에 즉시 반영합니다.");
                 CalendarButton(Row(2)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.IsNotNull(cards.ActiveDialog);
+                ((Button)cards.ActiveDialog!.FindName("ConfirmSaveButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.IsNull(cards.ActiveDialog);
                 Assert.IsTrue(editing.IsSaved);
             }
             finally { report.Close(); }
@@ -254,6 +274,47 @@ public sealed class GoogleCalendarUiTests
         finally { report.Close(); }
     });
 
+    [TestMethod]
+    public void Report_SchedulePopup_CancelRevertsUnsavedEdits_WithoutSaving() => RunSta(folder =>
+    {
+        var supplied = new FakeReportSummaryProvider().ReadAsync("cancel-test", CancellationToken.None).GetAwaiter().GetResult().Items;
+        var calendar = new DashboardCalendarStore(Path.Combine(folder, "calendar.json"));
+        var summaryStatePath = Path.Combine(folder, "state.json");
+        var result = new SessionResult(DateTime.UtcNow.AddMinutes(-25), DateTime.UtcNow, [], [], true)
+        {
+            SessionId = "cancel-test",
+            SummaryItems = supplied
+        };
+        var report = new SessionReportWindow(result, isSaved: true, calendar: calendar, summaryStatePath: summaryStatePath);
+        try
+        {
+            Layout((FrameworkElement)report.Content, new Size(600, 660));
+            var cards = Cards(report);
+            cards.UseModelessDialogForTests = true;
+            var list = (ItemsControl)cards.FindName("SummaryItemsControl");
+            var rowContainer = (FrameworkElement)list.ItemContainerGenerator.ContainerFromIndex(0);
+            var row = cards.Items[0];
+            string originalTitle = row.Title;
+            string originalLocation = row.Location;
+
+            CalendarButton(rowContainer).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var dialog = cards.ActiveDialog!;
+            Assert.IsNotNull(dialog);
+            row.Title = "취소될 임시 제목";
+            row.Location = "취소될 장소";
+
+            ((Button)dialog.FindName("CancelButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+            Assert.IsNull(cards.ActiveDialog);
+            Assert.IsFalse(row.IsEditing);
+            Assert.IsFalse(row.IsSaved);
+            Assert.AreEqual(originalTitle, row.Title);
+            Assert.AreEqual(originalLocation, row.Location);
+            Assert.IsNull(calendar.Get("cancel-test", row.Summary.SummaryId));
+        }
+        finally { report.Close(); }
+    });
+
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
     private static NotificationSummaryCalendarView Cards(SessionReportWindow report) =>
         (NotificationSummaryCalendarView)((ContentControl)report.FindName("CalendarSummaryHost")).Content;
@@ -265,7 +326,7 @@ public sealed class GoogleCalendarUiTests
     private static void WriteBatch(string folder, string id, IReadOnlyList<NotificationSummaryItem> items) => File.WriteAllText(
         Path.Combine(folder, id + ".json"), JsonSerializer.Serialize(new NotificationSummaryBatch(1, id, items)));
     private static Button CalendarButton(DependencyObject root) => Descendants<Button>(root)
-        .Single(button => button.Content is string text && text is "캘린더에 저장" or "캘린더에 저장됨" or "저장 중…");
+        .Single(button => button.Content is string text && text is "일정 등록" or "✓ 등록됨" or "저장 중…");
     private static void Await(Task task)
     { Until(() => task.IsCompleted); task.GetAwaiter().GetResult(); }
     private static void Until(Func<bool> ready)

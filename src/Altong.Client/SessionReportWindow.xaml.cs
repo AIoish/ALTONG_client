@@ -98,6 +98,7 @@ public partial class SessionReportWindow : Window
         Closed += (_, _) =>
         {
             _closed = true;
+            _summaryCards.CloseActiveDialog();
             // 요약 중에 닫아도 요약은 끝까지 돌린다. 끝나면 저장본에 붙이고 말풍선으로 알린다.
             // 떠 있는 말풍선은 닫지 않는다. [리포트 열기]가 리포트를 다시 연다.
             // 앱이 끝나는 중이면 모델이 정리되기 전에 요약을 멈춘다.
