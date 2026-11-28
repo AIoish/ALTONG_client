@@ -443,4 +443,33 @@ public sealed class KakaoNotificationInterceptorTests
         liveAudio.Dispose();
         Assert.IsFalse(liveAudio.IsMuted);
     }
+
+    [TestMethod]
+    public void LiveDiscordAudioOperator_MuteAndUnmute_SucceedWithoutException()
+    {
+        using var liveAudio = LiveKakaoAudioOperator.CreateForDiscord(NewJournalPath());
+        Assert.IsFalse(liveAudio.IsMuted);
+        liveAudio.Mute();
+        Assert.IsTrue(liveAudio.IsMuted);
+        liveAudio.Unmute();
+        Assert.IsFalse(liveAudio.IsMuted);
+    }
+
+    [TestMethod]
+    public void AudioComInterfaces_PreserveHResultReturnValues()
+    {
+        // [PreserveSig]가 빠지면 IsSystemSoundsSession()이 항상 0을 돌려줘 모든 앱 세션을 건너뛴다.
+        var interfaces = typeof(LiveKakaoAudioOperator)
+            .GetNestedTypes(System.Reflection.BindingFlags.NonPublic)
+            .Where(type => type.IsInterface)
+            .ToList();
+        Assert.IsTrue(interfaces.Count > 0);
+
+        var missing = interfaces
+            .SelectMany(type => type.GetMethods().Select(method => (type, method)))
+            .Where(item => !item.method.MethodImplementationFlags.HasFlag(System.Reflection.MethodImplAttributes.PreserveSig))
+            .Select(item => $"{item.type.Name}.{item.method.Name}")
+            .ToList();
+        CollectionAssert.AreEqual(Array.Empty<string>(), missing, string.Join(", ", missing));
+    }
 }
