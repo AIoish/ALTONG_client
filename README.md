@@ -15,12 +15,14 @@
 
 ## 주요 기능
 
-- **맥락 기반 알림 필터링**: 활성 창(프로세스·제목)과 알림을 KLUE 판별 모델로 함께 평가합니다. 긴급도(1~5)가 4 이상이거나 관련도(1~3)가 3(지금 작업과 관련 있음)이면 통과합니다.
-- **카카오톡 알림 처리**: Windows 알림 외에 카카오톡 팝업도 숨긴 뒤 OCR로 내용을 읽어 같은 방식으로 판단합니다.
-- **상단 노치 + 알림 패널**: 화면 맨 위 띠 가운데 노치에 상태를 표시하고, 마우스를 올리면 노치가 아래로 늘어나 알림 목록이 펼쳐집니다.
-- **세션 리포트·브리핑**: 집중을 마치면 로컬 Gemma 4 E2B 모델이 차단된 알림을 요약하고 일정을 뽑습니다. 메모리가 넉넉한 PC에서는 그래픽칩(GPU)으로 더 빠르게 돌립니다. 일정은 구글 캘린더 등록 링크로 연결됩니다.
-- **대시보드**: 알림 기록(통과/차단), 시간대별 활동 일지, 앱별 집중 시간, 리포트 캘린더, 집중·휴식 루틴 설정을 제공합니다.
-- **로컬 실행**: 알림 내용과 창 제목을 외부로 보내지 않습니다. Python 없이 C# 프로세스 안에서 모델을 실행합니다.
+- **자동 집중 모드 (AutoDND)**: 작업 앱 사용을 감지해 집중 모드를 제안하고, 자리비움이 길어지면 세션을 자동으로 종료합니다.
+- **맥락 기반 실시간 알림 필터링**: 활성 창(프로세스·제목)과 알림을 KLUE 판별 모델로 함께 평가해 긴급도(1~5)가 4 이상이거나 관련도(1~3)가 3이면 통과시킵니다. 캡처 도구 등 불필요한 시스템 유틸 알림은 수집 단계에서 제외합니다.
+- **Windows 10/11 네이티브 알림 제어 · 복구**: 집중 중 선택한 앱의 시스템 알림을 차단하고, 비정상 종료 시에도 복구 가디언이 원래 알림 설정을 되돌립니다.
+- **상단 노치 · 알림 패널 · 퀵 메모**: 화면 맨 위 독립 노치에 상태를 표시하고, 마우스를 올리거나 클릭하면 알림 목록과 퀵 메모가 펼쳐집니다.
+- **세션 리포트 · 브리핑 · 일정 등록**: 집중을 마치면 로컬 Gemma 4 E2B 모델(Vulkan GPU · CPU 자동 폴백)이 대화별 알림을 요약하고 일정을 추출해 팝업에서 바로 구글 캘린더로 등록합니다.
+- **대시보드 · 집중 인사이트**: 홈, 알림 확인, 활동 일지, 집중 인사이트(연속 집중 추이 · 방해 차단율 · 몰입 유지율 · 작업 순도 · 시간대별 패턴 · AI 집중 코칭), 리포트 캘린더, 집중·휴식 루틴 설정을 제공합니다.
+- **카카오톡 알림 처리 (선택 연동)**: 개발·선택 환경(`ALTONG_ENABLE_KAKAO=1`)에서 카카오톡 팝업을 숨긴 뒤 온디바이스 PP-OCRv5로 본문을 읽어 같은 방식으로 판단합니다.
+- **100% 로컬 실행**: 알림 내용과 창 제목을 외부로 보내지 않습니다. Python 없이 C# 프로세스 안에서 ONNX·GGUF 모델을 실행합니다.
 
 ## 구조 한눈에 보기
 
@@ -43,11 +45,11 @@ flowchart LR
 | :--- | :--- |
 | 플랫폼 | Windows 10 (1809+) / 11, C# 13, .NET 9 (`net9.0-windows10.0.26100.0`) |
 | UI | WPF (+ WinForms 트레이) |
-| OS 연동 | Win32 `User32`, WinRT `UserNotificationListener`, Windows OCR |
+| OS 연동 | Win32 `User32`, WinRT `UserNotificationListener`, PP-OCRv5 / Windows OCR |
 | 실시간 필터 | KLUE base 판별 모델, `Microsoft.ML.OnnxRuntime` |
-| 브리핑 | Gemma 4 E2B (GGUF Q4_0), `LLamaSharp` (CPU, Vulkan GPU) |
+| 브리핑 · 코칭 | Gemma 4 E2B (GGUF Q4_0), `LLamaSharp` (CPU, Vulkan GPU) |
 | 저장소 | SQLite (`Microsoft.Data.Sqlite`, WAL) |
-| 테스트 / CI | xUnit, GitHub Actions (Windows) |
+| 테스트 / CI | MSTest, GitHub Actions (Windows) |
 
 ## 시작하기
 
@@ -98,7 +100,7 @@ dotnet test
 
 ### 설치 파일 만들기
 
-.NET이 없는 PC에도 설치할 수 있는 `dist\AltongSetup-<버전>.exe`(약 1GB, 모델 포함)를 만듭니다.
+.NET이 없는 PC에도 설치할 수 있는 `dist\AltongSetup-<버전>.exe`(모델 3종 포함 약 3GB 이상 — 2GB 초과 시 `packaging/installer/Altong.iss`에 `DiskSpanning=yes` 설정 필요)를 만듭니다.
 
 ```powershell
 winget install --id JRSoftware.InnoSetup -e   # 처음 한 번
@@ -118,7 +120,7 @@ ALTONG_client/
 ├── src/Altong.Client/          # WPF 메인 앱 (Services, Data, Models, 화면)
 ├── integration/csharp/         # KLUE 필터 추론 라이브러리와 앱 어댑터
 ├── models/                     # filtering(KLUE ONNX), briefing(Gemma GGUF), ocr — 모델 파일은 gitignore
-├── tests/Altong.Client.Tests/  # xUnit 테스트
+├── tests/Altong.Client.Tests/  # MSTest 단위·UI·연동 테스트
 ├── tools/                      # MockGenerator, 패키징·캘린더 테스트 스크립트
 ├── packaging/                  # Sparse package (알림 권한용)
 ├── assets/icon/                # 앱·트레이 아이콘 원본 (tools/generate-assets.ps1로 .ico·로고 생성)
