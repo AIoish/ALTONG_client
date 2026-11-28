@@ -110,7 +110,11 @@ public partial class DashboardWindow : Window
         SettingsVersionText.Text = version is null ? "ALTONG" : $"ALTONG {version.Major}.{version.Minor}.{Math.Max(0, version.Build)}";
         UpdateLaunchAtStartupView();
         UpdateFocusModeView();
-        SourceInitialized += (_, _) => FitToWorkArea();
+        SourceInitialized += (_, _) =>
+        {
+            DisableNativeWindowFrameChrome();
+            FitToWorkArea();
+        };
         StateChanged += (_, _) =>
         {
             MaximizeButton.Content = WindowState == WindowState.Maximized ? "❐" : "□";
@@ -1313,7 +1317,40 @@ public partial class DashboardWindow : Window
         double radius = WindowState == WindowState.Maximized ? 0 : 24;
         DashboardSurface.CornerRadius = new CornerRadius(radius);
         FocusRim.CornerRadius = new CornerRadius(radius);
-        DashboardSurface.Clip = new RectangleGeometry(new Rect(DashboardSurface.RenderSize), radius, radius);
+        DashboardSurface.Clip = null;
+        if (DashboardInnerGrid is not null)
+        {
+            double innerRadius = Math.Max(0, radius - 1);
+            DashboardInnerGrid.Clip = innerRadius > 0
+                ? new RectangleGeometry(new Rect(DashboardInnerGrid.RenderSize), innerRadius, innerRadius)
+                : null;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref uint attrValue, int attrSize);
+
+    /// <summary>
+    /// AllowsTransparency + WindowChrome 조합에서 Windows 11 DWM이 8px 기본 둥근 모서리·테두리를
+    /// 덧그려 24px 모서리 바깥에 회색 삼각형 잔상이 비치는 현상을 막는다.
+    /// </summary>
+    private void DisableNativeWindowFrameChrome()
+    {
+        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero) return;
+        const int dwmwaWindowCornerPreference = 33;
+        const uint dwmwcpDoNotRound = 1;
+        const int dwmwaBorderColor = 34;
+        const uint dwmwaColorNone = 0xFFFFFFFE;
+        uint corner = dwmwcpDoNotRound;
+        uint border = dwmwaColorNone;
+        try
+        {
+            _ = DwmSetWindowAttribute(handle, dwmwaWindowCornerPreference, ref corner, sizeof(uint));
+            _ = DwmSetWindowAttribute(handle, dwmwaBorderColor, ref border, sizeof(uint));
+        }
+        catch (DllNotFoundException) { }
+        catch (EntryPointNotFoundException) { }
     }
 
     private void FitToWorkArea()

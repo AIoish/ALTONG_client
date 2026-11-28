@@ -21,6 +21,24 @@ public sealed class NotificationPipelineCoordinator : IDisposable
     private bool _isDisposed;
     private readonly Dictionary<string, List<Task>> _sessionWrites = new();
 
+    private static readonly HashSet<string> IgnoredSystemApps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "캡처 도구",
+        "Snipping Tool",
+        "SnippingTool",
+        "SnippingTool.exe",
+        "ScreenSketch",
+        "ScreenSketch.exe",
+        "ScreenClippingHost",
+        "ScreenClippingHost.exe"
+    };
+
+    internal static bool IsIgnoredSystemNotification(RawNotification notification)
+    {
+        string app = notification.AppName?.Trim() ?? "";
+        return app.Length > 0 && IgnoredSystemApps.Contains(app);
+    }
+
     /// <summary>
     /// 알림이 평가되고 DB에 저장된 직후 발행되는 이벤트 (UI 표시 및 독 카운터 연동용).
     /// </summary>
@@ -56,6 +74,12 @@ public sealed class NotificationPipelineCoordinator : IDisposable
 
     private async void OnNotificationReceived(object? sender, RawNotification notification)
     {
+        if (IsIgnoredSystemNotification(notification))
+        {
+            AppLogger.Info($"[NotificationPipeline] [IGNORE] 시스템 유틸 알림 무시: {notification.AppName} - '{Truncate(notification.Title, 30)}'");
+            return;
+        }
+
         TaskCompletionSource? completion = null;
         try
         {

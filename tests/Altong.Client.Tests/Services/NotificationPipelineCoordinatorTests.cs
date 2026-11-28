@@ -218,6 +218,34 @@ public sealed class NotificationPipelineCoordinatorTests
     }
 
     [TestMethod]
+    public async Task NotificationPipeline_IgnoredSystemUtilityNotification_IsDroppedWithoutSavingOrEvent()
+    {
+        bool isFocusMode = true;
+        string? sessionId = "sess_focus_ignore";
+
+        using var coordinator = new NotificationPipelineCoordinator(
+            _fakeListener,
+            _fakeTracker,
+            _notificationRepo,
+            _filterEngine,
+            () => isFocusMode,
+            () => sessionId);
+
+        await coordinator.StartAsync();
+
+        bool eventFired = false;
+        coordinator.NotificationProcessed += (_, _) => eventFired = true;
+
+        var snip = new RawNotification(
+            "noti_snip_01", "캡처 도구", "", "스크린샷이 클립보드에 복사됨", "스크린샷 폴더에 자동으로 저장됩니다.", DateTime.UtcNow);
+        _fakeListener.EmitNotification(snip);
+        await coordinator.DrainSessionAsync(sessionId);
+
+        Assert.IsFalse(eventFired, "캡처 도구 시스템 알림은 이벤트로 전달되지 않아야 합니다.");
+        Assert.IsNull(await _notificationRepo.GetByIdAsync("noti_snip_01"), "캡처 도구 시스템 알림은 DB에 저장되지 않아야 합니다.");
+    }
+
+    [TestMethod]
     public async Task NotificationPipeline_WithKakaoInterceptor_EndToEnd_HidesAndClosesBlockedKakaoNotification()
     {
         bool isFocusMode = true;
