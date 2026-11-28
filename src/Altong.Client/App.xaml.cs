@@ -47,6 +47,8 @@ public partial class App : System.Windows.Application
     // 카카오톡 연동이 꺼져 있으면(KakaoIntegration) 둘 다 null이다.
     public KakaoNotificationInterceptor? KakaoInterceptor { get; private set; }
     public IKakaoAudioOperator? KakaoAudioOperator { get; private set; }
+    // 디스코드 알림음 음소거는 팝업을 가로채지 않으므로 카카오톡 연동 여부와 관계없이 항상 켠다.
+    public IKakaoAudioOperator? DiscordAudioOperator { get; private set; }
 
     private readonly CancellationTokenSource _shutdown = new();
     private bool _isShuttingDown;
@@ -157,6 +159,13 @@ public partial class App : System.Windows.Application
             _ = write.ContinueWith(t => AppLogger.Error($"[Database] 세션 저장 실패: {t.Exception?.GetBaseException().Message}", t.Exception),
                 TaskContinuationOptions.OnlyOnFaulted);
         };
+
+        DiscordAudioOperator = LiveKakaoAudioOperator.CreateForDiscord();
+        // 집중이 아니면 Unmute가 직전 실행이 비정상 종료하며 남긴 디스코드 음소거를 되돌린다.
+        if (FocusModeService.IsEnabled)
+            DiscordAudioOperator.Mute();
+        else
+            DiscordAudioOperator.Unmute();
 
         // 실시간 알림 수신 및 AI 필터링 파이프라인 가동 (OS 표준 토스트 + 개발용 카카오톡 전용 인터셉터)
         IWindowsNotificationListener notificationListener = new WinRtNotificationListener();
@@ -321,6 +330,7 @@ public partial class App : System.Windows.Application
         _briefingEngine?.Dispose();
         _briefingEngine = null;
         KakaoAudioOperator?.Dispose();
+        DiscordAudioOperator?.Dispose();
 
         if (_focusModeCoordinator is not null)
         {
@@ -569,6 +579,7 @@ public partial class App : System.Windows.Application
             if (enabled)
             {
                 KakaoAudioOperator?.Mute();
+                DiscordAudioOperator?.Mute();
                 lock (_windowWrites) _windowWrites.RemoveAll(task => task.IsCompleted);
                 _lastWindowCheckpointAt = DateTime.MinValue;
                 SessionResults.Begin(changedAt, FocusSettings.Current.TimerEnabled ? FocusSettings.Current.FocusMinutes : 0);
@@ -579,6 +590,7 @@ public partial class App : System.Windows.Application
             else
             {
                 KakaoAudioOperator?.Unmute();
+                DiscordAudioOperator?.Unmute();
                 var lastContext = ActiveWindowTracker.CaptureNow();
                 if (SessionResults.ActiveSession is { } focus)
                 {

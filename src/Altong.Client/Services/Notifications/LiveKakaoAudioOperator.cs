@@ -7,10 +7,10 @@ using Altong.Client.Services.NotificationControl;
 namespace Altong.Client.Services.Notifications;
 
 /// <summary>
-/// 집중 모드 동안 카카오톡 프로세스의 오디오 세션을 볼륨 믹서 레벨에서 단일 작업자(1초 주기)로
-/// 음소거(Mute)하고 집중 모드 종료 시 원래 상태로 복원(Unmute)하는 실제 구현체.
+/// 집중 모드 동안 메신저 프로세스(기본: 카카오톡, <see cref="CreateForDiscord"/>: 디스코드)의 오디오 세션을
+/// 볼륨 믹서 레벨에서 단일 작업자(1초 주기)로 음소거(Mute)하고 집중 모드 종료 시 원래 상태로 복원(Unmute)하는 실제 구현체.
 /// 알통이 음소거한 세션은 음소거하기 전에 파일에 적어 두므로, 집중 중 비정상 종료돼도 다음 실행의
-/// Unmute(집중이 아닐 때 시작 시 호출)나 다음 집중 종료 때 되돌린다.
+/// Unmute(집중이 아닐 때 시작 시 호출)나 다음 집중 종료 때 되돌린다. 대상 앱마다 기록 파일을 따로 쓴다.
 /// </summary>
 public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
 {
@@ -21,6 +21,9 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
     // 음소거 스캔과 복원을 직렬화한다. 복원이 끝난 뒤에 작업자가 다시 음소거하지 않게 한다.
     private readonly object _audioLock = new();
     private readonly string _journalPath;
+    private readonly string[] _processNames;
+    private readonly string _appLabel;
+    private readonly string _logTag;
 
     // 알통이 음소거했고 아직 되돌리지 않은 세션 ("장치 ID|세션 ID"). 파일 내용과 같다.
     private readonly HashSet<string> _mutedByApp;
@@ -37,7 +40,17 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
     public static string DefaultJournalPath =>
         Path.Combine(NotificationControlPreferences.DirectoryPath, "kakao-mute-recovery.json");
 
+    public static string DiscordJournalPath =>
+        Path.Combine(NotificationControlPreferences.DirectoryPath, "discord-mute-recovery.json");
+
+    internal static readonly string[] KakaoProcessNames = ["KakaoTalk"];
+    internal static readonly string[] DiscordProcessNames = ["Discord", "DiscordPTB", "DiscordCanary"];
+
     public static bool HasPendingRecovery(string? journalPath = null) => File.Exists(journalPath ?? DefaultJournalPath);
+
+    /// <summary>디스코드(정식·PTB·Canary) 오디오 세션을 대상으로 하는 인스턴스를 만든다.</summary>
+    public static LiveKakaoAudioOperator CreateForDiscord(string? journalPath = null) =>
+        new(journalPath ?? DiscordJournalPath, DiscordProcessNames, "디스코드", "DiscordAudio");
 
     public bool IsMuted
     {
@@ -51,8 +64,16 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
     }
 
     public LiveKakaoAudioOperator(string? journalPath = null)
+        : this(journalPath ?? DefaultJournalPath, KakaoProcessNames, "카카오톡", "KakaoAudio")
     {
-        _journalPath = journalPath ?? DefaultJournalPath;
+    }
+
+    private LiveKakaoAudioOperator(string journalPath, string[] processNames, string appLabel, string logTag)
+    {
+        _journalPath = journalPath;
+        _processNames = processNames;
+        _appLabel = appLabel;
+        _logTag = logTag;
         _mutedByApp = LoadJournal(_journalPath);
         AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
     }
@@ -168,7 +189,7 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
             }
             catch (Exception ex)
             {
-                AppLogger.Warn($"[KakaoAudio] 오디오 세션 제어 오류: {ex.Message}");
+                AppLogger.Warn($"[{_logTag}] 오디오 세션 제어 오류: {ex.Message}");
             }
 
             try
@@ -188,15 +209,15 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
 
     private void ScanAndMute(CancellationToken token)
     {
-        var kakaoPids = GetKakaoTalkProcessIds();
-        if (kakaoPids.Count == 0)
+        var targetPids = GetTargetProcessIds(_processNames);
+        if (targetPids.Count == 0)
         {
             return;
         }
 
         VisitSessions((key, pid, volume) =>
         {
-            if (!kakaoPids.Contains(pid) || volume.GetMute(out bool muted) != 0)
+            if (!targetPids.Contains(pid) || volume.GetMute(out bool muted) != 0)
             {
                 return;
             }
@@ -223,11 +244,11 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
             int hr = volume.SetMute(true, ref context);
             if (hr == 0)
             {
-                AppLogger.Info($"[KakaoAudio] 카카오톡 오디오 세션 음소거 적용 (PID {pid})");
+                AppLogger.Info($"[{_logTag}] {_appLabel} 오디오 세션 음소거 적용 (PID {pid})");
             }
             else
             {
-                AppLogger.Warn($"[KakaoAudio] 음소거 적용 실패 (hr=0x{hr:X8}, PID {pid})");
+                AppLogger.Warn($"[{_logTag}] 음소거 적용 실패 (hr=0x{hr:X8}, PID {pid})");
             }
         }, token);
     }
@@ -260,11 +281,11 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
                     int hr = volume.SetMute(false, ref context);
                     if (hr != 0)
                     {
-                        AppLogger.Warn($"[KakaoAudio] 음소거 복원 실패 (hr=0x{hr:X8})");
+                        AppLogger.Warn($"[{_logTag}] 음소거 복원 실패 (hr=0x{hr:X8})");
                         return;
                     }
 
-                    AppLogger.Info("[KakaoAudio] 카카오톡 오디오 세션 음소거 복원 완료 (Unmute)");
+                    AppLogger.Info($"[{_logTag}] {_appLabel} 오디오 세션 음소거 복원 완료 (Unmute)");
                 }
 
                 restored.Add(key);
@@ -272,10 +293,10 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
         }
         catch (Exception ex)
         {
-            AppLogger.Warn($"[KakaoAudio] 음소거 복원 중 오디오 장치 조회 오류: {ex.Message}");
+            AppLogger.Warn($"[{_logTag}] 음소거 복원 중 오디오 장치 조회 오류: {ex.Message}");
         }
 
-        // 카카오톡이 꺼져 있어 세션을 못 찾았으면 기록을 남겨 다음 기회에 되돌린다.
+        // 대상 앱이 꺼져 있어 세션을 못 찾았으면 기록을 남겨 다음 기회에 되돌린다.
         if (restored.Count > 0)
         {
             _mutedByApp.ExceptWith(restored);
@@ -326,7 +347,7 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            AppLogger.Warn($"[KakaoAudio] 음소거 복구 기록을 저장하지 못했습니다: {ex.Message}");
+            AppLogger.Warn($"[{_logTag}] 음소거 복구 기록을 저장하지 못했습니다: {ex.Message}");
         }
     }
 
@@ -334,7 +355,7 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
 
     #region Session Enumeration & COM Cleanup
 
-    // key는 "장치 ID|세션 ID"다. 세션 ID는 실행 파일 경로 기반이라 카카오톡을 다시 켜도 같다.
+    // key는 "장치 ID|세션 ID"다. 세션 ID는 실행 파일 경로 기반이라 대상 앱을 다시 켜도 같다.
     private delegate void SessionVisitor(string key, uint pid, ISimpleAudioVolume volume);
 
     private static void VisitSessions(SessionVisitor visit, CancellationToken token)
@@ -442,22 +463,25 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
         }
     }
 
-    private static HashSet<uint> GetKakaoTalkProcessIds()
+    private static HashSet<uint> GetTargetProcessIds(IEnumerable<string> processNames)
     {
         var set = new HashSet<uint>();
-        try
+        foreach (var name in processNames)
         {
-            foreach (var process in Process.GetProcessesByName("KakaoTalk"))
+            try
             {
-                using (process)
+                foreach (var process in Process.GetProcessesByName(name))
                 {
-                    set.Add((uint)process.Id);
+                    using (process)
+                    {
+                        set.Add((uint)process.Id);
+                    }
                 }
             }
-        }
-        catch
-        {
-            // 프로세스 목록 조회 예외 무시
+            catch
+            {
+                // 프로세스 목록 조회 예외 무시
+            }
         }
         return set;
     }
@@ -490,80 +514,80 @@ public sealed class LiveKakaoAudioOperator : IKakaoAudioOperator
     [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IMMDeviceEnumerator
     {
-        int EnumAudioEndpoints(int dataFlow, int stateMask, out IMMDeviceCollection ppDevices);
-        int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppEndpoint);
-        int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string pwstrId, out IMMDevice ppDevice);
-        int RegisterEndpointNotificationCallback(nint pClient);
-        int UnregisterEndpointNotificationCallback(nint pClient);
+        [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IMMDeviceCollection ppDevices);
+        [PreserveSig] int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppEndpoint);
+        [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string pwstrId, out IMMDevice ppDevice);
+        [PreserveSig] int RegisterEndpointNotificationCallback(nint pClient);
+        [PreserveSig] int UnregisterEndpointNotificationCallback(nint pClient);
     }
 
     [ComImport]
     [Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IMMDevice
     {
-        int Activate(ref Guid iid, int dwClsCtx, nint pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
-        int OpenPropertyStore(int stgmAccess, out nint ppProperties);
-        int GetId([MarshalAs(UnmanagedType.LPWStr)] out string ppstrId);
-        int GetState(out int pdwState);
+        [PreserveSig] int Activate(ref Guid iid, int dwClsCtx, nint pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+        [PreserveSig] int OpenPropertyStore(int stgmAccess, out nint ppProperties);
+        [PreserveSig] int GetId([MarshalAs(UnmanagedType.LPWStr)] out string ppstrId);
+        [PreserveSig] int GetState(out int pdwState);
     }
 
     [ComImport]
     [Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IMMDeviceCollection
     {
-        int GetCount(out int pcDevices);
-        int Item(int nDevice, out IMMDevice ppDevice);
+        [PreserveSig] int GetCount(out int pcDevices);
+        [PreserveSig] int Item(int nDevice, out IMMDevice ppDevice);
     }
 
     [ComImport]
     [Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IAudioSessionManager2
     {
-        int GetAudioSessionControl(ref Guid AudioSessionGuid, uint StreamFlags, out nint SessionControl);
-        int GetSimpleAudioVolume(ref Guid AudioSessionGuid, uint StreamFlags, out ISimpleAudioVolume AudioVolume);
-        int GetSessionEnumerator(out IAudioSessionEnumerator SessionEnum);
-        int RegisterSessionNotification(nint SessionNotification);
-        int UnregisterSessionNotification(nint SessionNotification);
-        int RegisterDuckNotification(string sessionID, nint duckNotification);
-        int UnregisterDuckNotification(nint duckNotification);
+        [PreserveSig] int GetAudioSessionControl(ref Guid AudioSessionGuid, uint StreamFlags, out nint SessionControl);
+        [PreserveSig] int GetSimpleAudioVolume(ref Guid AudioSessionGuid, uint StreamFlags, out ISimpleAudioVolume AudioVolume);
+        [PreserveSig] int GetSessionEnumerator(out IAudioSessionEnumerator SessionEnum);
+        [PreserveSig] int RegisterSessionNotification(nint SessionNotification);
+        [PreserveSig] int UnregisterSessionNotification(nint SessionNotification);
+        [PreserveSig] int RegisterDuckNotification(string sessionID, nint duckNotification);
+        [PreserveSig] int UnregisterDuckNotification(nint duckNotification);
     }
 
     [ComImport]
     [Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IAudioSessionEnumerator
     {
-        int GetCount(out int SessionCount);
-        int GetSession(int SessionIndex, [MarshalAs(UnmanagedType.IUnknown)] out object Session);
+        [PreserveSig] int GetCount(out int SessionCount);
+        [PreserveSig] int GetSession(int SessionIndex, [MarshalAs(UnmanagedType.IUnknown)] out object Session);
     }
 
     [ComImport]
     [Guid("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IAudioSessionControl2
     {
-        int GetState(out int pRetVal);
-        int GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
-        int SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string Value, ref Guid EventContext);
-        int GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
-        int SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string Value, ref Guid EventContext);
-        int GetGroupingParam(out Guid pRetVal);
-        int SetGroupingParam(ref Guid Override, ref Guid EventContext);
-        int RegisterAudioSessionNotification(nint NewNotifications);
-        int UnregisterAudioSessionNotification(nint NewNotifications);
-        int GetSessionIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
-        int GetSessionInstanceIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
-        int GetProcessId(out uint pRetVal);
-        int IsSystemSoundsSession();
-        int SetDuckingPreference([MarshalAs(UnmanagedType.Bool)] bool optOut);
+        [PreserveSig] int GetState(out int pRetVal);
+        [PreserveSig] int GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+        [PreserveSig] int SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string Value, ref Guid EventContext);
+        [PreserveSig] int GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+        [PreserveSig] int SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string Value, ref Guid EventContext);
+        [PreserveSig] int GetGroupingParam(out Guid pRetVal);
+        [PreserveSig] int SetGroupingParam(ref Guid Override, ref Guid EventContext);
+        [PreserveSig] int RegisterAudioSessionNotification(nint NewNotifications);
+        [PreserveSig] int UnregisterAudioSessionNotification(nint NewNotifications);
+        [PreserveSig] int GetSessionIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+        [PreserveSig] int GetSessionInstanceIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+        [PreserveSig] int GetProcessId(out uint pRetVal);
+        [PreserveSig] int IsSystemSoundsSession();
+        [PreserveSig] int SetDuckingPreference([MarshalAs(UnmanagedType.Bool)] bool optOut);
     }
 
     [ComImport]
     [Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface ISimpleAudioVolume
     {
-        int SetMasterVolume(float fLevel, ref Guid EventContext);
-        int GetMasterVolume(out float pfLevel);
-        int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid EventContext);
-        int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
+        [PreserveSig] int SetMasterVolume(float fLevel, ref Guid EventContext);
+        [PreserveSig] int GetMasterVolume(out float pfLevel);
+        [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid EventContext);
+        [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
     }
 
     #endregion
