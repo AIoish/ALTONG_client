@@ -18,9 +18,10 @@ namespace Altong.Client;
 
 public partial class App : System.Windows.Application
 {
-    [DllImport("kernel32.dll")]
+    [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AttachConsole(int dwProcessId);
     private const int AttachParentProcess = -1;
+    private const int ErrorAccessDenied = 5; // AttachConsole: 이미 콘솔에 연결된 프로세스
 
     [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
@@ -49,6 +50,7 @@ public partial class App : System.Windows.Application
 
     private readonly CancellationTokenSource _shutdown = new();
     private bool _isShuttingDown;
+    private bool _shutdownRequestPending;
 
     internal bool IsShuttingDown
     {
@@ -124,13 +126,7 @@ public partial class App : System.Windows.Application
         })));
         RegisterUnhandledExceptionLogging();
 
-        // WinExe(GUI 앱)에서 dotnet run을 실행한 부모 터미널로 콘솔 출력 연결
-        if (AttachConsole(AttachParentProcess))
-        {
-            var stdOut = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
-            Console.SetOut(stdOut);
-            AppLogger.Info("[Altong] 터미널 콘솔 로그 연결 완료 (ActiveWindow 실시간 추적 시작)");
-        }
+        ConnectParentConsole();
 
         // Recover before database/model loading: a startup failure must not strand suppressed notifications.
         var nativeFocusController = new NativeFocusController();
@@ -355,7 +351,30 @@ public partial class App : System.Windows.Application
 
         _singleInstance?.Dispose();
         _singleInstance = null;
+        Console.CancelKeyPress -= Console_CancelKeyPress;
         base.OnExit(e);
+    }
+
+    private void ConnectParentConsole()
+    {
+        bool attached = AttachConsole(AttachParentProcess);
+        if (!attached && Marshal.GetLastWin32Error() != ErrorAccessDenied) return;
+
+        // AttachConsole이 콘솔 처리기 목록을 초기화하므로 연결한 다음에 등록한다.
+        Console.CancelKeyPress += Console_CancelKeyPress;
+        if (attached)
+        {
+            var stdOut = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
+            Console.SetOut(stdOut);
+            AppLogger.Info("[Altong] 터미널 콘솔 로그 연결 완료 (ActiveWindow 실시간 추적 시작)");
+        }
+    }
+
+    private void Console_CancelKeyPress(object? sender, ConsoleCancelEventArgs e)
+    {
+        if (e.SpecialKey != ConsoleSpecialKey.ControlC) return;
+        e.Cancel = true;
+        RequestShutdown();
     }
 
     private void PersistFocusStateForExit()
@@ -431,6 +450,7 @@ public partial class App : System.Windows.Application
                 calendar: _calendar,
                 insightRepository: SessionResults.FocusInsights,
                 insightCoaching: _insightCoachingService);
+            _dashboardWindow.Closing += DashboardWindow_Closing;
             _dashboardWindow.Closed += DashboardWindow_Closed;
             MainWindow = _dashboardWindow;
         }
@@ -447,10 +467,18 @@ public partial class App : System.Windows.Application
         UpdateMessengerStatus();
     }
 
+    private void DashboardWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (e.Cancel || IsShuttingDown || !FocusModeService.IsEnabled) return;
+        e.Cancel = true;
+        RequestShutdown();
+    }
+
     private void DashboardWindow_Closed(object? sender, EventArgs e)
     {
         if (_dashboardWindow is not null)
         {
+            _dashboardWindow.Closing -= DashboardWindow_Closing;
             _dashboardWindow.Closed -= DashboardWindow_Closed;
         }
 
@@ -480,8 +508,30 @@ public partial class App : System.Windows.Application
 
     internal void RequestShutdown()
     {
-        RunOnUiThread(() =>
+        if (!Dispatcher.CheckAccess())
         {
+            PostToUiThread(RequestShutdown);
+            return;
+        }
+        if (IsShuttingDown || _shutdownRequestPending) return;
+        _shutdownRequestPending = true;
+        // Closing 이벤트가 끝난 뒤에만 창을 닫을 수 있다. 확인창이 떠 있는 동안의 중복 요청도 합친다.
+        PostToUiThread(ProcessShutdownRequest);
+    }
+
+    private void ProcessShutdownRequest()
+    {
+        try
+        {
+            if (FocusModeService.IsEnabled)
+            {
+                const string message = "집중 모드가 켜져 있어요.\n진행 중인 집중을 끝내고 ALTONG을 종료할까요?";
+                const string title = "ALTONG 종료";
+                var answer = _dashboardWindow is { IsVisible: true, WindowState: not WindowState.Minimized } owner
+                    ? System.Windows.MessageBox.Show(owner, message, title, MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel)
+                    : System.Windows.MessageBox.Show(message, title, MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel);
+                if (answer != MessageBoxResult.OK) return;
+            }
             if (_notificationDockWindow?.Panel.TryFlushMemoDraft() == false)
             {
                 System.Windows.MessageBox.Show("메모를 저장하지 못했습니다. 내용을 복사하거나 저장한 뒤 다시 종료해 주세요.",
@@ -498,7 +548,11 @@ public partial class App : System.Windows.Application
             _notificationDockWindow?.Close();
             _dashboardWindow?.Close();
             Shutdown();
-        });
+        }
+        finally
+        {
+            _shutdownRequestPending = false;
+        }
     }
 
     private void FocusModeService_StateChanged(object? sender, EventArgs e)

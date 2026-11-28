@@ -8,6 +8,7 @@ using Altong.Client.Data.Models;
 using Altong.Client.Data.Repositories;
 using Altong.Client.Models;
 using Altong.Client.Services;
+using Altong.Client.Services.Calendar;
 using Altong.Client.Services.Focus;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -81,7 +82,7 @@ public sealed class SessionResultUiTests
                     Assert.AreEqual(usage.Sum(app => app.Seconds), journal.Sum(hour => hour.Duration.TotalSeconds));
                     ((TabControl)window.FindName("DashboardTabs")).SelectedIndex = 2;
                     RefreshDashboardData(window);
-                    Assert.AreEqual("오늘의 집중 활동", ((TextBlock)window.FindName("PageTitleText")).Text);
+                    Assert.AreEqual("활동 일지", ((TextBlock)window.FindName("PageTitleText")).Text);
                     var root = (FrameworkElement)window.Content;
                     foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
                     {
@@ -141,15 +142,20 @@ public sealed class SessionResultUiTests
                     var tabs = (TabControl)window.FindName("DashboardTabs");
                     tabs.ApplyTemplate();
                     var home = tabs.SelectedContent;
-                    var shortcuts = new[] { "HomeNotificationsShortcut", "HomeJournalShortcut", "HomeSettingsShortcut", "HomeCalendarShortcut" }
+                    // 벤토 칸은 누르면 그 탭으로 간다(리포트가 없으면 [최근 리포트]는 캘린더로).
+                    var tiles = new[] { "HomeNotificationsShortcut", "HomeJournalShortcut", "HomeStreakShortcut", "HomeCalendarShortcut", "HomeReportShortcut" }
                         .Select(name => (Button)window.FindName(name)).ToArray();
-                    CollectionAssert.AreEqual(new[] { "알림 확인", "활동 일지", "설정", "캘린더" },
-                        shortcuts.Select(AutomationProperties.GetName).ToArray());
-                    for (int i = 0; i < shortcuts.Length; i++)
+                    CollectionAssert.AreEqual(new[] { "집중 중 받은 알림", "오늘 집중", "연속 집중", "다음 일정", "최근 리포트" },
+                        tiles.Select(AutomationProperties.GetName).ToArray());
+                    var expectedTabs = new[] { 1, 2, 5, 4, 4 };
+                    for (int i = 0; i < tiles.Length; i++)
                     {
-                        shortcuts[i].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                        Assert.AreEqual(i + 1, tabs.SelectedIndex);
+                        tabs.SelectedIndex = 0;
+                        tiles[i].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        Assert.AreEqual(expectedTabs[i], tabs.SelectedIndex);
                     }
+                    var shortcuts = new[] { "HomeNotificationsShortcut", "HomeCalendarShortcut", "HomeReportShortcut" }
+                        .Select(name => (Button)window.FindName(name)).ToArray();
                     tabs.SelectedIndex = 0;
                     Assert.AreEqual(6, tabs.Items.Count);
                     Assert.AreEqual("알림 확인", ((TabItem)tabs.Items[1]).Header);
@@ -176,8 +182,9 @@ public sealed class SessionResultUiTests
                             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                             .Invoke(window, new object[] { navigation, new RoutedEventArgs() });
                         Assert.AreEqual(index, tabs.SelectedIndex);
+                        Assert.IsNull(window.FindName("BackButton"), "도안대로 탭 머리에는 뒤로 가기 버튼이 없습니다.");
                         Assert.AreEqual(index == 0 ? Visibility.Collapsed : Visibility.Visible,
-                            ((Button)window.FindName("BackButton")).Visibility);
+                            ((Button)window.FindName("PageMenuButton")).Visibility, "홈 밖의 탭에는 ⋯ 메뉴가 있습니다.");
                         foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
                         {
                             root.Measure(size);
@@ -192,148 +199,60 @@ public sealed class SessionResultUiTests
                     }
                     Assert.AreSame(home, tabs.SelectedContent);
                     tabs.SelectedIndex = 3;
-                    var sections = new[] { "TimerSettingsExpander", "AutoDndSettingsExpander", "SystemSettingsExpander", "NotificationSettingsExpander" }
-                        .Select(name => (Expander)window.FindName(name)).ToArray();
-                    Assert.IsTrue(sections.All(section => !section.IsExpanded), "설정은 처음에 제목과 설명만 표시합니다.");
-                    Assert.AreEqual("타이머 꺼짐", AutomationProperties.GetItemStatus(sections[0]));
-                    Assert.AreEqual("설정 켜짐", AutomationProperties.GetItemStatus(sections[1]));
-                    Assert.AreEqual("자동 실행 확인 불가", AutomationProperties.GetItemStatus(sections[2]));
-                    Assert.AreEqual("연결 안 됨", AutomationProperties.GetItemStatus(sections[3]));
-                    root.Measure(new Size(640, 520));
-                    root.Arrange(new Rect(0, 0, 640, 520));
-                    root.UpdateLayout();
-                    PumpBindings();
-                    var settingsViewport = (ScrollViewer)tabs.SelectedContent;
-                    foreach (var section in sections)
-                    {
-                        var bounds = section.TransformToAncestor(settingsViewport).TransformBounds(new Rect(section.RenderSize));
-                        Assert.IsTrue(bounds.Top >= 0 && bounds.Bottom <= settingsViewport.ViewportHeight,
-                            "최소 창에서 접힌 네 개 설정의 제목을 모두 볼 수 있어야 합니다.");
-                        var icon = Descendants(section).OfType<TextBlock>().Single(text => text.Name == "SettingsIcon");
-                        var summary = Descendants(section).OfType<TextBlock>().Single(text => text.Name == "SettingsSummary");
-                        Assert.AreEqual("Segoe MDL2 Assets", icon.FontFamily.Source);
-                        Assert.IsFalse(string.IsNullOrWhiteSpace(icon.Text));
-                        Assert.AreEqual(AutomationProperties.GetItemStatus(section), summary.Text,
-                            "표시된 요약은 실제 설정 상태와 일치해야 합니다.");
-                        var peer = new System.Windows.Automation.Peers.ExpanderAutomationPeer(section);
-                        Assert.AreEqual(section.Header, peer.GetName());
-                        var provider = (System.Windows.Automation.Provider.IExpandCollapseProvider)peer
-                            .GetPattern(System.Windows.Automation.Peers.PatternInterface.ExpandCollapse);
-                        provider.Expand();
-                        root.UpdateLayout();
-                        Assert.AreEqual(window.FindResource("BlackSelection"), ((Border)section.Parent).Background,
-                            "펼친 설정은 배경으로 구분해야 합니다.");
-                        Assert.AreEqual(ExpandCollapseState.Expanded, provider.ExpandCollapseState);
-                        var content = (FrameworkElement)section.Template.FindName("ExpandedContent", section);
-                        Assert.AreEqual(Visibility.Visible, content.Visibility);
-                        provider.Collapse();
-                        root.UpdateLayout();
-                        Assert.AreEqual(ExpandCollapseState.Collapsed, provider.ExpandCollapseState);
-                        Assert.AreEqual(Visibility.Collapsed, content.Visibility);
-                    }
-                    SavePreview(root, "settings-collapsed-640.png", new Size(640, 520));
-                    var timerSection = sections[0];
-                    var timerPeer = new System.Windows.Automation.Peers.ExpanderAutomationPeer(timerSection);
-                    Assert.AreEqual("집중·휴식 루틴", timerPeer.GetName());
-                    var timerProvider = (System.Windows.Automation.Provider.IExpandCollapseProvider)timerPeer
-                        .GetPattern(System.Windows.Automation.Peers.PatternInterface.ExpandCollapse);
-                    Assert.AreEqual(ExpandCollapseState.Collapsed, timerProvider.ExpandCollapseState);
-                    timerProvider.Expand();
-                    Assert.IsTrue(timerSection.IsExpanded);
-                    sections[1].IsExpanded = true;
-                    Assert.IsTrue(timerSection.IsExpanded && sections[1].IsExpanded, "관련 설정은 각각 독립적으로 펼칠 수 있습니다.");
-                    var autoDndCheck = (CheckBox)window.FindName("AutoDndEnabledCheckBox");
-                    autoDndCheck.IsChecked = false;
-                    autoDndCheck.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-                    Assert.IsFalse(autoDndSettings.Current.Enabled, "자동 집중 설정은 펼친 화면에서도 즉시 저장해야 합니다.");
-                    Assert.AreEqual("꺼짐", AutomationProperties.GetItemStatus(sections[1]));
-                    sections[1].IsExpanded = false;
-                    sections[1].IsExpanded = true;
-                    Assert.AreEqual(false, autoDndCheck.IsChecked);
-                    autoDndCheck.IsChecked = true;
-                    autoDndCheck.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                    foreach (var removed in new[] { "SettingsDetailPanel", "TimerSettingsExpander", "AutoDndSettingsExpander", "SystemSettingsExpander", "NotificationSettingsExpander", "SaveTimerSettingsButton" })
+                        Assert.IsNull(window.FindName(removed), $"세부 설정 화면은 없앴습니다: {removed}");
+                    var timerCard = (Button)window.FindName("QuickTimerCard");
+                    var autoCard = (Button)window.FindName("QuickAutoDndCard");
+                    Assert.AreEqual("타이머 꺼짐", AutomationProperties.GetItemStatus(timerCard));
+                    Assert.AreEqual("설정 켜짐", AutomationProperties.GetItemStatus(autoCard));
+                    Assert.AreEqual("자동 실행 확인 불가", AutomationProperties.GetItemStatus((Button)window.FindName("QuickStartupCard")));
+                    Assert.AreEqual("연결 안 됨", AutomationProperties.GetItemStatus((Border)window.FindName("BlockedAppsPane")));
+
+                    // 자동 집중 카드는 누르는 즉시 저장한다.
+                    autoCard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Assert.IsFalse(autoDndSettings.Current.Enabled);
+                    Assert.AreEqual("꺼짐", AutomationProperties.GetItemStatus(autoCard));
+                    autoCard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     Assert.IsTrue(autoDndSettings.Current.Enabled);
-                    Assert.AreEqual("설정 켜짐", AutomationProperties.GetItemStatus(sections[1]));
-                    sections[1].IsExpanded = false;
-                    root.UpdateLayout();
-                    var timerOption = (CheckBox)window.FindName("TimerEnabledCheckBox");
-                    var timerOptions = (StackPanel)window.FindName("TimerOptionsPanel");
-                    var focusInput = (TextBox)window.FindName("FocusSessionDurationSetting");
-                    var restInput = (TextBox)window.FindName("BreakDurationSetting");
-                    var saveTimer = (Button)window.FindName("SaveTimerSettingsButton");
-                    string originalInput = focusInput.Text;
-                    var originalSaved = settings.Current;
-                    focusInput.Text = "37";
-                    timerProvider.Collapse();
-                    Assert.AreEqual(ExpandCollapseState.Collapsed, timerProvider.ExpandCollapseState);
-                    timerProvider.Expand();
-                    root.UpdateLayout();
-                    Assert.AreEqual("37", focusInput.Text, "접었다 다시 열어도 편집 중인 입력은 유지합니다.");
-                    Assert.AreEqual(originalSaved, settings.Current, "펼침·접힘은 설정을 저장하지 않습니다.");
-                    focusInput.Text = originalInput;
-                    void PreviewTimerSettings(string state)
-                    {
-                        foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
-                        {
-                            root.Measure(size);
-                            root.Arrange(new Rect(size));
-                            root.UpdateLayout();
-                            PumpBindings();
-                            var viewport = (ScrollViewer)tabs.SelectedContent;
-                            viewport.ScrollToTop();
-                            root.UpdateLayout();
-                            Assert.IsTrue(viewport.ScrollableWidth <= 1,
-                                "타이머 설정은 기본·최소 창 크기에서 가로로 잘리지 않아야 합니다.");
-                            var badge = Descendants(timerSection).OfType<TextBlock>().Single(text => text.Name == "SettingsSummary");
-                            Assert.AreEqual(AutomationProperties.GetItemStatus(timerSection), badge.Text, "저장 후 헤더 요약도 갱신해야 합니다.");
-                            var badgeBounds = badge.TransformToAncestor(timerSection).TransformBounds(new Rect(badge.RenderSize));
-                            Assert.IsTrue(badgeBounds.Right <= timerSection.ActualWidth + 1,
-                                $"설정 요약이 머리글 밖으로 넘어가면 안 됩니다: {badgeBounds.Right:F1}/{timerSection.ActualWidth:F1}");
-                            var measured = new System.Windows.Media.FormattedText(badge.Text, System.Globalization.CultureInfo.CurrentCulture,
-                                FlowDirection.LeftToRight, new System.Windows.Media.Typeface(badge.FontFamily, badge.FontStyle, badge.FontWeight, badge.FontStretch),
-                                badge.FontSize, System.Windows.Media.Brushes.White, 1);
-                            Assert.IsTrue(badge.ActualWidth + 1 >= measured.WidthIncludingTrailingWhitespace,
-                                $"설정 요약이 잘리지 않아야 합니다: {badge.Text} ({badge.ActualWidth:F1}/{measured.WidthIncludingTrailingWhitespace:F1})");
-                            SavePreview(root, $"settings-{state}-{size.Width}.png", size);
-                            saveTimer.BringIntoView();
-                            PumpBindings();
-                            root.UpdateLayout();
-                            var bounds = saveTimer.TransformToAncestor(viewport).TransformBounds(new Rect(saveTimer.RenderSize));
-                            Assert.IsTrue(bounds.Top >= -1 && bounds.Bottom <= viewport.ViewportHeight + 1,
-                                "타이머 설정이 길어져도 루틴 저장 버튼까지 스크롤할 수 있어야 합니다.");
-                            SavePreview(root, $"settings-{state}-save-{size.Width}.png", size);
-                        }
-                    }
-                    Assert.AreEqual(false, timerOption.IsChecked);
-                    Assert.AreEqual(Visibility.Collapsed, timerOptions.Visibility);
-                    PreviewTimerSettings("disabled");
-                    timerOption.IsChecked = true;
-                    Assert.AreEqual("타이머 꺼짐", AutomationProperties.GetItemStatus(timerSection), "저장 전 입력을 저장된 상태로 표시하지 않습니다.");
-                    Assert.AreEqual(Visibility.Visible, timerOptions.Visibility);
+                    Assert.AreEqual("설정 켜짐", AutomationProperties.GetItemStatus(autoCard));
+
+                    // 타이머가 꺼져 있으면 루틴 입력은 숨고, 켜면 바로 보인다.
+                    var routineOptions = (FrameworkElement)window.FindName("RoutineOptions");
+                    Assert.AreEqual(Visibility.Collapsed, routineOptions.Visibility);
+                    timerCard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Assert.IsTrue(settings.Current.TimerEnabled);
+                    Assert.AreEqual(Visibility.Visible, routineOptions.Visibility);
+
+                    // 루틴 고르기·직접 입력은 저장 버튼 없이 바로 저장한다. 잘못된 값은 저장하지 않는다.
+                    var presets = (UniformGrid)window.FindName("RoutinePresetGrid");
+                    ((Button)presets.Children[1]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Assert.AreEqual(new FocusTimerSettings(50, 10, true), settings.Current);
+                    Assert.AreEqual("선택됨", AutomationProperties.GetItemStatus(presets.Children[1]));
+                    var focusInput = (TextBox)window.FindName("RoutineFocusInput");
+                    var restInput = (TextBox)window.FindName("RoutineBreakInput");
                     focusInput.Text = "30";
                     restInput.Text = "";
-                    saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    Assert.AreEqual(new FocusTimerSettings(30, 0, true), settings.Current,
-                        "휴식시간을 비워두어도 집중 타이머 설정을 저장할 수 있어야 합니다.");
-                    Assert.AreEqual("집중 30분 · 휴식 없음", AutomationProperties.GetItemStatus(timerSection));
-                    PreviewTimerSettings("focus-only");
-                    restInput.Text = "5";
-                    saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    Assert.AreEqual(new FocusTimerSettings(30, 5, true), settings.Current);
-                    Assert.AreEqual("집중 30분 · 휴식 5분", AutomationProperties.GetItemStatus(timerSection));
-                    PreviewTimerSettings("routine");
+                    window.CommitRoutineInputs();
+                    Assert.AreEqual(new FocusTimerSettings(30, 0, true), settings.Current, "휴식을 비우면 휴식 없이 저장합니다.");
+                    Assert.AreEqual("집중 30분 · 휴식 없음", AutomationProperties.GetItemStatus(timerCard));
                     restInput.Text = "99";
-                    saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    Assert.AreEqual(new FocusTimerSettings(30, 5, true), settings.Current,
-                        "잘못된 시간 입력은 저장한 설정을 덮어쓰지 않아야 합니다.");
-                    Assert.AreEqual("집중 30분 · 휴식 5분", AutomationProperties.GetItemStatus(timerSection));
-                    PreviewTimerSettings("invalid");
-                    timerOption.IsChecked = false;
-                    focusInput.Text = "";
-                    saveTimer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    Assert.AreEqual(new FocusTimerSettings(30, 5, false), settings.Current,
-                        "타이머를 끌 때는 시간 입력을 요구하지 않아야 합니다.");
-                    Assert.AreEqual(Visibility.Collapsed, timerOptions.Visibility);
+                    window.CommitRoutineInputs();
+                    Assert.AreEqual(new FocusTimerSettings(30, 0, true), settings.Current, "잘못된 입력은 저장한 설정을 덮어쓰지 않습니다.");
+                    StringAssert.Contains(((TextBlock)window.FindName("RoutineFeedbackText")).Text, "입력해 주세요");
+                    restInput.Text = "0";
+                    foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
+                    {
+                        root.Measure(size);
+                        root.Arrange(new Rect(size));
+                        root.UpdateLayout();
+                        PumpBindings();
+                        var viewport = (ScrollViewer)tabs.SelectedContent;
+                        Assert.IsTrue(viewport.ScrollableWidth <= 1, "설정은 기본·최소 창 크기에서 가로로 잘리지 않아야 합니다.");
+                        SavePreview(root, $"settings-routine-{size.Width}.png", size);
+                    }
+                    timerCard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Assert.AreEqual(new FocusTimerSettings(30, 0, false), settings.Current, "타이머를 꺼도 루틴 값은 남깁니다.");
+                    Assert.AreEqual(Visibility.Collapsed, routineOptions.Visibility);
                     tabs.SelectedIndex = 0;
                     Assert.IsNull(window.FindName("HomeApplicationText"));
                     Assert.IsNull(window.FindName("HomeTimerStateText"));
@@ -344,8 +263,7 @@ public sealed class SessionResultUiTests
                     var focusStatusDot = (System.Windows.Shapes.Ellipse)window.FindName("HomeFocusStatusDot");
                     Assert.AreEqual("집중모드 꺼짐", focusStatus.Text);
                     var offIndicatorColor = ((System.Windows.Media.SolidColorBrush)focusStatusDot.Fill).Color;
-                    Assert.AreEqual("집중 루틴", ((TextBlock)window.FindName("HomeRoutineTitleText")).Text);
-                    Assert.AreEqual("\uE916", ((TextBlock)window.FindName("HomeRoutineIconText")).Text);
+                    Assert.IsNotNull(window.FindName("HomeJournalShortcut"), "홈에는 오늘 집중 칸이 있어야 합니다.");
                     foreach (var size in new[] { new Size(1100, 780), new Size(920, 780), new Size(640, 520) })
                     {
                         root.Measure(size);
@@ -365,28 +283,21 @@ public sealed class SessionResultUiTests
                         SavePreview(root, $"home-{size.Width}.png", size);
                         var homeViewport = (ScrollViewer)home;
                         Assert.IsTrue(homeViewport.ScrollableWidth <= 1);
-                        var sidePanel = (Grid)window.FindName("HomeSidePanel");
-                        Assert.AreEqual(homeViewport.ActualWidth < 740 ? 1 : 0, Grid.GetRow(sidePanel));
                         if (homeViewport.ActualWidth >= 740) Assert.IsTrue(homeViewport.ScrollableHeight <= 1, "넓은 홈은 한 화면에 표시합니다.");
                         var homeLayout = (Grid)window.FindName("HomeLayout");
-                        var mainPanel = (StackPanel)window.FindName("HomeMainPanel");
-                        var mainBounds = mainPanel.TransformToAncestor(homeLayout)
-                            .TransformBounds(new Rect(mainPanel.RenderSize));
-                        if (homeViewport.ActualWidth >= 740)
-                        {
-                            var leftBottom = shortcuts[1].TransformToAncestor(homeLayout)
-                                .TransformBounds(new Rect(shortcuts[1].RenderSize)).Bottom;
-                            var rightBottom = shortcuts[2].TransformToAncestor(homeLayout)
-                                .TransformBounds(new Rect(shortcuts[2].RenderSize)).Bottom;
-                            Assert.IsTrue(mainBounds.Top > 0, "두 열 배치에서는 제거한 카드 자리의 상단 여백을 유지해야 합니다.");
-                            Assert.IsTrue(Math.Abs(leftBottom - rightBottom) <= 1,
-                                "왼쪽 알림·활동 일지와 오른쪽 루틴 카드의 하단을 맞춰야 합니다.");
-                        }
+                        var rowBounds = shortcuts.Select(tile => tile.TransformToAncestor(homeLayout).TransformBounds(new Rect(tile.RenderSize))).ToArray();
+                        var sameRow = homeViewport.ActualWidth >= 600 ? rowBounds : rowBounds.Skip(1).ToArray();
+                        Assert.IsTrue(sameRow.All(tile => Math.Abs(tile.Top - sameRow[0].Top) <= 1 && Math.Abs(tile.Bottom - sameRow[0].Bottom) <= 1),
+                            "아래 줄 칸은 같은 높이로 나란히 둡니다(좁으면 알림 칸 아래에 일정·리포트가 나란히).");
+                        var focusCard = (FrameworkElement)window.FindName("HomeFocusCard");
+                        var flowCard = (FrameworkElement)window.FindName("HomeJournalShortcut");
+                        var focusBounds = focusCard.TransformToAncestor(homeLayout).TransformBounds(new Rect(focusCard.RenderSize));
+                        var flowBounds = flowCard.TransformToAncestor(homeLayout).TransformBounds(new Rect(flowCard.RenderSize));
+                        if (homeViewport.ActualWidth >= 600)
+                            Assert.IsTrue(Math.Abs(focusBounds.Top - flowBounds.Top) <= 1 && flowBounds.Left > focusBounds.Right,
+                                "넓은 홈에서는 타이머 옆에 오늘의 집중 시간을 둡니다.");
                         else
-                        {
-                            Assert.IsTrue(Math.Abs(mainBounds.Top) <= 1,
-                                "좁은 창의 세로 배치에서는 불필요한 상단 공백을 만들지 않아야 합니다.");
-                        }
+                            Assert.IsTrue(flowBounds.Top >= focusBounds.Bottom, "좁은 홈에서는 오늘의 집중 시간을 타이머 아래로 내립니다.");
                         foreach (var shortcut in shortcuts)
                         {
                             shortcut.BringIntoView();
@@ -489,6 +400,7 @@ public sealed class SessionResultUiTests
 
                     tabs.SelectedIndex = 2;
                     RefreshDashboardData(window);
+                    window.ShowJournalDetails(true);
                     var hourly = ActivityJournalHour.Group(entries);
                     ((ItemsControl)window.FindName("JournalItemsControl")).ItemsSource = hourly;
                     Assert.AreEqual(12, hourly.Count);
@@ -553,9 +465,10 @@ public sealed class SessionResultUiTests
                         Assert.IsFalse(((Expander)report.FindName("NotificationsExpander")).IsExpanded);
                         var surface = (System.Windows.Media.SolidColorBrush)((Border)report.Content).Background;
                         var dashboardSurface = (System.Windows.Media.SolidColorBrush)((Border)window.Content).Background;
-                        Assert.IsTrue(surface.Color.R < dashboardSurface.Color.R,
-                            "리포트는 더 깊은 블랙 문서형 바탕으로 대시보드와 구별합니다.");
-                        Assert.IsTrue(Math.Abs(surface.Color.R - surface.Color.B) <= 5);
+                        Assert.IsTrue(surface.Color.R <= dashboardSurface.Color.R,
+                            "리포트는 대시보드와 같거나 더 깊은 흑연 바탕을 씁니다.");
+                        Assert.IsTrue(surface.Color.R >= surface.Color.B && surface.Color.R - surface.Color.B <= 16,
+                            "리포트 바탕도 채도 낮은 따뜻한 흑연입니다.");
                         var reportRoot = (Border)report.Content;
                         var reportGrid = (Grid)reportRoot.Child;
                         foreach (var size in new[] { new Size(480, 380), new Size(600, 660) })
@@ -567,7 +480,6 @@ public sealed class SessionResultUiTests
                             Assert.IsTrue(scroll.ViewportHeight > 0);
                             Assert.IsTrue(scroll.ScrollableWidth <= 1, "결과 리포트에 가로 잘림이 없어야 합니다.");
                             var notifications = (ItemsControl)report.FindName("NotificationItemsControl");
-                            Assert.AreEqual(blocked.Count() + 2, notifications.Items.Count);
                             foreach (var name in new[] { "SaveReportButton", "SkipSaveButton" })
                             {
                                 var action = (Button)report.FindName(name);
@@ -582,6 +494,7 @@ public sealed class SessionResultUiTests
                             SavePreview(reportRoot, $"report-{size.Width}.png", size);
                             var notificationsExpander = (Expander)report.FindName("NotificationsExpander");
                             notificationsExpander.IsExpanded = true;
+                            Assert.AreEqual(blocked.Count() + 2, notifications.Items.Count);
                             reportRoot.UpdateLayout();
                             var replies = Descendants(notifications).OfType<Expander>()
                                 .Where(expander => Equals(expander.Header, "답변하기") && expander.Visibility == Visibility.Visible)
@@ -624,6 +537,210 @@ public sealed class SessionResultUiTests
         thread.IsBackground = true;
         thread.Start();
         Assert.IsTrue(thread.Join(TimeSpan.FromSeconds(15)), "WPF check timed out.");
+        if (failure is not null) throw new AssertFailedException(failure.ToString(), failure);
+    }
+
+    [TestMethod]
+    public void Dashboard_FocusOn_WarmsTheWindow_AndCoolsWhenOff()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+            try
+            {
+                using var database = SqliteDatabase.CreateInMemory();
+                database.Initialize();
+                var results = new SessionResultsService(database, new SqliteFocusSessionRepository(database));
+                var settings = new FocusSettingsStore(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
+                var focusMode = new FocusModeService();
+                using var tracker = new StubActiveWindowTracker();
+                var window = new DashboardWindow(settings, new FocusRoutineService(focusMode, settings), results, tracker, focusModeService: focusMode);
+                try
+                {
+                    var rim = (Border)window.FindName("FocusRim");
+                    var backdrop = (GlassBackdrop)window.FindName("Backdrop");
+                    var card = (Border)window.FindName("HomeFocusCard");
+                    Assert.AreEqual(0, rim.Opacity, "집중이 꺼져 있으면 테두리는 데워지지 않습니다.");
+                    Assert.AreEqual(0, backdrop.EmberLevel);
+                    focusMode.Start();
+                    Assert.AreEqual(1, rim.Opacity, "집중을 켜면 창 테두리가 호박빛으로 데워집니다.");
+                    Assert.AreEqual(1, backdrop.EmberLevel, "창 뒤 불씨가 켜집니다.");
+                    Assert.AreSame(window.FindResource("FocusRimBrush"), card.BorderBrush, "타이머 카드 테두리도 같은 빛을 씁니다.");
+                    var root = (FrameworkElement)window.Content;
+                    foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
+                    {
+                        root.Measure(size);
+                        root.Arrange(new Rect(size));
+                        root.UpdateLayout();
+                        SavePreview(root, $"focus-on-{size.Width}.png", size);
+                    }
+                    focusMode.Stop();
+                    Assert.AreEqual(0, rim.Opacity, "집중을 끄면 다시 식습니다.");
+                    Assert.AreEqual(0, backdrop.EmberLevel);
+                    Assert.AreSame(window.FindResource("GlassRim"), card.BorderBrush);
+                }
+                finally { window.Close(); }
+            }
+            catch (Exception ex) { failure = ex; }
+            finally { Dispatcher.CurrentDispatcher.InvokeShutdown(); }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.IsBackground = true;
+        thread.Start();
+        Assert.IsTrue(thread.Join(TimeSpan.FromSeconds(15)), "WPF check timed out.");
+        if (failure is not null) throw new AssertFailedException(failure.ToString(), failure);
+    }
+
+    [TestMethod]
+    public void Dashboard_TabsFollowChosenMockups_WithRealisticDay()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+            string calendarPath = Path.Combine(Path.GetTempPath(), "altong-mock-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                using var database = SqliteDatabase.CreateInMemory();
+                database.Initialize();
+                // 어제 하루를 도안과 같은 모양으로: 집중 세 번, 저녁 집중에 알림 다섯 개, 점심 약속 하나. 모두 가상 데이터다.
+                var day = DateTime.Today.AddDays(-1);
+                DateTime At(int hour, int minute = 0) => day.AddHours(hour).AddMinutes(minute).ToUniversalTime();
+                var sessions = new SqliteFocusSessionRepository(database);
+                var windows = new SqliteWindowSessionRepository(database);
+                var raw = new SqliteNotificationRepository(database);
+                var plan = new (string Id, DateTime Start, DateTime End)[]
+                {
+                    ("mock-morning", At(10), At(11, 30)), ("mock-afternoon", At(15, 10), At(15, 52)), ("mock-evening", At(18, 27), At(18, 56))
+                };
+                foreach (var (id, start, end) in plan)
+                {
+                    sessions.StartSessionAsync(new FocusSessionRecord(id, start, end, IsCompleted: true)).GetAwaiter().GetResult();
+                    double minutes = (end - start).TotalMinutes;
+                    var parts = new[] { ("Code.exe", "DashboardWindow.xaml - ALTONG_client - Visual Studio Code", .65), ("chrome.exe", "Pull request #69 · GitHub - Chrome", .2), ("WindowsTerminal.exe", "dotnet test", .15) };
+                    var cursor = start;
+                    foreach (var (app, title, share) in parts)
+                    {
+                        var next = cursor.AddMinutes(minutes * share);
+                        windows.InsertAsync(new WindowSessionRecord(0, app, title, cursor, next, (int)(next - cursor).TotalSeconds, id)).GetAwaiter().GetResult();
+                        cursor = next;
+                    }
+                }
+                var notifications = new[]
+                {
+                    new NotificationRecord("mock-1", "Slack", "김팀장", "주간 기획 회의", "내일 오후 3시에 회의실 A에서 주간 기획 회의 진행합니다. 자료 미리 확인 부탁드려요.", At(18, 31), false, SessionId: "mock-evening"),
+                    new NotificationRecord("mock-2", "KakaoTalk", "개발팀 단톡방", "QA", "QA는 금요일 오전 10시에 같이 봐요", At(18, 36), false, SessionId: "mock-evening"),
+                    new NotificationRecord("mock-3", "Discord", "민준", "리뷰 요청", "PR #68 리뷰 부탁해요. 리포트 말풍선 쪽이에요", At(18, 41), false, SessionId: "mock-evening"),
+                    new NotificationRecord("mock-4", "Slack", "운영팀장", "[긴급] 운영 서버", "[긴급] 운영 서버 다운됐습니다. 지금 확인 가능한 분 계신가요?", At(18, 44), true, SessionId: "mock-evening"),
+                    new NotificationRecord("mock-5", "Outlook", "인사팀", "연말정산", "12월 5일까지 연말정산 서류를 제출해 주세요.", At(18, 50), false, SessionId: "mock-evening"),
+                    new NotificationRecord("mock-6", "Slack", "박대리", "기획서", "기획서 v2 올렸습니다", At(15, 24), false, SessionId: "mock-afternoon")
+                };
+                foreach (var record in notifications) raw.InsertAsync(record).GetAwaiter().GetResult();
+                var results = new SessionResultsService(database, sessions);
+                foreach (var (id, start, end) in plan)
+                    results.Reports.SaveAsync(new SessionResult(start, end, notifications.Where(item => item.SessionId == id).ToArray(),
+                        [new SessionAppUsage("Code.exe", (end - start).TotalSeconds)], true) { SessionId = id }).GetAwaiter().GetResult();
+                var calendar = new DashboardCalendarStore(calendarPath);
+                var lunch = new DateTimeOffset(DateTime.SpecifyKind(day.AddHours(12.5), DateTimeKind.Unspecified), TimeSpan.FromHours(9));
+                calendar.Save(new DashboardCalendarEntry("mock-morning", "lunch", "Slack",
+                    new CalendarSchedule("lunch", "점심 약속", lunch, lunch.AddHours(1), "Asia/Seoul", "판교역", null)));
+
+                var settings = new FocusSettingsStore(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
+                settings.Save(new FocusTimerSettings(25, 5, true));
+                var focusMode = new FocusModeService();
+                using var tracker = new StubActiveWindowTracker();
+                var window = new DashboardWindow(settings, new FocusRoutineService(focusMode, settings), results, tracker,
+                    focusModeService: focusMode, calendar: calendar);
+                try
+                {
+                    var root = (FrameworkElement)window.Content;
+                    var tabs = (TabControl)window.FindName("DashboardTabs");
+                    var subtitle = (TextBlock)window.FindName("DashboardDateText");
+                    void Preview(string name)
+                    {
+                        foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
+                        {
+                            root.Measure(size);
+                            root.Arrange(new Rect(size));
+                            root.UpdateLayout();
+                            PumpBindings();
+                            root.UpdateLayout();
+                            SavePreview(root, $"mock-{name}-{size.Width}.png", size);
+                        }
+                    }
+
+                    // 알림 확인 1: 세션 머리글, 고른 알림의 본문·찾은 일정·답장 문구
+                    tabs.SelectedIndex = 1;
+                    RefreshDashboardData(window);
+                    var inbox = (DashboardNotificationsView)((ContentControl)window.FindName("NotificationsHost")).Content;
+                    Assert.AreEqual("어제 18:27 – 18:56 집중 · 5개", inbox.VisibleItems[0].GroupHeaderText);
+                    Assert.AreEqual("어제 15:10 – 15:52 집중 · 1개", inbox.VisibleItems[5].GroupHeaderText);
+                    Assert.IsTrue(inbox.VisibleItems.Skip(1).Take(4).All(row => row.GroupHeaderText is null), "같은 집중의 알림에는 머리글을 한 번만 붙입니다.");
+                    Assert.AreEqual("김팀장 · Slack", inbox.VisibleItems.Single(row => row.Record.Id == "mock-1").RowTitleText);
+                    ((ListBox)inbox.FindName("NotificationsList")).SelectedItem = inbox.VisibleItems.Single(row => row.Record.Id == "mock-1");
+                    Assert.AreEqual(Visibility.Visible, ((FrameworkElement)inbox.FindName("FoundSchedulePanel")).Visibility, "본문의 약속을 찾은 일정으로 보여야 합니다.");
+                    StringAssert.Contains(((TextBlock)inbox.FindName("FoundScheduleText")).Text, "15:00");
+                    StringAssert.Contains(((TextBlock)inbox.FindName("CopyReplyText")).Text, "· 복사");
+                    Assert.IsTrue(((Button)inbox.FindName("OpenInReportButton")).IsEnabled);
+                    Preview("notifications");
+
+                    // 활동 일지 2: 앱 순위 + 시간대 열지도. 어제가 들어가는 기간(이번 달, 1일이면 이번 주)으로 본다.
+                    tabs.SelectedIndex = 2;
+                    if (DateTime.Today.Day > 1 || DateTime.Today.DayOfWeek != DayOfWeek.Sunday)
+                    {
+                        window.SelectJournalRange(DateTime.Today.Day > 1 ? 2 : 1);
+                        RefreshDashboardData(window);
+                        StringAssert.StartsWith(subtitle.Text, "집중 중 쓴 앱 · ");
+                        var ranking = (StackPanel)window.FindName("JournalRankingList");
+                        Assert.AreEqual(3, ranking.Children.Count, "집중 중 쓴 앱 세 개를 오래 쓴 순서로 세웁니다.");
+                        StringAssert.StartsWith(AutomationProperties.GetName(((Border)ranking.Children[0]).Child), "1위 Code");
+                        Assert.AreEqual("10시~11시", ((System.Windows.Documents.Run)window.FindName("JournalInsightHour")).Text);
+                        Assert.AreEqual(Visibility.Visible, ((Border)window.FindName("JournalInsight")).Visibility);
+                        Preview("journal");
+                        Assert.AreEqual(3, ((WrapPanel)window.FindName("JournalLegend")).Children.Count, "앱 세 개면 기타 없이 범례 세 개입니다.");
+                        Assert.IsTrue(((Canvas)window.FindName("JournalHourChart")).Children.Count > 0, "시각별 막대를 그려야 합니다.");
+                    }
+
+                    // 캘린더 1: 월 + 그날 시간표
+                    tabs.SelectedIndex = 4;
+                    var calendarView = (ReportCalendarView)((ContentControl)window.FindName("ReportCalendarHost")).Content;
+                    var selecting = calendarView.SelectDateAsync(day);
+                    var frame = new DispatcherFrame();
+                    var poll = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
+                    poll.Tick += (_, _) => { if (selecting.IsCompleted) frame.Continue = false; };
+                    poll.Start(); Dispatcher.PushFrame(frame); poll.Stop();
+                    StringAssert.Contains(subtitle.Text, "집중 리포트 3개");
+                    Assert.AreEqual("18:27 리포트 열기", ((Button)calendarView.FindName("DayReportButton")).Content);
+                    Assert.AreEqual(Visibility.Visible, ((Button)calendarView.FindName("DayGoogleButton")).Visibility);
+                    Preview("calendar");
+
+                    // 설정 2: 빠른 토글 + 두 칸
+                    tabs.SelectedIndex = 3;
+                    Assert.AreEqual("자주 바꾸는 것은 위에서 바로", subtitle.Text);
+                    Assert.AreEqual("집중 25분 · 휴식 5분", ((TextBlock)window.FindName("QuickTimerText")).Text);
+                    Assert.AreEqual("선택됨", AutomationProperties.GetItemStatus(((UniformGrid)window.FindName("RoutinePresetGrid")).Children[0]));
+                    Assert.AreEqual(Visibility.Visible, ((FrameworkElement)window.FindName("RoutineOptions")).Visibility);
+                    Preview("settings");
+                    ((Button)window.FindName("QuickTimerCard")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Assert.IsFalse(settings.Current.TimerEnabled);
+                    Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)window.FindName("RoutineOptions")).Visibility, "타이머를 끄면 루틴 입력을 숨깁니다.");
+                    Assert.AreEqual(Visibility.Visible, ((FrameworkElement)window.FindName("RoutineTimerOffText")).Visibility);
+                    Preview("settings-timer-off");
+                }
+                finally { window.Close(); }
+            }
+            catch (Exception ex) { failure = ex; }
+            finally
+            {
+                if (File.Exists(calendarPath)) File.Delete(calendarPath);
+                Dispatcher.CurrentDispatcher.InvokeShutdown();
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.IsBackground = true;
+        thread.Start();
+        Assert.IsTrue(thread.Join(TimeSpan.FromSeconds(30)), "WPF check timed out.");
         if (failure is not null) throw new AssertFailedException(failure.ToString(), failure);
     }
 

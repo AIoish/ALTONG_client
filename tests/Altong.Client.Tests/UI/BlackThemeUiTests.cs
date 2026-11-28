@@ -23,7 +23,9 @@ public sealed class BlackThemeUiTests
             foreach (string surface in new[] { "BlackPaper", "BlackCanvas", "BlackSurface", "BlackRaised", "BlackInput" })
             {
                 var color = ColorOf(surface);
-                Assert.IsTrue(Math.Max(color.R, Math.Max(color.G, color.B)) - Math.Min(color.R, Math.Min(color.G, color.B)) <= 5);
+                // 흑연 유리: 차가운 회색이 아니라 붉은빛이 살짝 도는 따뜻한 흑연. 채도는 낮게 유지한다.
+                Assert.IsTrue(color.R >= color.G && color.G >= color.B, surface + " should be warm graphite");
+                Assert.IsTrue(color.R - color.B <= 16, surface + " should stay low-chroma");
                 Assert.IsTrue(Contrast(ColorOf("BlackText"), color) >= 4.5, surface);
                 Assert.IsTrue(Contrast(ColorOf("BlackMuted"), color) >= 4.5, "Secondary text on " + surface);
             }

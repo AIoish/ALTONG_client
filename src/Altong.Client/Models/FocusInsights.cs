@@ -52,7 +52,10 @@ public sealed record InsightHeatmapDay(
     int IntensityLevel,
     bool IsToday,
     bool IsFuture,
-    string TooltipText);
+    string TooltipText,
+    int SessionCount = 0,
+    int BlockedCount = 0,
+    double? WorkPurityPercent = null);
 
 public sealed record InsightQualityMetrics(
     int FlowProtectionEligibleCount,
@@ -73,7 +76,8 @@ public sealed record InsightQualityMetrics(
     IReadOnlyList<InsightDailyTrendItem> DailyTrends,
     int BestStreakDays = 0,
     bool IsTodayFocused = false,
-    IReadOnlyList<InsightHeatmapDay>? HeatmapDays = null);
+    IReadOnlyList<InsightHeatmapDay>? HeatmapDays = null,
+    double? SelfDistractionChangePercent = null);
 
 public sealed record FocusInsightSnapshot(
     InsightPeriod Period,

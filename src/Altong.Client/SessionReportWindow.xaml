@@ -16,8 +16,8 @@
         <SolidColorBrush x:Key="MutedText" Color="{StaticResource BlackMutedColor}" />
         <SolidColorBrush x:Key="WindowSurface" Color="{StaticResource BlackPaperColor}" />
         <SolidColorBrush x:Key="CardSurface" Color="{StaticResource BlackSurfaceColor}" />
-        <SolidColorBrush x:Key="ReportSummarySurface" Color="#2B3038" />
-        <SolidColorBrush x:Key="ReportDivider" Color="#3B3D43" />
+        <SolidColorBrush x:Key="ReportSummarySurface" Color="#2C2723" />
+        <SolidColorBrush x:Key="ReportDivider" Color="#3A342E" />
         <services:AppIconConverter x:Key="AppIcon" />
         <services:AppNameDisplayConverter x:Key="AppNameDisplay" />
         <Style TargetType="Expander" BasedOn="{StaticResource BlackExpander}" />
@@ -26,10 +26,10 @@
             <Setter Property="FontFamily" Value="{x:Static services:AppTypography.BodyFont}" />
             <Setter Property="Background" Value="{StaticResource BlackRaised}" /><Setter Property="Foreground" Value="{StaticResource BlackText}" />
             <Setter Property="BorderBrush" Value="{StaticResource BlackRule}" /><Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="12,7" /><Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="14,8" /><Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
                 <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                        BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                        BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" Padding="{TemplateBinding Padding}">
                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
                 <ControlTemplate.Triggers>
@@ -96,8 +96,9 @@
             <Setter Property="Margin" Value="0,12,0,0" /><Setter Property="Padding" Value="0,4,0,4" />
         </Style>
         <Style x:Key="MetricSection" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource BlackSurface}" />
-            <Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="16,12" />
+            <Setter Property="Background" Value="{StaticResource GlassPane}" />
+            <Setter Property="BorderBrush" Value="{StaticResource GlassRim}" /><Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="20" /><Setter Property="Padding" Value="18,14" />
             <Setter Property="Margin" Value="{StaticResource SectionGap}" />
         </Style>
         <Style x:Key="SummarySection" TargetType="Border">
@@ -122,7 +123,7 @@
             </ControlTemplate></Setter.Value></Setter>
         </Style>
     </ResourceDictionary></Window.Resources>
-    <Border x:Name="ReportSurface" Background="{StaticResource WindowSurface}" BorderBrush="{StaticResource BlackControlRule}" BorderThickness="1" CornerRadius="12">
+    <Border x:Name="ReportSurface" Background="{StaticResource GlassBackdrop}" BorderBrush="{StaticResource GlassWindowRim}" BorderThickness="1" CornerRadius="12">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="36" />
@@ -130,6 +131,8 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+        <local:GlassBackdrop Grid.RowSpan="4" />
+        <Border Grid.RowSpan="4" Background="{StaticResource GlassWindow}" CornerRadius="12" IsHitTestVisible="False" />
         <Grid Margin="20,0,8,0">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" WindowChrome.IsHitTestVisibleInChrome="True">
                 <Button Content="&#xE921;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource BlackMuted}" Padding="13,8" Background="Transparent" BorderThickness="0" Click="MinimizeButton_Click" AutomationProperties.Name="최소화" />
@@ -137,7 +140,7 @@
                 <Button x:Name="ReportCloseButton" Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource BlackMuted}" Padding="13,8" Background="Transparent" BorderThickness="0" Click="CloseButton_Click" AutomationProperties.Name="창 닫기" />
             </StackPanel>
         </Grid>
-        <Border x:Name="ReportCompletionBanner" Grid.Row="1" Background="{StaticResource BlackInput}" BorderBrush="{StaticResource BlackRule}" BorderThickness="0,0,0,1" Padding="22,8,22,16" Margin="0,0,0,24">
+        <Border x:Name="ReportCompletionBanner" Grid.Row="1" Background="Transparent" BorderBrush="{StaticResource GlassDivider}" BorderThickness="0,0,0,1" Padding="22,8,22,16" Margin="0,0,0,24">
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <StackPanel>
@@ -206,33 +209,17 @@
                         </Border>
                         <TextBlock Text="{Binding NotificationSummary}" Style="{StaticResource Muted}" />
                         <local:SummaryBlendView x:Name="SummaryBlend" Visibility="Collapsed" Margin="0,12,0,0" />
-                        <StackPanel x:Name="LegacySummaryPanel">
-                        <TextBlock x:Name="LegacySummaryLabel" Text="원본 알림 미리보기" Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0" />
-                        <ItemsControl x:Name="LegacyHighlightItemsControl" Margin="0,12,0,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{StaticResource BlackSurface}" BorderBrush="{StaticResource BlackRule}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,12">
-                                        <StackPanel>
-                                            <Grid Margin="0,0,0,10">
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="42" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource BlackInput}" HorizontalAlignment="Left">
-                                                    <Image Source="{Binding AppName, Converter={StaticResource AppIcon}}" Width="24" Height="24" />
-                                                </Border>
-                                                <TextBlock Grid.Column="1" Text="{Binding AppDisplayName}" ToolTip="{Binding AppName}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                            </Grid>
-                                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" LineHeight="22" />
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        </StackPanel>
                         <ContentControl x:Name="CalendarSummaryHost" Visibility="Collapsed" Margin="0,10,0,0" />
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource DetailSection}">
-                    <Expander x:Name="NotificationsExpander" Header="원본 알림" Foreground="{StaticResource BlackSoft}" FontWeight="SemiBold" Style="{StaticResource ReportSectionExpander}">
+                    <Expander x:Name="NotificationsExpander" Expanded="NotificationsExpander_Expanded" Header="원본 알림" Foreground="{StaticResource BlackSoft}" FontWeight="SemiBold" Style="{StaticResource ReportSectionExpander}">
                     <StackPanel Margin="0,8,0,0">
+                        <ItemsControl x:Name="LegacyHighlights">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         <ItemsControl x:Name="NotificationItemsControl">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -303,18 +290,7 @@
                         <TextBlock x:Name="CopyStatusText" Style="{StaticResource Muted}" Margin="0,8,0,0" services:MotionBehavior.TextFeedback="True"
                                    AutomationProperties.LiveSetting="Polite" />
                         <Button x:Name="MoreNotificationsButton" Click="MoreNotifications_Click" HorizontalAlignment="Left" Margin="0,8" Visibility="Collapsed" />
-                        <TextBlock Text="알림 없음">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource Muted}">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasItems, ElementName=NotificationItemsControl}" Value="False">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                        <TextBlock x:Name="EmptyNotificationsText" Text="알림 없음" Style="{StaticResource Muted}" Visibility="Collapsed" />
                     </StackPanel></Expander>
                 </Border>
                 <Border Style="{StaticResource DetailSection}">
@@ -385,7 +361,7 @@
                 </Border>
             </StackPanel>
         </ScrollViewer>
-        <Border Grid.Row="3" Background="{StaticResource BlackInput}" BorderBrush="{StaticResource BlackRule}" BorderThickness="0,1,0,0" CornerRadius="0,0,12,12" Padding="22,12">
+        <Border Grid.Row="3" Background="#33100D0B" BorderBrush="{StaticResource GlassDivider}" BorderThickness="0,1,0,0" CornerRadius="0,0,12,12" Padding="22,14">
             <Grid>
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>

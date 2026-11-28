@@ -9,6 +9,8 @@ public partial class NotificationSummaryCalendarView : System.Windows.Controls.U
     public CalendarSummaryItemViewModel[] Items { get; private set; } = [];
     private ReportSummaryGroupViewModel[] _groups = [];
     private int _displayLimit = 25;
+    internal ScheduleRegistrationWindow? ActiveDialog { get; private set; }
+    internal bool UseModelessDialogForTests { get; set; }
     public event EventHandler<CalendarSummaryItemViewModel>? ScheduleCorrected;
     public event EventHandler<CalendarSummaryItemViewModel>? ScheduleSaveRequested;
 
@@ -32,6 +34,14 @@ public partial class NotificationSummaryCalendarView : System.Windows.Controls.U
         CalendarLinkHint.Visibility = Items.Any(row => row.IsScheduleRelated) ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    public void CloseActiveDialog()
+    {
+        var dialog = ActiveDialog;
+        if (dialog is null) return;
+        ActiveDialog = null;
+        dialog.Close();
+    }
+
     private void UpdateVisibleItems()
     {
         SummaryItemsControl.ItemsSource = _groups.Take(_displayLimit).ToArray();
@@ -45,31 +55,65 @@ public partial class NotificationSummaryCalendarView : System.Windows.Controls.U
         UpdateVisibleItems();
     }
 
-    private void SaveCalendar_Click(object sender, RoutedEventArgs e)
+    private void OpenSchedulePopup_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: CalendarSummaryItemViewModel row } ||
             !row.CanAct || !row.IsScheduleRelated) return;
-        if (row.IsEditing)
+
+        if (ActiveDialog is not null)
         {
-            if (!row.ApplyEdits()) return;
-            ScheduleCorrected?.Invoke(this, row);
+            ActiveDialog.Activate();
+            return;
         }
-        if (row.Draft.Validate() is { } error) { row.Status = error; row.IsEditing = true; return; }
+
+        if (!row.IsSaved && !string.IsNullOrWhiteSpace(row.Status))
+            row.Status = "";
+
+        row.IsEditing = true;
+        var dialog = new ScheduleRegistrationWindow(row, ConfirmScheduleRegistration);
+        if (Window.GetWindow(this) is { IsVisible: true } owner)
+        {
+            dialog.Owner = owner;
+            dialog.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        }
+        else
+        {
+            dialog.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
+
+        ActiveDialog = dialog;
+        dialog.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(ActiveDialog, dialog))
+                ActiveDialog = null;
+        };
+
+        if (UseModelessDialogForTests)
+            dialog.Show();
+        else
+            dialog.ShowDialog();
+    }
+
+    private bool ConfirmScheduleRegistration(CalendarSummaryItemViewModel row)
+    {
+        if (!row.CanAct || !row.IsScheduleRelated)
+            return false;
+
+        if (!row.ApplyEdits())
+        {
+            row.IsEditing = true;
+            return false;
+        }
+
+        ScheduleCorrected?.Invoke(this, row);
         ScheduleSaveRequested?.Invoke(this, row);
-    }
 
-    private void EditSchedule_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: CalendarSummaryItemViewModel row } &&
-            row.IsScheduleRelated && !row.IsBusy) row.IsEditing = !row.IsEditing;
-    }
-
-    private void ApplySchedule_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: CalendarSummaryItemViewModel row } &&
-            row.IsScheduleRelated && !row.IsBusy && row.ApplyEdits())
+        if (ScheduleSaveRequested is not null && !row.IsSaved)
         {
-            ScheduleCorrected?.Invoke(this, row);
+            row.IsEditing = true;
+            return false;
         }
+
+        return true;
     }
 }

@@ -58,6 +58,9 @@ public sealed class DashboardCalendarStore
     public IReadOnlyList<DashboardCalendarEntry> GetDay(DateTime date) => _entries.Values
         .Where(entry => entry.LocalDate == date.Date).OrderBy(entry => entry.Schedule.Start)
         .ThenBy(entry => entry.Title).ToArray();
+    /// <summary>아직 끝나지 않은 가장 가까운 일정. 홈의 "다음 일정"에 보여 준다.</summary>
+    public DashboardCalendarEntry? GetNext(DateTimeOffset now) => _entries.Values
+        .Where(entry => entry.Schedule.End > now).OrderBy(entry => entry.Schedule.Start).FirstOrDefault();
     public IReadOnlyDictionary<DateTime, int> GetMonthCounts(DateTime month) => _entries.Values
         .Where(entry => entry.LocalDate.Year == month.Year && entry.LocalDate.Month == month.Month)
         .GroupBy(entry => entry.LocalDate).ToDictionary(group => group.Key, group => group.Count());

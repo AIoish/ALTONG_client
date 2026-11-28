@@ -168,7 +168,7 @@ public sealed class FocusInsightCoachingService : IFocusInsightCoachingService
         "제공된 집계 지표만 근거로 사용자의 집중 패턴을 분석해 간결한 한국어 코칭을 작성하세요.\n\n" +
         "규칙:\n" +
         "1. 입력에 없는 숫자, 시각, 앱 이름, 발신자, 원인을 절대 추측하거나 만들어 내지 마세요.\n" +
-        "2. 자연스럽고 따뜻한 한국어 해요체로 간결하게 작성하세요.\n" +
+        "2. 과한 감탄이나 빈 격려 없이 자연스럽고 담백한 한국어로 작성하세요.\n" +
         "3. 마크다운, 코드 블록, 설명, 사고 과정 없이 아래 JSON 객체 하나만 출력하세요.\n" +
         "4. 반드시 headline(문자열), findings(문자열 2개 배열), action(문자열) 세 필드만 포함하세요.\n" +
         "형식: {\"headline\":\"핵심 한 줄 요약\",\"findings\":[\"발견 1\",\"발견 2\"],\"action\":\"구체적 실천 팁\"}";
@@ -276,6 +276,13 @@ public sealed class FocusInsightCoachingService : IFocusInsightCoachingService
                 var sign = roundedChange > 0 ? "+" : string.Empty;
                 sb.AppendLine($"전기 대비 집중 변화: {sign}{roundedChange}%");
             }
+
+            if (q.SelfDistractionChangePercent is double sdChange && !double.IsNaN(sdChange) && !double.IsInfinity(sdChange))
+            {
+                var roundedSd = (int)Math.Round(sdChange, MidpointRounding.AwayFromZero);
+                var sign = roundedSd > 0 ? "+" : string.Empty;
+                sb.AppendLine($"자발적 이탈 변화: {sign}{roundedSd}%");
+            }
         }
 
         sb.Append("위 집계 수치만 사용해 JSON 객체 하나만 출력하세요.");
@@ -363,13 +370,12 @@ public sealed class FocusInsightCoachingService : IFocusInsightCoachingService
     {
         var periodLabel = GetPeriodLabel(snapshot.Period);
         return new InsightCoachingResult(
-            Headline: $"{periodLabel} 집중 기록이 아직 없어요.",
+            Headline: $"{periodLabel} 집중 기록 없음",
             Findings:
             [
-                "집중 세션을 시작하면 시간대별 몰입 패턴과 알림 차단 효과가 자동으로 집계돼요.",
-                "기록이 쌓이면 주요 방해원과 작업 맥락을 바탕으로 맞춤 코칭을 받을 수 있어요."
+                "집중 세션 완료 시 시간대별 패턴·차단 효과 집계"
             ],
-            ActionTip: "짧은 집중 세션을 한 번 시작해 오늘의 첫 집중 데이터를 만들어 보세요.",
+            ActionTip: "집중 모드 시작 후 기록 생성",
             IsAiGenerated: false,
             IsFromCache: false,
             GeneratedAtUtc: snapshot.GeneratedAtUtc,
@@ -385,15 +391,15 @@ public sealed class FocusInsightCoachingService : IFocusInsightCoachingService
         string headline;
         if (snapshot.TotalNotifications > 0 && snapshot.FocusSessionCount > 0)
         {
-            headline = $"{periodLabel} {durationText} 동안 방해 알림 {snapshot.BlockedCount}건을 차단했어요 ({blockRateText}% 보호).";
+            headline = $"{periodLabel} {durationText} 집중 · 알림 {snapshot.BlockedCount}건 차단 ({blockRateText}%)";
         }
         else if (snapshot.FocusSessionCount > 0)
         {
-            headline = $"{periodLabel} {snapshot.FocusSessionCount}회의 집중 세션으로 총 {durationText} 몰입했어요.";
+            headline = $"{periodLabel} 세션 {snapshot.FocusSessionCount}회 · 총 {durationText} 집중";
         }
         else
         {
-            headline = $"{periodLabel} 전체 알림 {snapshot.TotalNotifications}건 중 {snapshot.BlockedCount}건을 차단했어요 ({blockRateText}% 보호).";
+            headline = $"{periodLabel} 알림 {snapshot.TotalNotifications}건 중 {snapshot.BlockedCount}건 차단 ({blockRateText}%)";
         }
 
         var quality = snapshot.Quality;
@@ -406,35 +412,35 @@ public sealed class FocusInsightCoachingService : IFocusInsightCoachingService
         {
             var flowRateText = quality!.FlowProtectionRatePercent.ToString("F0", CultureInfo.InvariantCulture);
             var purityText = quality.WorkPurityPercent.ToString("F0", CultureInfo.InvariantCulture);
-            finding1 = $"차단 알림 {quality.FlowProtectionEligibleCount}건 중 {flowRateText}%에서 작업 흐름을 지켜냈고, 순수 작업 비율 {purityText}%를 유지했어요.";
+            finding1 = $"차단 {quality.FlowProtectionEligibleCount}건 중 {flowRateText}% 흐름 유지 · 순수 작업 {purityText}%";
         }
         else if (hasFlowProtection)
         {
             var flowRateText = quality!.FlowProtectionRatePercent.ToString("F0", CultureInfo.InvariantCulture);
-            finding1 = $"차단 알림 {quality.FlowProtectionEligibleCount}건 중 {flowRateText}%에서 작업 흐름을 지켜냈어요.";
+            finding1 = $"차단 {quality.FlowProtectionEligibleCount}건 중 {flowRateText}% 흐름 유지";
         }
         else if (hasWorkPurity)
         {
             var purityText = quality!.WorkPurityPercent.ToString("F0", CultureInfo.InvariantCulture);
             finding1 = quality.DeepFocusSessionCount > 0
-                ? $"순수 작업 비율 {purityText}%로 집중했고, 25분 이상 깊은 몰입을 {quality.DeepFocusSessionCount}회 달성했어요."
-                : $"집중 시간 기준 순수 작업 비율 {purityText}%를 기록했어요.";
+                ? $"순수 작업 {purityText}% · 깊은 몰입(25분+) {quality.DeepFocusSessionCount}회"
+                : $"순수 작업 {purityText}%";
         }
         else if (snapshot.GoldenHour is int gh && snapshot.DistractionPeakHour is int ph)
         {
-            finding1 = $"가장 몰입이 잘 된 골든타임은 {gh:00}시({FormatDuration(snapshot.GoldenHourDuration)})이며, 방해 알림이 가장 몰린 시간대는 {ph:00}시({snapshot.DistractionPeakCount}건)예요.";
+            finding1 = $"골든타임 {gh:00}시({FormatDuration(snapshot.GoldenHourDuration)}) · 방해 피크 {ph:00}시({snapshot.DistractionPeakCount}건)";
         }
         else if (snapshot.GoldenHour is int onlyGh)
         {
-            finding1 = $"가장 몰입이 잘 된 골든타임은 {onlyGh:00}시로, 이 시간대에 {FormatDuration(snapshot.GoldenHourDuration)} 집중했어요.";
+            finding1 = $"골든타임 {onlyGh:00}시 ({FormatDuration(snapshot.GoldenHourDuration)})";
         }
         else if (snapshot.DistractionPeakHour is int onlyPh)
         {
-            finding1 = $"알림 유입이 가장 많았던 시간대는 {onlyPh:00}시로 총 {snapshot.DistractionPeakCount}건이 기록되었어요.";
+            finding1 = $"알림 피크 {onlyPh:00}시 ({snapshot.DistractionPeakCount}건)";
         }
         else
         {
-            finding1 = $"{periodLabel} 기준 집중 세션 {snapshot.FocusSessionCount}회, 누적 집중 시간 {durationText}이 기록되었어요.";
+            finding1 = $"{periodLabel} 세션 {snapshot.FocusSessionCount}회 · 누적 {durationText}";
         }
 
         string finding2;
@@ -442,45 +448,45 @@ public sealed class FocusInsightCoachingService : IFocusInsightCoachingService
         {
             var topD = snapshot.TopDistractors[0];
             var topW = snapshot.TopWorkContexts[0];
-            finding2 = $"주요 방해원은 {topD.DisplayLabel}(차단 {topD.BlockedCount}건/{topD.TotalCount}건)이며, {topW.DisplayName} 작업 중 알림 {topW.BlockedCount}건을 막아냈어요.";
+            finding2 = $"최다 방해원 {topD.DisplayLabel}({topD.BlockedCount}/{topD.TotalCount}건 차단) · {topW.DisplayName} 작업 중 {topW.BlockedCount}건 차단";
         }
         else if (snapshot.TopDistractors.Count > 0)
         {
             var topD = snapshot.TopDistractors[0];
             var topDRate = topD.BlockRatePercent.ToString("F0", CultureInfo.InvariantCulture);
-            finding2 = $"가장 많은 방해 알림은 {topD.DisplayLabel}에서 발생했고 전체 {topD.TotalCount}건 중 {topD.BlockedCount}건({topDRate}%)을 차단했어요.";
+            finding2 = $"최다 방해원 {topD.DisplayLabel} · {topD.BlockedCount}/{topD.TotalCount}건 차단 ({topDRate}%)";
         }
         else if (snapshot.TopWorkContexts.Count > 0)
         {
             var topW = snapshot.TopWorkContexts[0];
-            finding2 = $"가장 오래 집중한 작업은 {topW.DisplayName}({FormatDuration(topW.FocusDuration)})이며, 차단 {topW.BlockedCount}건 · 통과 {topW.PassedCount}건이 기록되었어요.";
+            finding2 = $"최다 작업 {topW.DisplayName}({FormatDuration(topW.FocusDuration)}) · 차단 {topW.BlockedCount}건 · 통과 {topW.PassedCount}건";
         }
         else if ((hasFlowProtection || hasWorkPurity) && snapshot.GoldenHour is int qualityGh)
         {
-            finding2 = $"가장 몰입이 잘 된 골든타임은 {qualityGh:00}시로, 이 시간대에 {FormatDuration(snapshot.GoldenHourDuration)} 집중했어요.";
+            finding2 = $"골든타임 {qualityGh:00}시 ({FormatDuration(snapshot.GoldenHourDuration)})";
         }
         else if (quality is not null && (quality.DeepFocusSessionCount > 0 || quality.CurrentStreakDays >= 2))
         {
             if (quality.DeepFocusSessionCount > 0 && quality.CurrentStreakDays >= 2)
             {
-                finding2 = $"25분 이상 깊은 몰입을 {quality.DeepFocusSessionCount}회 달성하며 {quality.CurrentStreakDays}일 연속 집중 흐름을 이어가고 있어요.";
+                finding2 = $"깊은 몰입(25분+) {quality.DeepFocusSessionCount}회 · {quality.CurrentStreakDays}일 연속 집중";
             }
             else if (quality.DeepFocusSessionCount > 0)
             {
-                finding2 = $"25분 이상 깊은 몰입 세션을 {quality.DeepFocusSessionCount}회 완료했고 평균 세션은 {FormatDuration(quality.AverageSessionDuration)}이에요.";
+                finding2 = $"깊은 몰입(25분+) {quality.DeepFocusSessionCount}회 · 평균 세션 {FormatDuration(quality.AverageSessionDuration)}";
             }
             else
             {
-                finding2 = $"{quality.CurrentStreakDays}일 연속 집중 기록을 이어가며 꾸준한 루틴을 만들고 있어요.";
+                finding2 = $"{quality.CurrentStreakDays}일 연속 집중 중";
             }
         }
         else if (snapshot.PassedCount > 0)
         {
-            finding2 = $"통과된 알림 {snapshot.PassedCount}건 중 긴급 {snapshot.UrgentPassedCount}건, 업무 연관 {snapshot.RelevancePassedCount}건이 선별되어 전달되었어요.";
+            finding2 = $"통과 {snapshot.PassedCount}건 (긴급 {snapshot.UrgentPassedCount} · 관련 {snapshot.RelevancePassedCount})";
         }
         else
         {
-            finding2 = "집중 시간 동안 불필요한 알림 방해 없이 안정적인 몰입 흐름을 유지했어요.";
+            finding2 = "알림 방해 없음";
         }
 
         string actionTip;
@@ -489,31 +495,31 @@ public sealed class FocusInsightCoachingService : IFocusInsightCoachingService
             && quality.TopSelfDistractionDuration >= TimeSpan.FromMinutes(15)
             && snapshot.BlockedCount > 0)
         {
-            actionTip = $"알림은 잘 차단했지만 집중 중 {quality.TopSelfDistractionApp.Trim()} 창을 직접 연 시간({FormatDuration(quality.TopSelfDistractionDuration)})이 길어요. 집중 중에는 해당 창을 최소화해 두면 몰입 순도가 확 올라가요.";
+            actionTip = $"알림은 잘 차단했지만 집중 중 {quality.TopSelfDistractionApp.Trim()} 창을 직접 연 시간({FormatDuration(quality.TopSelfDistractionDuration)})이 깁니다. 집중 중에는 해당 창을 최소화해 두면 몰입 순도가 올라갑니다.";
         }
         else if (snapshot.GoldenHour is int golden && snapshot.DistractionPeakHour is int peak && golden == peak)
         {
-            actionTip = $"골든타임과 방해 피크가 {golden:00}시에 겹쳐요. 이 시간대에 집중 모드를 미리 켜 두면 몰입 손실을 크게 줄일 수 있어요.";
+            actionTip = $"골든타임과 방해 피크가 {golden:00}시에 겹칩니다. 이 시간대에 집중 모드를 미리 켜 두면 몰입 손실을 줄일 수 있습니다.";
         }
         else if (snapshot.TopDistractors.Count > 0 && snapshot.TopDistractors[0].BlockedCount >= 3)
         {
-            actionTip = $"{snapshot.TopDistractors[0].DisplayLabel}에서 차단 알림이 반복되고 있어요. 집중 전 해당 채널 알림을 잠시 무음으로 두면 더 쾌적해요.";
+            actionTip = $"{snapshot.TopDistractors[0].DisplayLabel}에서 차단 알림이 반복됩니다. 집중 전 해당 채널 알림을 잠시 무음으로 두세요.";
         }
         else if (snapshot.GoldenHour is int goldenOnly)
         {
-            actionTip = $"몰입 효율이 가장 높은 {goldenOnly:00}시 전후에 핵심 업무를 배치하고 집중 세션을 이어가 보세요.";
+            actionTip = $"몰입 효율이 가장 높은 {goldenOnly:00}시 전후에 핵심 업무를 배치해 집중 세션을 이어가세요.";
         }
         else if (snapshot.DistractionPeakHour is int peakOnly)
         {
-            actionTip = $"알림이 몰리는 {peakOnly:00}시 구간에 집중 세션을 켜 두면 중요한 알림만 골라 받으며 흐름을 지킬 수 있어요.";
+            actionTip = $"알림이 몰리는 {peakOnly:00}시 구간에 집중 세션을 켜 두면 중요한 알림만 골라 받으며 흐름을 지킬 수 있습니다.";
         }
         else if (quality is { CurrentStreakDays: >= 2 })
         {
-            actionTip = $"{quality.CurrentStreakDays}일 연속 집중 흐름이 아주 좋아요. 내일도 짧은 집중 세션으로 기록을 이어가 보세요.";
+            actionTip = $"{quality.CurrentStreakDays}일 연속 집중 중입니다. 내일도 짧은 집중 세션으로 기록을 이어가세요.";
         }
         else
         {
-            actionTip = "지금의 안정적인 집중 패턴을 유지하며 다음 작업도 짧은 집중 세션으로 시작해 보세요.";
+            actionTip = "현재 집중 패턴을 유지하며 다음 작업도 짧은 집중 세션으로 시작하세요.";
         }
 
         return new InsightCoachingResult(

@@ -29,7 +29,7 @@ public partial class SessionReportWindow : Window
     private readonly DashboardSummaryStateStore _summaryState;
     private readonly string? _summaryStatePath;
     private readonly NotificationSummaryCalendarView _summaryCards;
-    private readonly ReportNotificationItem[] _notificationItems;
+    private readonly Lazy<ReportNotificationItem[]> _notificationItems;
     private sealed record ReportNotificationItem(string AppName, string? Sender, string Title, string Body,
         bool? IsPassed, string? ReplyText, IReadOnlyList<string> ReplyOptions);
     private readonly bool _isSavedReport;
@@ -98,6 +98,7 @@ public partial class SessionReportWindow : Window
         Closed += (_, _) =>
         {
             _closed = true;
+            _summaryCards.CloseActiveDialog();
             // 요약 중에 닫아도 요약은 끝까지 돌린다. 끝나면 저장본에 붙이고 말풍선으로 알린다.
             // 떠 있는 말풍선은 닫지 않는다. [리포트 열기]가 리포트를 다시 연다.
             // 앱이 끝나는 중이면 모델이 정리되기 전에 요약을 멈춘다.
@@ -118,6 +119,11 @@ public partial class SessionReportWindow : Window
         StateChanged += (_, _) =>
         {
             MaximizeButton.Content = WindowState == WindowState.Maximized ? "❐" : "□";
+            if (_blending)
+            {
+                if (WindowState == WindowState.Minimized) SummaryBlend.Stop();
+                else SummaryBlend.Start();
+            }
         };
         var maximumSeconds = result.Apps.Count == 0 ? 0 : result.Apps.Max(app => app.Seconds);
         DataContext = result with
@@ -127,15 +133,18 @@ public partial class SessionReportWindow : Window
                 Percentage = maximumSeconds > 0 ? app.Seconds / maximumSeconds * 100 : 0
             }).ToArray()
         };
-        var highlightApps = result.Notifications.Select(notification => notification.AppName)
-            .Where(app => !string.IsNullOrWhiteSpace(app)).Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(app => app.Length).ToArray();
-        LegacyHighlightItemsControl.ItemsSource = result.NotificationHighlights.Select(text =>
-        {
-            var app = highlightApps.FirstOrDefault(name => text.StartsWith(name + " · ", StringComparison.OrdinalIgnoreCase));
-            return new { AppName = app, AppDisplayName = app is null ? "알림 요약" : AppNameDisplayConverter.Format(app), Text = app is null ? text : text[(app.Length + 3)..] };
-        }).ToArray();
+        _notificationItems = new(() => CreateNotificationItems(result, replyTemplates));
+        UpdateSummaryContentVisibility();
+        if (result.SummaryItems.Count > 0) ShowSummaryItems(result.SummaryItems);
+        else if (_summaryProvider is not null && result.SessionId is not null) _ = LoadSummaryItemsAsync();
+        else SetSummaryStatus(result.BlockedCount == 0 ? "요약할 알림이 없습니다." : "AI 요약이 아직 없습니다.");
+        UpdateDetailLists();
+    }
+
+    private static ReportNotificationItem[] CreateNotificationItems(SessionResult result, IReadOnlyList<string> replyTemplates)
+    {
         var remainingReplies = result.QuickReplies.ToList();
-        _notificationItems = result.Notifications.Select(notification =>
+        return result.Notifications.Select(notification =>
         {
             var replyIndex = remainingReplies.FindIndex(reply =>
                 string.Equals(reply.AppName, notification.AppName, StringComparison.OrdinalIgnoreCase)
@@ -149,12 +158,24 @@ public partial class SessionReportWindow : Window
             return new ReportNotificationItem(notification.AppName, notification.Sender, notification.Title,
                 notification.Body, notification.IsPassed, replyText, options);
         }).ToArray();
-        SummaryBlend.SetNotifications(result.Notifications.Where(notification => notification.IsPassed == false));
-        UpdateSummaryContentVisibility();
-        if (result.SummaryItems.Count > 0) ShowSummaryItems(result.SummaryItems);
-        else if (_summaryProvider is not null && result.SessionId is not null) _ = LoadSummaryItemsAsync();
-        else SetSummaryStatus(result.BlockedCount == 0 ? "요약할 알림이 없습니다." : "AI 요약이 아직 없습니다.");
-        UpdateDetailLists();
+    }
+
+    private void NotificationsExpander_Expanded(object sender, RoutedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, NotificationsExpander) || NotificationItemsControl.ItemsSource is not null) return;
+        if (_result.Notifications.Count == 0)
+        {
+            LegacyHighlights.ItemsSource = _result.StoredNotificationHighlights;
+            EmptyNotificationsText.Visibility = LegacyHighlights.HasItems ? Visibility.Collapsed : Visibility.Visible;
+        }
+        UpdateNotificationList();
+    }
+
+    private void UpdateNotificationList()
+    {
+        NotificationItemsControl.ItemsSource = _notificationItems.Value.Take(_notificationDisplayLimit).ToArray();
+        MoreNotificationsButton.Visibility = _result.Notifications.Count > _notificationDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
+        MoreNotificationsButton.Content = $"알림 더 보기 · {Math.Min(_notificationDisplayLimit, _result.Notifications.Count)}/{_result.Notifications.Count}";
     }
 
     private void UpdateDetailLists()
@@ -166,11 +187,8 @@ public partial class SessionReportWindow : Window
         MemoItemsControl.ItemsSource = _memoItems.Take(_memoDisplayLimit).ToArray();
         MoreMemosButton.Visibility = _result.Memos.Count > _memoDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
         MoreMemosButton.Content = $"메모 더 보기 · {Math.Min(_memoDisplayLimit, _result.Memos.Count)}/{_result.Memos.Count}";
-        NotificationItemsControl.ItemsSource = _notificationItems.Take(_notificationDisplayLimit).ToArray();
         AppItemsControl.ItemsSource = ((SessionResult)DataContext).Apps.Take(_appDisplayLimit).ToArray();
-        MoreNotificationsButton.Visibility = _result.Notifications.Count > _notificationDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
         MoreAppsButton.Visibility = _result.Apps.Count > _appDisplayLimit ? Visibility.Visible : Visibility.Collapsed;
-        MoreNotificationsButton.Content = $"알림 더 보기 · {Math.Min(_notificationDisplayLimit, _result.Notifications.Count)}/{_result.Notifications.Count}";
         MoreAppsButton.Content = $"앱 더 보기 · {Math.Min(_appDisplayLimit, _result.Apps.Count)}/{_result.Apps.Count}";
     }
 
@@ -197,7 +215,7 @@ public partial class SessionReportWindow : Window
     private void MoreNotifications_Click(object sender, RoutedEventArgs e)
     {
         _notificationDisplayLimit += 50;
-        UpdateDetailLists();
+        UpdateNotificationList();
     }
 
     private void MoreApps_Click(object sender, RoutedEventArgs e)
@@ -239,19 +257,16 @@ public partial class SessionReportWindow : Window
     {
         bool hasSummary = _summaryCards.Items.Length > 0;
         CalendarSummaryHost.Visibility = hasSummary ? Visibility.Visible : Visibility.Collapsed;
-        LegacySummaryPanel.Visibility = !hasSummary && !_blending && LegacyHighlightItemsControl.HasItems ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>요약 카드가 아직 없을 때만 알림이 섞이는 연출을 보여 준다. 새로고침 중에는 기존 요약을 그대로 둔다.</summary>
     private void ShowBlend(bool show)
     {
-        show = show && SummaryBlend.ChipCount > 0;
         if (_blending == show) return;
         _blending = show;
         SummaryBlend.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        if (show) SummaryBlend.Start();
+        if (show && WindowState != WindowState.Minimized) SummaryBlend.Start();
         else SummaryBlend.Stop();
-        UpdateSummaryContentVisibility();
     }
 
     private void SetSummaryStatus(string? message, bool busy = false, bool failed = false)
@@ -410,7 +425,6 @@ public partial class SessionReportWindow : Window
     {
         // 앱이 끝나는 중에 요약이 끝났으면 띄울 곳이 없다.
         if (Dispatcher.HasShutdownStarted) return;
-        _summaryToast?.Dismiss();
         var toast = new ReportReadyToastWindow();
         toast.OpenRequested += (_, _) => BringReportToFront();
         toast.Closed += (_, _) => { if (ReferenceEquals(_summaryToast, toast)) _summaryToast = null; };

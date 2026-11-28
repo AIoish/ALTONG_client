@@ -27,9 +27,10 @@ public sealed class DashboardInsightsUiTests
             Layout(view, new Size(860, 700));
 
             Assert.AreEqual(Visibility.Visible, ((Border)view.FindName("EmptyStateCard")).Visibility);
-            Assert.AreEqual("아직 쌓인 집중 기록이 없어요", ((TextBlock)view.FindName("EmptyStateTitleText")).Text);
-            Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)view.FindName("KpiRow")).Visibility);
-            Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)view.FindName("QualityTrendRow")).Visibility);
+            Assert.AreEqual("집중 기록 없음", ((TextBlock)view.FindName("EmptyStateTitleText")).Text);
+            Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)view.FindName("HeroBentoRow")).Visibility);
+            Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)view.FindName("KpiStrip")).Visibility);
+            Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)view.FindName("QualityCard")).Visibility);
             Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)view.FindName("HourlyChartCard")).Visibility);
             Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)view.FindName("TopListsRow")).Visibility);
             Assert.AreEqual(Visibility.Visible, ((FrameworkElement)view.FindName("CoachingCard")).Visibility);
@@ -74,44 +75,52 @@ public sealed class DashboardInsightsUiTests
             var scroll = (ScrollViewer)view.FindName("InsightsScroll");
             Assert.IsTrue(scroll.ScrollableWidth <= 1, $"몰입 현황 탭 가로 잘림이 없어야 합니다: {size.Width}");
         }
+        var corner = new System.Windows.Media.Imaging.RenderTargetBitmap(1, 1, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        corner.Render(view);
+        var pixel = new byte[4];
+        corner.CopyPixels(pixel, 4, 0);
+        Assert.AreEqual((byte)0, pixel[3], "인사이트 탭 여백에는 대시보드 배경이 비쳐야 합니다.");
 
         Assert.AreEqual(Visibility.Collapsed, ((Border)view.FindName("EmptyStateCard")).Visibility);
-        Assert.AreEqual(Visibility.Visible, ((FrameworkElement)view.FindName("KpiRow")).Visibility);
-        Assert.AreEqual(Visibility.Visible, ((FrameworkElement)view.FindName("QualityTrendRow")).Visibility);
+        Assert.AreEqual(Visibility.Visible, ((FrameworkElement)view.FindName("HeroBentoRow")).Visibility);
+        Assert.AreEqual(Visibility.Visible, ((FrameworkElement)view.FindName("KpiStrip")).Visibility);
+        Assert.AreEqual(Visibility.Visible, ((FrameworkElement)view.FindName("QualityCard")).Visibility);
         Assert.AreEqual(Visibility.Visible, ((FrameworkElement)view.FindName("HourlyChartCard")).Visibility);
         Assert.AreEqual(Visibility.Visible, ((FrameworkElement)view.FindName("TopListsRow")).Visibility);
 
-        // 4 KPI Cards
+        // Hero Streak Tile & 20-Week Grass Heatmap Tile
+        Assert.AreEqual(Visibility.Visible, ((Border)view.FindName("BestStreakBadge")).Visibility);
+        Assert.AreEqual("최장 12일", ((TextBlock)view.FindName("BestStreakBadgeText")).Text);
+        Assert.AreEqual("🔥 5일", ((TextBlock)view.FindName("StreakHeroTitleText")).Text);
+        Assert.AreEqual("연속 집중 중", ((TextBlock)view.FindName("StreakStateSubtitleText")).Text);
+        Assert.AreEqual("오늘 +60분 → 4단계", ((TextBlock)view.FindName("StreakMotivationText")).Text);
+        Assert.AreEqual(Visibility.Visible, ((Border)view.FindName("PeriodChangeBadge")).Visibility);
+        Assert.AreEqual("전기 대비 +18%", ((TextBlock)view.FindName("PeriodChangeBadgeText")).Text);
+        Assert.AreEqual(20, ((ItemsControl)view.FindName("HeatmapMonthItems")).Items.Count);
+        var heatmapItems = (ItemsControl)view.FindName("StreakHeatmapItems");
+        Assert.AreEqual(140, heatmapItems.Items.Count);
+
+        // Borderless 4-Metric Strip
         Assert.AreEqual("3시간 25분", ((TextBlock)view.FindName("KpiTotalFocusText")).Text);
         Assert.AreEqual("세션 5회", ((TextBlock)view.FindName("KpiSessionCountText")).Text);
         Assert.AreEqual("82%", ((TextBlock)view.FindName("KpiBlockRateText")).Text);
         Assert.AreEqual("차단 28 / 전체 34건", ((TextBlock)view.FindName("KpiBlockRateSubText")).Text);
-        Assert.AreEqual("4건", ((TextBlock)view.FindName("KpiUrgentPassedText")).Text);
-        Assert.AreEqual("2건", ((TextBlock)view.FindName("KpiRelevancePassedText")).Text);
-
-        // Quality & 7-Day Trend/Streak Row
         Assert.AreEqual("93.5%", ((TextBlock)view.FindName("FlowProtectionRateText")).Text);
-        Assert.AreEqual("차단 1,519건 중 1,421건 흐름 유지", ((TextBlock)view.FindName("FlowProtectionSubText")).Text);
-        var purityBar = (Grid)view.FindName("WorkPurityBarGrid");
-        Assert.AreEqual(GridUnitType.Star, purityBar.ColumnDefinitions[0].Width.GridUnitType);
-        Assert.AreEqual(68.0, purityBar.ColumnDefinitions[0].Width.Value, 0.01);
-        Assert.AreEqual(29.0, purityBar.ColumnDefinitions[1].Width.Value, 0.01);
-        Assert.AreEqual(3.0, purityBar.ColumnDefinitions[2].Width.Value, 0.01);
-        Assert.AreEqual("순수 작업 68% · 메신저·웹 29% · 비작업 3%", ((TextBlock)view.FindName("WorkPurityLegendText")).Text);
-        Assert.AreEqual(Visibility.Visible, ((Border)view.FindName("SelfDistractionCallout")).Visibility);
-        Assert.AreEqual("직접 확인 최다 · KakaoTalk (28시간 17분)", ((TextBlock)view.FindName("SelfDistractionText")).Text);
-        Assert.AreEqual("깊은 몰입(25분+) 31회 · 평균 세션 37분", ((TextBlock)view.FindName("DeepFocusSummaryText")).Text);
+        Assert.AreEqual("차단 1,519건 중 1,421건 유지", ((TextBlock)view.FindName("FlowProtectionSubText")).Text);
+        Assert.AreEqual("6건", ((TextBlock)view.FindName("KpiPassedTotalText")).Text);
+        Assert.AreEqual("긴급 4 · 관련 2", ((TextBlock)view.FindName("KpiPassedSplitText")).Text);
 
-        Assert.AreEqual(Visibility.Visible, ((Border)view.FindName("StreakBadge")).Visibility);
-        Assert.AreEqual("5일 연속 집중", ((TextBlock)view.FindName("StreakBadgeText")).Text);
-        Assert.AreEqual(Visibility.Visible, ((Border)view.FindName("BestStreakBadge")).Visibility);
-        Assert.AreEqual("최장 12일", ((TextBlock)view.FindName("BestStreakBadgeText")).Text);
-        Assert.AreEqual("🔥 5일 연속 집중 중", ((TextBlock)view.FindName("StreakHeroTitleText")).Text);
-        StringAssert.Contains(((TextBlock)view.FindName("StreakMotivationText")).Text, "오늘 잔디를 심었어요");
-        Assert.AreEqual(Visibility.Visible, ((Border)view.FindName("PeriodChangeBadge")).Visibility);
-        Assert.AreEqual("전기 대비 +18%", ((TextBlock)view.FindName("PeriodChangeBadgeText")).Text);
-        var heatmapItems = (ItemsControl)view.FindName("StreakHeatmapItems");
-        Assert.AreEqual(70, heatmapItems.Items.Count);
+        // Work Purity Donut Ring & Self-Distraction Trend Card
+        Assert.AreEqual("68%", ((TextBlock)view.FindName("WorkPurityCenterText")).Text);
+        Assert.AreEqual("68%", ((TextBlock)view.FindName("WorkPurityPercentText")).Text);
+        Assert.AreEqual("29%", ((TextBlock)view.FindName("NeutralPurityPercentText")).Text);
+        Assert.AreEqual("3%", ((TextBlock)view.FindName("LeisurePurityPercentText")).Text);
+        Assert.AreNotEqual(System.Windows.Media.Geometry.Empty, ((System.Windows.Shapes.Path)view.FindName("WorkPurityArcPath")).Data);
+        Assert.AreEqual(Visibility.Visible, ((Border)view.FindName("SelfDistractionCallout")).Visibility);
+        Assert.AreEqual("KakaoTalk · 28시간 17분", ((TextBlock)view.FindName("SelfDistractionText")).Text);
+        Assert.AreEqual(Visibility.Visible, ((Border)view.FindName("SelfDistractionChangeBadge")).Visibility);
+        Assert.AreEqual("지난주 대비 -24% ↓", ((TextBlock)view.FindName("SelfDistractionChangeBadgeText")).Text);
+        Assert.AreEqual("깊은 몰입(25분+) 31회 · 평균 37분", ((TextBlock)view.FindName("DeepFocusSummaryText")).Text);
 
         // Initial Rule Coaching
         Assert.AreEqual("규칙 요약", ((TextBlock)view.FindName("CoachingStatusBadgeText")).Text);
@@ -172,15 +181,22 @@ public sealed class DashboardInsightsUiTests
         Layout(view, new Size(860, 700));
 
         Assert.AreEqual("-", ((TextBlock)view.FindName("FlowProtectionRateText")).Text);
-        Assert.AreEqual("차단 알림 매칭 기록 없음", ((TextBlock)view.FindName("FlowProtectionSubText")).Text);
-        Assert.AreEqual("순수 작업 0% · 메신저·웹 0% · 비작업 0%", ((TextBlock)view.FindName("WorkPurityLegendText")).Text);
+        Assert.AreEqual("매칭 기록 없음", ((TextBlock)view.FindName("FlowProtectionSubText")).Text);
+        Assert.AreEqual("-", ((TextBlock)view.FindName("WorkPurityCenterText")).Text);
+        Assert.AreEqual("0%", ((TextBlock)view.FindName("WorkPurityPercentText")).Text);
+        Assert.AreEqual("0%", ((TextBlock)view.FindName("NeutralPurityPercentText")).Text);
+        Assert.AreEqual("0%", ((TextBlock)view.FindName("LeisurePurityPercentText")).Text);
+        Assert.AreEqual(System.Windows.Media.Geometry.Empty, ((System.Windows.Shapes.Path)view.FindName("WorkPurityArcPath")).Data);
         Assert.AreEqual(Visibility.Collapsed, ((Border)view.FindName("SelfDistractionCallout")).Visibility);
-        Assert.AreEqual("깊은 몰입(25분+) 0회 · 평균 세션 0분", ((TextBlock)view.FindName("DeepFocusSummaryText")).Text);
-        Assert.AreEqual(Visibility.Collapsed, ((Border)view.FindName("StreakBadge")).Visibility);
+        Assert.AreEqual(Visibility.Collapsed, ((Border)view.FindName("SelfDistractionChangeBadge")).Visibility);
+        Assert.AreEqual("깊은 몰입(25분+) 0회 · 평균 0분", ((TextBlock)view.FindName("DeepFocusSummaryText")).Text);
         Assert.AreEqual(Visibility.Collapsed, ((Border)view.FindName("BestStreakBadge")).Visibility);
-        Assert.AreEqual("🌱 연속 집중을 시작해 보세요", ((TextBlock)view.FindName("StreakHeroTitleText")).Text);
+        Assert.AreEqual("0일", ((TextBlock)view.FindName("StreakHeroTitleText")).Text);
+        Assert.AreEqual("연속 기록 없음", ((TextBlock)view.FindName("StreakStateSubtitleText")).Text);
+        Assert.AreEqual("오늘 첫 집중 대기", ((TextBlock)view.FindName("StreakMotivationText")).Text);
         Assert.AreEqual(Visibility.Collapsed, ((Border)view.FindName("PeriodChangeBadge")).Visibility);
-        Assert.AreEqual(70, ((ItemsControl)view.FindName("StreakHeatmapItems")).Items.Count);
+        Assert.AreEqual(20, ((ItemsControl)view.FindName("HeatmapMonthItems")).Items.Count);
+        Assert.AreEqual(140, ((ItemsControl)view.FindName("StreakHeatmapItems")).Items.Count);
 
         // Case 2: Negative period change, zero streak, null self-distraction, zero flow eligible
         var negativeChangeQuality = CreateZeroQuality() with { PeriodChangePercent = -12.4, BestStreakDays = 4 };
@@ -197,19 +213,19 @@ public sealed class DashboardInsightsUiTests
 
         Assert.AreEqual("-", ((TextBlock)view2.FindName("FlowProtectionRateText")).Text);
         Assert.AreEqual(Visibility.Collapsed, ((Border)view2.FindName("SelfDistractionCallout")).Visibility);
-        Assert.AreEqual(Visibility.Collapsed, ((Border)view2.FindName("StreakBadge")).Visibility);
         Assert.AreEqual(Visibility.Visible, ((Border)view2.FindName("BestStreakBadge")).Visibility);
         Assert.AreEqual("최장 4일", ((TextBlock)view2.FindName("BestStreakBadgeText")).Text);
-        StringAssert.Contains(((TextBlock)view2.FindName("StreakMotivationText")).Text, "최장 4일 연속 기록이 있어요");
+        Assert.AreEqual("오늘 집중으로 재시작", ((TextBlock)view2.FindName("StreakMotivationText")).Text);
         Assert.AreEqual(Visibility.Visible, ((Border)view2.FindName("PeriodChangeBadge")).Visibility);
         Assert.AreEqual("전기 대비 -12%", ((TextBlock)view2.FindName("PeriodChangeBadgeText")).Text);
 
-        // Case 3: Duolingo urgency nudge (active streak from yesterday, not focused today yet)
+        // Case 3: Active streak from yesterday, not focused today + Today positive self-distraction delta
         var urgencyQuality = CreatePopulatedQuality() with
         {
             CurrentStreakDays = 4,
             BestStreakDays = 9,
-            IsTodayFocused = false
+            IsTodayFocused = false,
+            SelfDistractionChangePercent = 15.2
         };
         var urgencySnapshot = CreatePopulatedSnapshot(InsightPeriod.Today) with
         {
@@ -222,8 +238,21 @@ public sealed class DashboardInsightsUiTests
         Await(view3.RefreshAsync());
         Layout(view3, new Size(860, 700));
 
-        Assert.AreEqual("⚡ 4일 연속 기록 유지 중", ((TextBlock)view3.FindName("StreakHeroTitleText")).Text);
-        StringAssert.Contains(((TextBlock)view3.FindName("StreakMotivationText")).Text, "오늘 한 번만 집중하면 5일 연속으로 이어져요");
+        Assert.AreEqual("4일", ((TextBlock)view3.FindName("StreakHeroTitleText")).Text);
+        Assert.AreEqual("연속 유지 중", ((TextBlock)view3.FindName("StreakStateSubtitleText")).Text);
+        Assert.AreEqual("오늘 집중 시 5일 연속", ((TextBlock)view3.FindName("StreakMotivationText")).Text);
+        Assert.AreEqual(Visibility.Visible, ((Border)view3.FindName("SelfDistractionChangeBadge")).Visibility);
+        Assert.AreEqual("어제 대비 +15% ↑", ((TextBlock)view3.FindName("SelfDistractionChangeBadgeText")).Text);
+
+        // Case 4: AllTime hides self-distraction delta badge even if value is present
+        var allTimeSnapshot = CreatePopulatedSnapshot(InsightPeriod.AllTime) with
+        {
+            DataFingerprint = "fp-alltime-sd"
+        };
+        var view4 = new DashboardInsightsView(new FakeInsightRepository(_ => allTimeSnapshot), new FakeCoachingService { IsAiAvailable = true });
+        Await(view4.RefreshAsync());
+        Layout(view4, new Size(860, 700));
+        Assert.AreEqual(Visibility.Collapsed, ((Border)view4.FindName("SelfDistractionChangeBadge")).Visibility);
     });
 
     [TestMethod]
@@ -245,21 +274,19 @@ public sealed class DashboardInsightsUiTests
         var todayButton = (RadioButton)view.FindName("PeriodTodayButton");
         todayButton.IsChecked = true;
         Until(() => requestedPeriods.Contains(InsightPeriod.Today) &&
-            ((TextBlock)view.FindName("SectionSubtitleText")).Text.Contains("오늘"));
+            view.SelectedPeriod == InsightPeriod.Today);
         Assert.AreEqual(InsightPeriod.Today, view.SelectedPeriod);
-        StringAssert.Contains(((TextBlock)view.FindName("SectionSubtitleText")).Text, "오늘");
 
         var allTimeButton = (RadioButton)view.FindName("PeriodAllTimeButton");
         allTimeButton.IsChecked = true;
         Until(() => requestedPeriods.Contains(InsightPeriod.AllTime) &&
-            ((TextBlock)view.FindName("SectionSubtitleText")).Text.Contains("전체 기간"));
+            view.SelectedPeriod == InsightPeriod.AllTime);
         Assert.AreEqual(InsightPeriod.AllTime, view.SelectedPeriod);
-        StringAssert.Contains(((TextBlock)view.FindName("SectionSubtitleText")).Text, "전체 기간");
 
         var last7DaysButton = (RadioButton)view.FindName("PeriodLast7DaysButton");
         last7DaysButton.IsChecked = true;
         Until(() => requestedPeriods.Count >= 4 && requestedPeriods.Last() == InsightPeriod.Last7Days &&
-            ((TextBlock)view.FindName("SectionSubtitleText")).Text.Contains("최근 7일"));
+            view.SelectedPeriod == InsightPeriod.Last7Days);
         Assert.AreEqual(InsightPeriod.Last7Days, view.SelectedPeriod);
     });
 
@@ -297,7 +324,7 @@ public sealed class DashboardInsightsUiTests
 
         // While running, button should be disabled and inline loading banner + badge should be visible
         Until(() => !aiButton.IsEnabled &&
-            Equals(aiButton.Content, "Gemma 분석 중…") &&
+            Equals(aiButton.Content, "분석 중…") &&
             loadingBanner.Visibility == Visibility.Visible &&
             badgeText.Text == "분석 중…");
 
@@ -338,25 +365,29 @@ public sealed class DashboardInsightsUiTests
 
         Await(view.RefreshAsync());
         var badge = (Border)view.FindName("PeriodLoadingBadge");
-        var kpiRow = (FrameworkElement)view.FindName("KpiRow");
-        var qualityTrendRow = (FrameworkElement)view.FindName("QualityTrendRow");
+        var heroBento = (FrameworkElement)view.FindName("HeroBentoRow");
+        var kpiStrip = (FrameworkElement)view.FindName("KpiStrip");
+        var qualityCard = (FrameworkElement)view.FindName("QualityCard");
         Assert.AreEqual(Visibility.Collapsed, badge.Visibility);
-        Assert.AreEqual(1.0, kpiRow.Opacity, 0.01);
-        Assert.AreEqual(1.0, qualityTrendRow.Opacity, 0.01);
+        Assert.AreEqual(1.0, heroBento.Opacity, 0.01);
+        Assert.AreEqual(1.0, kpiStrip.Opacity, 0.01);
+        Assert.AreEqual(1.0, qualityCard.Opacity, 0.01);
 
         var todayButton = (RadioButton)view.FindName("PeriodTodayButton");
         todayButton.IsChecked = true;
 
         Until(() => badge.Visibility == Visibility.Visible &&
-            kpiRow.Opacity < 0.8 &&
-            qualityTrendRow.Opacity < 0.8);
+            heroBento.Opacity < 0.8 &&
+            kpiStrip.Opacity < 0.8 &&
+            qualityCard.Opacity < 0.8);
 
         todayPending.SetResult(CreatePopulatedSnapshot(InsightPeriod.Today));
 
         Until(() => badge.Visibility == Visibility.Collapsed &&
-            Math.Abs(kpiRow.Opacity - 1.0) < 0.01 &&
-            Math.Abs(qualityTrendRow.Opacity - 1.0) < 0.01 &&
-            ((TextBlock)view.FindName("SectionSubtitleText")).Text.Contains("오늘"));
+            Math.Abs(heroBento.Opacity - 1.0) < 0.01 &&
+            Math.Abs(kpiStrip.Opacity - 1.0) < 0.01 &&
+            Math.Abs(qualityCard.Opacity - 1.0) < 0.01 &&
+            view.SelectedPeriod == InsightPeriod.Today);
     });
 
     [TestMethod]
@@ -383,6 +414,9 @@ public sealed class DashboardInsightsUiTests
         {
             var tabs = (TabControl)window.FindName("DashboardTabs");
             Assert.AreEqual(6, tabs.Items.Count);
+            var hosts = new[] { "NotificationsHost", "ReportCalendarHost", "InsightsHost" }
+                .Select(name => (ContentControl)window.FindName(name)).ToArray();
+            Assert.IsTrue(hosts.All(host => host.Content is null));
             Assert.AreEqual("홈", ((TabItem)tabs.Items[0]).Header);
             Assert.AreEqual("알림 확인", ((TabItem)tabs.Items[1]).Header);
             Assert.AreEqual("활동 일지", ((TabItem)tabs.Items[2]).Header);
@@ -399,11 +433,16 @@ public sealed class DashboardInsightsUiTests
             Assert.AreEqual(5, tabs.SelectedIndex);
             Assert.AreEqual("집중 인사이트", ((TextBlock)window.FindName("PageTitleText")).Text);
             Assert.AreEqual("선택됨", AutomationProperties.GetItemStatus(navButton));
-            Assert.AreEqual(Visibility.Visible, ((Button)window.FindName("BackButton")).Visibility);
+            // 공통 탭 머리에는 뒤로 가기 버튼이 없다(왼쪽 메뉴로 이동). 인사이트 탭은 ⋯ 메뉴 항목이 없어 ⋯도 숨긴다.
+            Assert.IsNull(window.FindName("BackButton"));
+            Assert.AreEqual(Visibility.Collapsed, ((Button)window.FindName("PageMenuButton")).Visibility);
 
             var insightsHost = (ContentControl)window.FindName("InsightsHost");
             Assert.IsInstanceOfType<DashboardInsightsView>(insightsHost.Content);
             Until(() => repo.CallCount > 0);
+            Assert.IsNull(hosts[0].Content);
+            Assert.IsNull(hosts[1].Content);
+            var firstVisit = insightsHost.Content;
 
             // Tabs 0..4 still work identically
             ((Button)window.FindName("NavCalendarButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -412,7 +451,10 @@ public sealed class DashboardInsightsUiTests
 
             ((Button)window.FindName("NavHomeButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.AreEqual(0, tabs.SelectedIndex);
-            Assert.AreEqual("메인 화면", ((TextBlock)window.FindName("PageTitleText")).Text);
+            // 홈 제목은 시간대와 상관없이 "나만의 집중 공간"이다.
+            Assert.AreEqual("나만의 집중 공간", ((TextBlock)window.FindName("PageTitleText")).Text);
+            tabs.SelectedIndex = 5;
+            Assert.AreSame(firstVisit, insightsHost.Content);
         }
         finally { window.Close(); }
     });
@@ -495,28 +537,35 @@ public sealed class DashboardInsightsUiTests
             DailyTrends: trends,
             BestStreakDays: 12,
             IsTodayFocused: true,
-            HeatmapDays: BuildTestHeatmap(today, active: true));
+            HeatmapDays: BuildTestHeatmap(today, active: true),
+            SelfDistractionChangePercent: -24.2);
     }
 
     private static IReadOnlyList<InsightHeatmapDay> BuildTestHeatmap(DateTime today, bool active)
     {
         int dow = (int)today.DayOfWeek;
-        var start = today.AddDays(-dow - 9 * 7);
-        var list = new InsightHeatmapDay[70];
-        for (int i = 0; i < 70; i++)
+        var start = today.AddDays(-dow - 19 * 7);
+        var list = new InsightHeatmapDay[140];
+        for (int i = 0; i < 140; i++)
         {
             var date = start.AddDays(i);
             bool isFuture = date > today;
             bool isToday = date == today;
-            int level = !active || isFuture ? 0 : ((i % 4) + 1);
+            int level = !active || isFuture ? 0 : isToday ? 2 : ((i % 4) + 1);
             var dur = level == 0 ? TimeSpan.Zero : TimeSpan.FromMinutes(level * 30);
+            int sessions = level == 0 ? 0 : Math.Max(1, level);
+            int blocked = level == 0 ? 0 : level * 3;
+            double? purity = level == 0 ? null : 70.0 + level * 5.0;
             list[i] = new InsightHeatmapDay(
                 LocalDate: date,
                 FocusDuration: dur,
                 IntensityLevel: level,
                 IsToday: isToday,
                 IsFuture: isFuture,
-                TooltipText: isFuture ? string.Empty : $"{date:M월 d일} · 집중 {(int)dur.TotalMinutes}분");
+                TooltipText: isFuture ? string.Empty : $"{date:M월 d일} · 집중 {(int)dur.TotalMinutes}분",
+                SessionCount: sessions,
+                BlockedCount: blocked,
+                WorkPurityPercent: purity);
         }
         return list;
     }

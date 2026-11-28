@@ -1,0 +1,45 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+        화면 위 가운데에 뜨는 알림 카드(집중 제안, AI 요약 완료)가 함께 쓰는 모양.
+        다른 앱 위에 뜨므로 글자가 읽히게 거의 불투명한 흑연 판에, 왼쪽 위에만 호박빛을 번지게 한다.
+    -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/Altong.Client;component/Themes/BlackTheme.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <RadialGradientBrush x:Key="FloatingCardBackground" GradientOrigin="0.08,0" Center="0.08,0" RadiusX="0.95" RadiusY="1.6">
+        <GradientStop Color="#F73B2E22" Offset="0" />
+        <GradientStop Color="#F72B2622" Offset="0.55" />
+        <GradientStop Color="#F7262220" Offset="1" />
+    </RadialGradientBrush>
+
+    <Style x:Key="FloatingButton" TargetType="Button">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FontSize" Value="{StaticResource TypeControl}" />
+        <Setter Property="Padding" Value="14,7" />
+        <Setter Property="Background" Value="{StaticResource GlassPaneHover}" />
+        <Setter Property="Foreground" Value="{StaticResource BlackText}" />
+        <Setter Property="BorderBrush" Value="{StaticResource NavSelectedRule}" />
+        <Setter Property="Template"><Setter.Value>
+            <ControlTemplate TargetType="Button">
+                <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="1" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource BlackFocus}" /></Trigger>
+                    <Trigger Property="IsPressed" Value="True"><Setter TargetName="Surface" Property="Opacity" Value=".85" /></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value></Setter>
+    </Style>
+
+    <Style x:Key="PrimaryFloatingButton" TargetType="Button" BasedOn="{StaticResource FloatingButton}">
+        <Setter Property="Background" Value="{StaticResource BlackAction}" />
+        <Setter Property="Foreground" Value="{StaticResource BlackActionText}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BlackAction}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+</ResourceDictionary>

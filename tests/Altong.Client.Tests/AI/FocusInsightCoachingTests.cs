@@ -66,7 +66,8 @@ public sealed class FocusInsightCoachingTests
         int deepFocusCount = 3,
         TimeSpan? avgSessionDuration = null,
         int currentStreakDays = 5,
-        double? periodChangePercent = 18.4)
+        double? periodChangePercent = 18.4,
+        double? selfDistractionChangePercent = null)
     {
         return new InsightQualityMetrics(
             FlowProtectionEligibleCount: flowEligible,
@@ -84,7 +85,8 @@ public sealed class FocusInsightCoachingTests
             AverageSessionDuration: avgSessionDuration ?? TimeSpan.FromMinutes(42),
             CurrentStreakDays: currentStreakDays,
             PeriodChangePercent: periodChangePercent,
-            DailyTrends: Array.Empty<InsightDailyTrendItem>());
+            DailyTrends: Array.Empty<InsightDailyTrendItem>(),
+            SelfDistractionChangePercent: selfDistractionChangePercent);
     }
 
     private static FocusInsightSnapshot CreateEmptySnapshot(
@@ -487,7 +489,7 @@ public sealed class FocusInsightCoachingTests
         var snapshot = CreatePopulatedSnapshot(
             InsightPeriod.Last7Days,
             "fp-quality",
-            quality: CreateSampleQuality());
+            quality: CreateSampleQuality(selfDistractionChangePercent: -24.2));
 
         var prompt = FocusInsightCoachingService.BuildUserPrompt(snapshot);
 
@@ -496,6 +498,7 @@ public sealed class FocusInsightCoachingTests
         StringAssert.Contains(prompt, "집중 중 직접 확인 최다 앱: KakaoTalk (22분)");
         StringAssert.Contains(prompt, "깊은 몰입(25분+): 3회, 평균 세션: 42분, 연속 집중: 5일");
         StringAssert.Contains(prompt, "전기 대비 집중 변화: +18%");
+        StringAssert.Contains(prompt, "자발적 이탈 변화: -24%");
     }
 
     [TestMethod]
@@ -556,9 +559,9 @@ public sealed class FocusInsightCoachingTests
         Assert.IsFalse(result.IsAiGenerated);
         Assert.IsFalse(result.IsFromCache);
         Assert.AreEqual(2, result.Findings.Count);
-        StringAssert.Contains(result.Findings[0], "차단 알림 8건 중 88%");
-        StringAssert.Contains(result.Findings[0], "작업 흐름을 지켜냈");
-        StringAssert.Contains(result.Findings[0], "순수 작업 비율 72%");
+        StringAssert.Contains(result.Findings[0], "차단 8건 중 88%");
+        StringAssert.Contains(result.Findings[0], "흐름 유지");
+        StringAssert.Contains(result.Findings[0], "순수 작업 72%");
         StringAssert.Contains(result.ActionTip, "KakaoTalk");
         StringAssert.Contains(result.ActionTip, "22분");
         StringAssert.Contains(result.ActionTip, "최소화");

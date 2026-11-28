@@ -22,8 +22,8 @@ public sealed class ReportReadyToastUiTests
             Assert.IsFalse(toast.IsActive, "말풍선이 작업 중인 창의 포커스를 가져가면 안 됩니다.");
             Assert.AreEqual(title, ((TextBlock)toast.FindName("TitleText")).Text);
             var area = SystemParameters.WorkArea;
-            Assert.AreEqual(area.Right, toast.Left + toast.ActualWidth, 1, "작업 영역 오른쪽 끝(알림 영역 쪽)에 붙어야 합니다.");
-            Assert.AreEqual(area.Bottom, toast.Top + toast.ActualHeight, 1, "작업 영역 아래쪽(작업 표시줄 위)에 붙어야 합니다.");
+            Assert.AreEqual(SystemParameters.PrimaryScreenWidth / 2, toast.Left + toast.ActualWidth / 2, 1, "집중 제안 카드와 같은 화면 위 가운데에 떠야 합니다.");
+            Assert.AreEqual(Math.Max(0, area.Top) + 10, toast.Top, 1, "작업 영역 위쪽에 붙어 나옵니다.");
             SavePreview(toast, succeeded ? "report-toast-success.png" : "report-toast-failure.png");
         }
         finally { toast.Close(); }
@@ -60,14 +60,28 @@ public sealed class ReportReadyToastUiTests
     {
         var first = new ReportReadyToastWindow { AutoCloseAfter = TimeSpan.Zero };
         var second = new ReportReadyToastWindow { AutoCloseAfter = TimeSpan.Zero };
+        var other = new Window { Width = 360, Height = 120, ShowActivated = false, ShowInTaskbar = false };
         try
         {
             first.Present(succeeded: true);
+            double originalTop = first.Top;
+            other.Show();
+            Altong.Client.Services.TopBanner.Place(other);
+            Assert.IsTrue(other.Top > originalTop);
             second.Present(succeeded: false);
+            Assert.AreEqual(originalTop, second.Top, 0.5, "이전 알림이 차지했던 자리에 표시해야 합니다.");
+            var third = new ReportReadyToastWindow { AutoCloseAfter = TimeSpan.Zero };
+            try
+            {
+                second.Dismiss();
+                third.Present(succeeded: true);
+                Assert.AreEqual(originalTop, third.Top, 0.5, "퇴장 중에 새로고침해도 위치가 내려가면 안 됩니다.");
+            }
+            finally { third.Close(); }
             Until(() => !first.IsVisible);
-            Assert.IsTrue(second.IsVisible, "같은 자리에 말풍선이 겹쳐 쌓이면 안 됩니다.");
+            Assert.IsFalse(second.IsVisible);
         }
-        finally { first.Close(); second.Close(); }
+        finally { first.Close(); second.Close(); other.Close(); }
     });
 
     [TestMethod]

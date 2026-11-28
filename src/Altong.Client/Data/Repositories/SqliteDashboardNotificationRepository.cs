@@ -150,6 +150,25 @@ public sealed class SqliteDashboardNotificationRepository(IAltongDatabase databa
     private static DateTime AsUtc(DateTime at) => at.Kind == DateTimeKind.Unspecified
         ? DateTime.SpecifyKind(at, DateTimeKind.Utc) : at.ToUniversalTime();
 
+    /// <summary>알림 목록의 세션 머리글("오늘 18:27 – 18:56 집중")에 쓸 집중 시작·끝 시각. 끝나지 않은 집중은 끝이 null이다.</summary>
+    public async Task<IReadOnlyDictionary<string, (DateTime StartedAt, DateTime? EndedAt)>> ReadSessionPeriodsAsync(IEnumerable<string> sessionIds)
+    {
+        var ids = sessionIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToArray();
+        var periods = new Dictionary<string, (DateTime, DateTime?)>(StringComparer.Ordinal);
+        if (ids.Length == 0) return periods;
+        using var connection = database.CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        var names = ids.Select((_, index) => "$id" + index).ToArray();
+        command.CommandText = $"SELECT session_id, started_at, ended_at FROM focus_sessions WHERE session_id IN ({string.Join(",", names)});";
+        for (int i = 0; i < ids.Length; i++) command.Parameters.AddWithValue(names[i], ids[i]);
+        using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+        while (await reader.ReadAsync().ConfigureAwait(false))
+            periods[reader.GetString(0)] = (
+                AsUtc(DateTime.Parse(reader.GetString(1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)),
+                reader.IsDBNull(2) ? null : AsUtc(DateTime.Parse(reader.GetString(2), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)));
+        return periods;
+    }
+
     public async Task DismissAsync(IEnumerable<string> notificationIds)
     {
         ArgumentNullException.ThrowIfNull(notificationIds);

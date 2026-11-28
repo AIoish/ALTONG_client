@@ -30,7 +30,7 @@ public sealed class ReportCalendarUiTests
         var calendar = new DashboardCalendarStore(path);
         calendar.Save(ResetTestSchedule("consecutive-0", start));
         calendar.Save(ResetTestSchedule("consecutive-1", start));
-        var view = new ReportCalendarView(results, calendar);
+        var view = new ReportCalendarView(results, calendar) { ListMode = true };
         var owner = new Window { Content = view, Width = 960, Height = 760, Left = -10000, Top = -10000,
             ShowActivated = false, ShowInTaskbar = false };
         try
@@ -250,6 +250,7 @@ public sealed class ReportCalendarUiTests
             tabs.SelectedIndex = 4;
             var view = (ReportCalendarView)((ContentControl)window.FindName("ReportCalendarHost")).Content;
             Await(view.SelectDateAsync(DateTime.Today));
+            Assert.IsFalse(view.ListMode, "캘린더는 도안대로 그날 시간표로 시작합니다.");
             var root = (FrameworkElement)window.Content;
             foreach (var size in new[] { new Size(920, 780), new Size(640, 520) })
             {
@@ -298,6 +299,7 @@ public sealed class ReportCalendarUiTests
             dock.HideAfterCurrentReminder();
             Pump();
             Until(() => ((ListBox)view.FindName("ReportList")).Items.Count == 1);
+            view.ListMode = true;
             view.UpdateLayout();
             var button = Descendants((ListBox)view.FindName("ReportList")).OfType<Button>().First(b => Equals(b.Content, "리포트 열기"));
             openButton = button;
@@ -351,7 +353,7 @@ public sealed class ReportCalendarUiTests
                     new[] { new NotificationRecord("fake-" + i, "Messenger", null, "가상 알림", "가상 본문", from.AddSeconds(1), false) },
                     new[] { new SessionAppUsage("VeryLongApplicationNameForWrappingAndSmallWindowVerification.exe", 120) }, true) { SessionId = id }));
             }
-            var view = new ReportCalendarView(results, calendar);
+            var view = new ReportCalendarView(results, calendar) { ListMode = true };
             Await(view.SelectDateAsync(localDay));
             var list = (ListBox)view.FindName("ReportList");
             Assert.AreEqual(30, list.Items.Count);
