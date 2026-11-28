@@ -450,7 +450,6 @@ public partial class App : System.Windows.Application
                 calendar: _calendar,
                 insightRepository: SessionResults.FocusInsights,
                 insightCoaching: _insightCoachingService);
-            _dashboardWindow.Closing += DashboardWindow_Closing;
             _dashboardWindow.Closed += DashboardWindow_Closed;
             MainWindow = _dashboardWindow;
         }
@@ -467,18 +466,10 @@ public partial class App : System.Windows.Application
         UpdateMessengerStatus();
     }
 
-    private void DashboardWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
-    {
-        if (e.Cancel || IsShuttingDown || !FocusModeService.IsEnabled) return;
-        e.Cancel = true;
-        RequestShutdown();
-    }
-
     private void DashboardWindow_Closed(object? sender, EventArgs e)
     {
         if (_dashboardWindow is not null)
         {
-            _dashboardWindow.Closing -= DashboardWindow_Closing;
             _dashboardWindow.Closed -= DashboardWindow_Closed;
         }
 
@@ -525,17 +516,24 @@ public partial class App : System.Windows.Application
         {
             if (FocusModeService.IsEnabled)
             {
-                const string message = "집중 모드가 켜져 있어요.\n진행 중인 집중을 끝내고 ALTONG을 종료할까요?";
-                const string title = "ALTONG 종료";
-                var answer = _dashboardWindow is { IsVisible: true, WindowState: not WindowState.Minimized } owner
-                    ? System.Windows.MessageBox.Show(owner, message, title, MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel)
-                    : System.Windows.MessageBox.Show(message, title, MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel);
-                if (answer != MessageBoxResult.OK) return;
+                bool confirmed = ConfirmDialogWindow.ShowConfirm(
+                    _dashboardWindow,
+                    title: "ALTONG 종료",
+                    message: "집중 모드가 켜져 있어요.\n진행 중인 집중을 끝내고 ALTONG을 종료할까요?",
+                    confirmText: "집중 끝내고 종료",
+                    cancelText: "계속 집중",
+                    isDestructive: true);
+                if (!confirmed) return;
             }
             if (_notificationDockWindow?.Panel.TryFlushMemoDraft() == false)
             {
-                System.Windows.MessageBox.Show("메모를 저장하지 못했습니다. 내용을 복사하거나 저장한 뒤 다시 종료해 주세요.",
-                    "메모 저장 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ConfirmDialogWindow.ShowConfirm(
+                    _dashboardWindow,
+                    title: "메모 저장 실패",
+                    message: "메모를 저장하지 못했습니다.\n내용을 복사하거나 저장한 뒤 다시 종료해 주세요.",
+                    confirmText: "확인",
+                    cancelText: null,
+                    isDestructive: false);
                 return;
             }
             IsShuttingDown = true;

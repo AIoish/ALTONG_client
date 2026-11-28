@@ -8,7 +8,7 @@
         Background="Transparent" Foreground="{DynamicResource BlackText}" FontFamily="{x:Static services:AppTypography.BodyFont}"
         FontSize="{DynamicResource TypeBody}" UseLayoutRounding="True" SnapsToDevicePixels="True">
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="44" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="24" UseAeroCaptionButtons="False" />
+        <WindowChrome CaptionHeight="44" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
     <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="/Altong.Client;component/Themes/BlackTheme.xaml" /></ResourceDictionary.MergedDictionaries>
         <SolidColorBrush x:Key="PrimaryText" Color="{StaticResource BlackTextColor}" />
@@ -297,8 +297,8 @@
             </Grid>
         </DataTemplate>
     </ResourceDictionary></Window.Resources>
-    <Border x:Name="DashboardSurface" Background="{StaticResource GlassBackdrop}" BorderBrush="{StaticResource GlassWindowRim}" BorderThickness="1" CornerRadius="24" SizeChanged="DashboardSurface_SizeChanged">
-        <Grid>
+    <Border x:Name="DashboardSurface" Background="{StaticResource GlassBackdrop}" BorderBrush="{StaticResource GlassWindowRim}" BorderThickness="1" CornerRadius="24" SnapsToDevicePixels="False" SizeChanged="DashboardSurface_SizeChanged">
+        <Grid x:Name="DashboardInnerGrid">
             <Grid.RowDefinitions><RowDefinition Height="44" /><RowDefinition Height="*" /></Grid.RowDefinitions>
             <local:GlassBackdrop x:Name="Backdrop" Grid.RowSpan="2" />
             <Border Grid.RowSpan="2" Background="{StaticResource GlassWindow}" IsHitTestVisible="False" />
