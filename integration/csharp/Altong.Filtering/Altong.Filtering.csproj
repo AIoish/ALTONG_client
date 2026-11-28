@@ -1,0 +1,6 @@
+<!-- Purpose: Native CPU inference library for the trained KLUE filter.
+Created: 2026-10-10 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup><PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" /></ItemGroup>
+</Project>

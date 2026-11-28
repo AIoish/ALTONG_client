@@ -1,0 +1,288 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
+using Altong.Client.Models;
+using Altong.Client.Services;
+using Button = System.Windows.Controls.Button;
+using Brushes = System.Windows.Media.Brushes;
+
+namespace Altong.Client;
+
+/// <summary>
+/// 상단 노치에서 아래로 늘어나는 알림 패널의 내용(목록·상세·하단 버튼).
+/// 바탕과 테두리는 <see cref="NotificationDockWindow"/>가 노치와 한 도형으로 그린다.
+/// 모든 상태는 <see cref="DockNotificationState"/>에 있으며, 이 컨트롤은 그 상태를 보여 주고 조작만 전달한다.
+/// </summary>
+public partial class NotificationPanel : System.Windows.Controls.UserControl
+{
+    /// <summary>목록 영역 폭. 노치가 열리면 노치 바닥이 이 폭까지 넓어진다.</summary>
+    public const double ListWidth = TopNotchLayout.PanelWidth;
+    /// <summary>상세 영역 폭. 목록 왼쪽에 붙는다.</summary>
+    public const double DetailWidth = TopNotchLayout.DetailWidth;
+    private readonly DockNotificationState _state;
+    private DockNotificationItem? _displayedDetail;
+    private TopBandStyle _bandStyle;
+    private bool _stoppingFocus;
+    private bool _allMessengersStopped;
+    public bool IsMemoOpen => MemoView.Visibility == Visibility.Visible;
+    public Func<string?>? StopFocusAction { get; set; }
+    internal Action? ShowMessengerStatusAction { get; set; }
+    public event EventHandler? MemoModeChanged;
+
+    public event EventHandler? ShowDashboardRequested;
+    public event EventHandler<TopBandStyle>? BandStyleRequested;
+
+    public NotificationPanel(DockNotificationState state)
+    {
+        InitializeComponent();
+        _state = state;
+        NotificationItems.ItemsSource = state.Items;
+        MemoView.CloseRequested += (_, _) => CloseMemo();
+        MemoView.SetStore(new QuickMemoStore());
+        Refresh();
+    }
+
+    public TopBandStyle BandStyle => _bandStyle;
+    public bool HasDetail => _state.SelectedItem is not null;
+    /// <summary>상세 패널이 목록 오른쪽에 붙는지. 노치를 화면 왼쪽 끝으로 옮겼을 때만 오른쪽이다.</summary>
+    public bool DetailOnRight { get; private set; }
+
+    /// <summary>상세 패널을 목록 왼쪽 또는 오른쪽에 붙인다. 목록 쪽 테두리 선도 함께 옮긴다.</summary>
+    public void SetDetailSide(bool right)
+    {
+        if (DetailOnRight == right) return;
+        DetailOnRight = right;
+        Grid.SetColumn(DetailPanel, right ? 1 : 0);
+        Grid.SetColumn(ListPanel, right ? 0 : 1);
+        DetailPanel.BorderThickness = right ? new Thickness(1, 0, 0, 0) : new Thickness(0, 0, 1, 0);
+        ApplyColumns();
+    }
+
+    /// <summary>첫 열·둘째 열 폭. 상세가 왼쪽이면 [상세, 목록], 오른쪽이면 [목록, 상세] 순서다.</summary>
+    private void ApplyColumns()
+    {
+        var detail = new GridLength(HasDetail ? DetailWidth : 0);
+        var list = new GridLength(ListWidth);
+        DetailColumn.Width = DetailOnRight ? list : detail;
+        ListColumn.Width = DetailOnRight ? detail : list;
+    }
+    public double PanelWidth => ListWidth + (HasDetail ? DetailWidth : 0);
+
+    /// <summary>상단 띠 색 선택을 표시한다.</summary>
+    public void SetBandStyle(TopBandStyle style)
+    {
+        _bandStyle = style;
+        foreach (var button in new[] { BandBlackButton, BandWallpaperButton })
+            MarkSelected(button, button.Tag is TopBandStyle option && option == style);
+    }
+
+    private void MarkSelected(Button button, bool selected)
+    {
+        button.Background = selected ? (System.Windows.Media.Brush)FindResource("Accent") : Brushes.Transparent;
+        button.Foreground = selected ? Brushes.Black : (System.Windows.Media.Brush)FindResource("MutedText");
+        System.Windows.Automation.AutomationProperties.SetItemStatus(button, selected ? "선택됨" : "선택 안 됨");
+    }
+
+    private void BandStyle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: TopBandStyle style })
+            BandStyleRequested?.Invoke(this, style);
+    }
+
+    private void Dashboard_Click(object sender, RoutedEventArgs e) => ShowDashboardRequested?.Invoke(this, EventArgs.Empty);
+
+    private void MessengerStatusHome_Click(object sender, RoutedEventArgs e) => ShowMessengerStatusAction?.Invoke();
+
+    internal void SetMessengerStatus(MessengerRunningStatus? status)
+    {
+        bool stopped = status is { AllStopped: true };
+        if (_allMessengersStopped == stopped) return;
+
+        _allMessengersStopped = stopped;
+        UpdateMessengerNotice();
+    }
+
+    private void UpdateMessengerNotice() => MessengerOfflineNotice.Visibility =
+        _allMessengersStopped && _state.IsActive && _state.IsPanelOpen && !IsMemoOpen
+            ? Visibility.Visible : Visibility.Collapsed;
+
+    internal void SetMemoStore(QuickMemoStore store) => MemoView.SetStore(store);
+    internal System.Windows.Controls.TextBox MemoEditor => MemoView.Editor;
+    public bool TryFlushMemoDraft() => MemoView.TryFlushDraft();
+
+    private void QuickMemo_Click(object sender, RoutedEventArgs e)
+    {
+        if (IsMemoOpen) CloseMemo();
+        else
+        {
+            _state.CloseDetail();
+            SetMemoMode(true);
+            MotionBehavior.Transition(MemoView, offsetY: 4);
+        }
+    }
+
+    public void CloseMemo()
+    {
+        if (!IsMemoOpen) return;
+        if (!TryFlushMemoDraft()) return;
+        SetMemoMode(false);
+    }
+
+    private void SetMemoMode(bool open)
+    {
+        MemoView.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        NotificationListContent.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
+        NotificationBulkActions.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
+        ListHeading.Text = open ? "빠른 메모" : "중요 알림";
+        CountText.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
+        MemoButtonLabel.Text = open ? "알림 보기" : "빠른 메모";
+        MemoButtonIcon.Text = open ? "\uEA8F" : "\uE70B";
+        System.Windows.Automation.AutomationProperties.SetName(QuickMemoButton, MemoButtonLabel.Text);
+        UpdateMessengerNotice();
+        MemoModeChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private async void StopFocus_Click(object sender, RoutedEventArgs e)
+    {
+        if (_stoppingFocus || !_state.IsActive) return;
+        if (!TryFlushMemoDraft())
+        {
+            ShowUtilityError("메모를 저장하지 못했어요. 내용을 확인한 뒤 다시 시도해 주세요.");
+            return;
+        }
+        _stoppingFocus = true;
+        StopFocusButton.IsEnabled = false;
+        UtilityStatusText.Visibility = Visibility.Collapsed;
+        // Show the disabled state before the existing synchronous Windows settings restoration runs.
+        await Dispatcher.Yield(DispatcherPriority.Render);
+        try
+        {
+            string? error = StopFocusAction is null ? "집중 제어에 연결되지 않았어요." : StopFocusAction();
+            if (error is not null) ShowUtilityError(error);
+        }
+        catch (Exception)
+        {
+            ShowUtilityError("집중을 끄지 못했어요. 대시보드에서 상태를 확인해 주세요.");
+        }
+        finally
+        {
+            _stoppingFocus = false;
+            StopFocusButton.IsEnabled = _state.IsActive;
+        }
+    }
+
+    private void ShowUtilityError(string text)
+    {
+        UtilityStatusText.Text = text;
+        UtilityStatusText.Visibility = Visibility.Visible;
+    }
+
+    public void Refresh()
+    {
+        MemoView.SetSession(_state.SessionId);
+        StopFocusButton.IsEnabled = _state.IsActive && !_stoppingFocus;
+        if (!_state.IsPanelOpen && IsMemoOpen)
+        {
+            TryFlushMemoDraft();
+            SetMemoMode(false);
+        }
+        CountText.Text = $"미확인 {_state.UnreadCount}개 · 전체 {_state.Items.Count}개";
+        MarkAllReadButton.IsEnabled = _state.UnreadCount > 0;
+        DeleteReadButton.IsEnabled = _state.Items.Any(item => item.IsRead);
+        ListPinButton.IsChecked = DetailPinButton.IsChecked = _state.IsPinned;
+        string pinHint = _state.IsPinned ? "고정 해제" : "목록과 상세 함께 고정";
+        ListPinButton.ToolTip = DetailPinButton.ToolTip = pinHint;
+        EmptyState.Visibility = _state.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ListScroll.Visibility = _state.Items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        UpdateMessengerNotice();
+
+        bool hasDetail = HasDetail;
+        bool openingDetail = hasDetail && DetailPanel.Visibility != Visibility.Visible;
+        ApplyColumns();
+        DetailPanel.Visibility = hasDetail ? Visibility.Visible : Visibility.Collapsed;
+        Width = PanelWidth;
+        if (_displayedDetail != _state.SelectedItem)
+        {
+            _displayedDetail = _state.SelectedItem;
+            DetailContent.DataContext = _displayedDetail;
+            DetailScroll.ScrollToTop();
+        }
+        // 새 알림 수신·읽음 갱신 시에는 재생하지 않고 상세를 펼칠 때만 강조한다.
+        if (openingDetail && IsVisible) AnimateEntrance(DetailPanel, DetailOnRight ? -6 : 6);
+        else if (!hasDetail) ResetEntrance(DetailPanel);
+    }
+
+    /// <summary>상세가 나타날 때 한 번만 옆에서 들어온다.</summary>
+    private static void AnimateEntrance(FrameworkElement panel, double offset)
+    {
+        ResetEntrance(panel);
+        if (!SystemParameters.ClientAreaAnimation) return;
+        var duration = TimeSpan.FromMilliseconds(160);
+        var easing = new QuadraticEase { EasingMode = EasingMode.EaseOut };
+        panel.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration)
+        {
+            EasingFunction = easing,
+            FillBehavior = FillBehavior.Stop,
+        }.AtDisplayRate(), HandoffBehavior.SnapshotAndReplace);
+        ((TranslateTransform)panel.RenderTransform).BeginAnimation(TranslateTransform.XProperty,
+            new DoubleAnimation(offset, 0, duration)
+            {
+                EasingFunction = easing,
+                FillBehavior = FillBehavior.Stop,
+            }.AtDisplayRate(), HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private static void ResetEntrance(FrameworkElement panel)
+    {
+        panel.BeginAnimation(OpacityProperty, null);
+        ((TranslateTransform)panel.RenderTransform).BeginAnimation(TranslateTransform.XProperty, null);
+    }
+
+    /// <summary>새 카드 삽입 전 보이던 카드의 화면 위치를 유지한다.</summary>
+    public void PreserveScrollPosition(Action update)
+    {
+        DockNotificationItem? anchor = null;
+        double oldY = 0;
+        if (IsVisible && ListScroll.VerticalOffset > 0)
+        {
+            UpdateLayout();
+            foreach (var item in _state.Items)
+            {
+                if (NotificationItems.ItemContainerGenerator.ContainerFromItem(item) is not FrameworkElement element)
+                    continue;
+                double y = element.TranslatePoint(new System.Windows.Point(), ListScroll).Y;
+                if (y + element.ActualHeight > 0)
+                {
+                    anchor = item;
+                    oldY = y;
+                    break;
+                }
+            }
+        }
+        update();
+        if (anchor is null || !IsVisible) return;
+        UpdateLayout();
+        if (NotificationItems.ItemContainerGenerator.ContainerFromItem(anchor) is FrameworkElement current)
+        {
+            double newY = current.TranslatePoint(new System.Windows.Point(), ListScroll).Y;
+            ListScroll.ScrollToVerticalOffset(ListScroll.VerticalOffset + newY - oldY);
+        }
+    }
+
+    private void Notification_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: DockNotificationItem item }) _state.OpenDetail(item.Id);
+    }
+
+    private void Pin_Click(object sender, RoutedEventArgs e) => _state.TogglePin();
+    private void MarkAllRead_Click(object sender, RoutedEventArgs e) =>
+        PreserveScrollPosition(_state.MarkAllRead);
+    private void DeleteRead_Click(object sender, RoutedEventArgs e) => _state.DeleteRead();
+    private void CloseDetail_Click(object sender, RoutedEventArgs e) => _state.CloseDetail();
+    private void CloseList_Click(object sender, RoutedEventArgs e)
+    {
+        if (TryFlushMemoDraft()) _state.ClosePanel();
+    }
+}

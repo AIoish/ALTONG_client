@@ -1,0 +1,143 @@
+<Window x:Class="Altong.Client.NotificationDockWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:services="clr-namespace:Altong.Client.Services"
+        Title="Altong 집중 모드"
+        Width="740" Height="190"
+        AllowsTransparency="True" Background="Transparent" Focusable="False"
+        ResizeMode="NoResize" ShowActivated="False" ShowInTaskbar="False"
+        Topmost="True" WindowStartupLocation="Manual" WindowStyle="None"
+        UseLayoutRounding="True">
+    <!--
+        상단 노치 하나만 그리는 창. 노치와 알림 패널을 한 창, 한 윤곽 도형(NotchBody)으로 그려
+        패널이 노치에서 아래로 늘어나는 동안 두 부분이 어긋나지 않는다. 바탕(Canvas)은 투명이라
+        도형 밖의 클릭은 아래 앱으로 전달된다. 위치·크기는 코드에서 노치 가운데를 기준으로 정한다.
+    -->
+    <Canvas x:Name="Root">
+        <!-- 노치(+열려 있으면 패널) 실루엣. 모양은 코드에서 열림 정도에 따라 다시 만든다. -->
+        <Path x:Name="NotchBody" Fill="#000000" Cursor="Hand"
+              MouseLeftButtonDown="Notch_MouseLeftButtonDown"
+              MouseMove="Notch_MouseMove" MouseLeftButtonUp="Notch_MouseLeftButtonUp"
+              LostMouseCapture="Notch_LostMouseCapture"
+              MouseEnter="Pointer_Changed" MouseLeave="Pointer_Changed"
+              AutomationProperties.Name="Altong 상단 노치"
+              AutomationProperties.HelpText="커서를 올려 알림 패널 펼치기, 클릭하여 알림 패널 열고 닫기, 좌우로 드래그하여 이동">
+            <Path.RenderTransform><ScaleTransform x:Name="TopNotchClickScale" /></Path.RenderTransform>
+        </Path>
+        <!--
+            닫힌 노치 영역의 표시등과 일렁임. 노치 모양으로 잘라 그린다.
+            일렁임은 색 물결이 노치 안을 한 번 흐르는 효과다. 양 끝은 투명, 가운데는 불투명도 약 44%.
+            집중을 켤 때는 청록·라벤더(민트), 통과한 알림이 오면 코랄·핑크·호박색(선셋)으로 코드에서 색을 바꾼다.
+        -->
+        <Grid x:Name="NotchFace" Width="96.05" Height="8" IsHitTestVisible="False">
+            <Grid.Clip>
+                <PathGeometry Figures="M0,0 C3.4,0 25.7,5.3 31.4,14.5 C34.2,19 47.2,30 62.4,30 L297.8,30 C313,30 326,19 328.8,14.5 C334.5,5.3 356.8,0 360.2,0 Z" />
+            </Grid.Clip>
+            <Rectangle x:Name="TopNotchRipple" Opacity="0">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <LinearGradientBrush.RelativeTransform>
+                            <TranslateTransform x:Name="TopNotchRippleMove" X="-1" />
+                        </LinearGradientBrush.RelativeTransform>
+                        <GradientStop x:Name="RippleStopStart" Color="#0072B5A6" Offset="0" />
+                        <GradientStop x:Name="RippleStopLeft" Color="#7072B5A6" Offset=".3" />
+                        <GradientStop x:Name="RippleStopMiddle" Color="#70A99BE0" Offset=".5" />
+                        <GradientStop x:Name="RippleStopRight" Color="#7072B5A6" Offset=".7" />
+                        <GradientStop x:Name="RippleStopEnd" Color="#0072B5A6" Offset="1" />
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+            <!--
+                렌즈 포인트: 노치 가운데의 작은 카메라 렌즈 모양 표시등. 왼쪽 위가 밝은 원형 그라데이션으로 렌즈 광택을 낸다.
+                평소 은빛(지름 5), 미확인 알림이 있으면 선셋 코랄 주황(지름 7)로 0.2초에 한 번 바뀐다.
+                색만으로 구분하지 않도록 크기도 함께 바꾼다. 개수는 패널에서 확인한다.
+            -->
+            <!-- 새 알림마다 렌즈 뒤에서 한 번 번지는 선셋 빛. 평소에는 보이지 않는다. -->
+            <Ellipse x:Name="TopNotchLensGlow" Width="16" Height="16" Opacity="0" IsHitTestVisible="False"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin=".5,.5">
+                <Ellipse.Fill>
+                    <RadialGradientBrush Center=".5,.5" RadiusX=".5" RadiusY=".5">
+                        <GradientStop Color="#8CE8B49C" Offset="0" />
+                        <GradientStop Color="#4DD27C60" Offset=".35" />
+                        <GradientStop Color="#00D27C60" Offset="1" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+                <Ellipse.RenderTransform><ScaleTransform x:Name="TopNotchLensGlowScale" ScaleX=".6" ScaleY=".6" /></Ellipse.RenderTransform>
+            </Ellipse>
+            <Ellipse x:Name="TopNotchLens" Width="5" Height="5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     RenderTransformOrigin=".5,.5">
+                <Ellipse.Fill>
+                    <RadialGradientBrush GradientOrigin=".35,.3" Center=".5,.5" RadiusX=".5" RadiusY=".5">
+                        <GradientStop x:Name="LensHighlight" Color="#FFFFFFFF" Offset="0" />
+                        <GradientStop x:Name="LensBody" Color="#FFC4C8D0" Offset=".45" />
+                        <GradientStop x:Name="LensEdge" Color="#FF6E737C" Offset="1" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+                <Ellipse.RenderTransform><ScaleTransform x:Name="TopNotchLensScale" /></Ellipse.RenderTransform>
+            </Ellipse>
+        </Grid>
+        <!-- 알림 패널 내용(NotificationPanel)은 코드에서 이 자리에 넣는다. -->
+        <ContentControl x:Name="PanelHost" Visibility="Collapsed" Focusable="False" />
+        <!--
+            호버·패널이 열린 동안 보이는 은색 윤곽선. 화면 끝에 닿는 위쪽 변은 긋지 않는다.
+            노치·패널 실루엣으로 잘라 두께 2 중 안쪽 1만 보인다. 빛 번짐은 쓰지 않는다.
+        -->
+        <Path x:Name="TopNotchOutline" Opacity="0" IsHitTestVisible="False" Stroke="#C4C8D0" StrokeThickness="2" />
+        <Grid x:Name="ReminderBubble" Visibility="Collapsed" Width="344" Height="122">
+            <Button x:Name="ReminderDismissButton" Click="CloseReminder_Click" Cursor="Hand"
+                    FontFamily="{x:Static services:AppTypography.BodyFont}"
+                    Background="Transparent" BorderThickness="0" Padding="0"
+                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                    AutomationProperties.Name="닫기: 집중 안내"
+                    AutomationProperties.HelpText="말풍선 어디를 클릭해도 안내만 닫힙니다. 집중 세션은 유지됩니다.">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter />
+                    </ControlTemplate>
+                </Button.Template>
+            <Border x:Name="ReminderCard" Margin="0,9,0,0" Padding="16,12" CornerRadius="12"
+                    BorderThickness="1">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="#202225" />
+                        <Setter Property="BorderBrush" Value="#4B4D54" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsMouseOver, ElementName=ReminderDismissButton}" Value="True">
+                                <Setter Property="Background" Value="#27292D" />
+                                <Setter Property="BorderBrush" Value="#6A6D76" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsPressed, ElementName=ReminderDismissButton}" Value="True">
+                                <Setter Property="Background" Value="#1B1D20" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsKeyboardFocused, ElementName=ReminderDismissButton}" Value="True">
+                                <Setter Property="BorderBrush" Value="#A8B9D8" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                    <StackPanel VerticalAlignment="Center">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ReminderTitleText" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="#F3F3F2" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Margin="12,0,0,0"
+                                       Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                                       Foreground="#B8B9C0" TextAlignment="Right"
+                                       VerticalAlignment="Center" IsHitTestVisible="False" />
+                        </Grid>
+                        <TextBlock x:Name="ReminderStatusText" Margin="0,5,0,0" FontSize="12" FontWeight="SemiBold" Foreground="#B6D3C4" />
+                        <TextBlock x:Name="ReminderMessageText" Margin="0,6,0,0" FontSize="12" Foreground="#B8B9C0"
+                                   TextWrapping="Wrap" LineHeight="17" MaxHeight="34" />
+                    </StackPanel>
+            </Border>
+            </Button>
+            <Polygon x:Name="ReminderArrow" Points="0,10 18,10 9,0" Fill="{Binding Background, ElementName=ReminderCard}" Stroke="{Binding BorderBrush, ElementName=ReminderCard}" StrokeThickness="1"
+                     Cursor="Hand" MouseLeftButtonUp="CloseReminder_Click"
+                     HorizontalAlignment="Center" VerticalAlignment="Top" />
+        </Grid>
+
+    </Canvas>
+</Window>

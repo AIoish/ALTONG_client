@@ -1,0 +1,37 @@
+<Window x:Class="Altong.Client.WindowsDndGuidanceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Windows 방해 금지 설정"
+        Width="420"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        WindowStartupLocation="CenterScreen">
+    <Border Padding="24">
+        <StackPanel>
+            <TextBlock Margin="0,0,0,8"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       Text="Windows 방해 금지 설정" />
+            <TextBlock x:Name="GuidanceMessageText"
+                       Margin="0,0,0,20"
+                       FontSize="15"
+                       LineHeight="22"
+                       TextWrapping="Wrap" />
+            <StackPanel HorizontalAlignment="Right"
+                        Orientation="Horizontal">
+                <Button x:Name="OpenSettingsButton"
+                        MinWidth="110"
+                        Margin="0,0,8,0"
+                        Padding="12,7"
+                        Click="OpenSettingsButton_Click"
+                        Content="설정 다시 열기" />
+                <Button MinWidth="80"
+                        Padding="12,7"
+                        Click="CancelButton_Click"
+                        Content="취소" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

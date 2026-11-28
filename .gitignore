@@ -51,6 +51,14 @@ Thumbs.db
 # .NET build output
 **/bin/
 **/obj/
+/verify-build/
 
 # Gemini Agents
 .agents/rules/
+
+# AI Models & Archives
+*.onnx
+*.gguf
+*.zip
+integration/csharp/Verification/bin/
+integration/csharp/Verification/obj/

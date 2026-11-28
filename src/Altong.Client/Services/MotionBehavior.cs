@@ -1,0 +1,320 @@
+using System.ComponentModel;
+using System.Windows;
+using System.Windows.Controls.Primitives;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
+using Path = System.Windows.Shapes.Path;
+using Brush = System.Windows.Media.Brush;
+using Color = System.Windows.Media.Color;
+
+namespace Altong.Client.Services;
+
+/// <summary>Non-blocking feedback; Windows' animation setting controls every transition.</summary>
+public static class MotionBehavior
+{
+    private static readonly DependencyPropertyDescriptor PressedDescriptor =
+        DependencyPropertyDescriptor.FromProperty(ButtonBase.IsPressedProperty, typeof(ButtonBase));
+    private static readonly DependencyPropertyDescriptor TextDescriptor =
+        DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock));
+    internal static bool? AnimationOverride { get; set; }
+    private static bool MotionAllowed => AnimationOverride ?? SystemParameters.ClientAreaAnimation;
+    /// <summary>Windows "애니메이션 효과 표시"가 켜져 있는지. 꺼져 있으면 움직임 대신 짧은 페이드만 쓴다.</summary>
+    public static bool IsMotionAllowed => MotionAllowed;
+    private static readonly Duration FeedbackDuration = TimeSpan.FromMilliseconds(160);
+    private static readonly Duration TransitionDuration = TimeSpan.FromMilliseconds(190);
+    private static readonly DependencyProperty TransitionTransformProperty = DependencyProperty.RegisterAttached(
+        "TransitionTransform", typeof(TranslateTransform), typeof(MotionBehavior));
+    private static readonly DependencyProperty TransitionVersionProperty = DependencyProperty.RegisterAttached(
+        "TransitionVersion", typeof(int), typeof(MotionBehavior), new PropertyMetadata(0));
+    private static readonly DependencyProperty LastRevealVisibilityProperty = DependencyProperty.RegisterAttached(
+        "LastRevealVisibility", typeof(Visibility), typeof(MotionBehavior), new PropertyMetadata(Visibility.Collapsed));
+
+    public static readonly DependencyProperty TransitionKeyProperty = DependencyProperty.RegisterAttached(
+        "TransitionKey", typeof(object), typeof(MotionBehavior), new PropertyMetadata(null, TransitionKeyChanged));
+    public static object? GetTransitionKey(DependencyObject element) => element.GetValue(TransitionKeyProperty);
+    public static void SetTransitionKey(DependencyObject element, object? value) => element.SetValue(TransitionKeyProperty, value);
+
+    private static void TransitionKeyChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        if (sender is FrameworkElement element) Transition(element);
+    }
+
+    /// <summary>Moves only the rendered surface; navigation, focus and scrolling remain immediate.</summary>
+    public static void Transition(FrameworkElement element, double offsetX = 0, double offsetY = 4, bool prominent = false)
+    {
+        int version = (int)element.GetValue(TransitionVersionProperty) + 1;
+        element.SetValue(TransitionVersionProperty, version);
+        var transform = element.GetValue(TransitionTransformProperty) as TranslateTransform;
+        bool interrupted = element.HasAnimatedProperties;
+        double opacity = element.Opacity;
+        double x = transform?.X ?? 0, y = transform?.Y ?? 0;
+        element.BeginAnimation(UIElement.OpacityProperty, null);
+        transform?.BeginAnimation(TranslateTransform.XProperty, null);
+        transform?.BeginAnimation(TranslateTransform.YProperty, null);
+        if (!element.IsLoaded || !element.IsVisible || !MotionAllowed) return;
+
+        if (transform is null)
+        {
+            transform = new TranslateTransform();
+            var transforms = new TransformGroup();
+            transforms.Children.Add(element.RenderTransform);
+            transforms.Children.Add(transform);
+            element.RenderTransform = transforms;
+            element.SetValue(TransitionTransformProperty, transform);
+            element.Unloaded += TransitionUnloaded;
+        }
+        var duration = prominent ? new Duration(TimeSpan.FromMilliseconds(230)) : TransitionDuration;
+        var targetOpacity = (double)element.GetAnimationBaseValue(UIElement.OpacityProperty);
+        var fade = Animation(interrupted ? opacity : targetOpacity * (prominent ? .82 : .94), targetOpacity, duration);
+        fade.Completed += (_, _) =>
+        {
+            if ((int)element.GetValue(TransitionVersionProperty) == version)
+                TransitionUnloaded(element, new RoutedEventArgs());
+        };
+        element.BeginAnimation(UIElement.OpacityProperty, fade);
+        transform.BeginAnimation(TranslateTransform.XProperty, Animation(interrupted ? x : offsetX, 0, duration));
+        transform.BeginAnimation(TranslateTransform.YProperty, Animation(interrupted ? y : offsetY, 0, duration));
+    }
+
+    private static void TransitionUnloaded(object sender, RoutedEventArgs args)
+    {
+        var element = (FrameworkElement)sender;
+        element.SetValue(TransitionVersionProperty, (int)element.GetValue(TransitionVersionProperty) + 1);
+        element.BeginAnimation(UIElement.OpacityProperty, null);
+        if (element.GetValue(TransitionTransformProperty) is not TranslateTransform transform) return;
+        transform.BeginAnimation(TranslateTransform.XProperty, null);
+        transform.BeginAnimation(TranslateTransform.YProperty, null);
+    }
+
+    /// <summary>Each control owns its animated brush; shared theme resources are never modified.</summary>
+    public static void SetBrush(FrameworkElement element, DependencyProperty property, Brush target)
+    {
+        var current = element.GetValue(property) as SolidColorBrush;
+        if (MotionAllowed && current is not null && target is SolidColorBrush color
+            && (Color)current.GetAnimationBaseValue(SolidColorBrush.ColorProperty) == color.Color) return;
+        if (!element.IsLoaded || !MotionAllowed || current is null || target is not SolidColorBrush solid)
+        {
+            element.SetCurrentValue(property, target);
+            return;
+        }
+        var brush = new SolidColorBrush(solid.Color);
+        element.SetCurrentValue(property, brush);
+        var animation = new ColorAnimation(current.Color, solid.Color, FeedbackDuration)
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            FillBehavior = FillBehavior.Stop
+        };
+        animation.Completed += (_, _) => brush.BeginAnimation(SolidColorBrush.ColorProperty, null);
+        brush.BeginAnimation(SolidColorBrush.ColorProperty, animation);
+    }
+
+    public static readonly DependencyProperty ButtonFeedbackProperty = DependencyProperty.RegisterAttached(
+        "ButtonFeedback", typeof(bool), typeof(MotionBehavior), new PropertyMetadata(false, ButtonFeedbackChanged));
+    public static bool GetButtonFeedback(DependencyObject element) => (bool)element.GetValue(ButtonFeedbackProperty);
+    public static void SetButtonFeedback(DependencyObject element, bool value) => element.SetValue(ButtonFeedbackProperty, value);
+
+    public static readonly DependencyProperty FadeOnRevealProperty = DependencyProperty.RegisterAttached(
+        "FadeOnReveal", typeof(bool), typeof(MotionBehavior), new PropertyMetadata(false, FadeOnRevealChanged));
+    public static bool GetFadeOnReveal(DependencyObject element) => (bool)element.GetValue(FadeOnRevealProperty);
+    public static void SetFadeOnReveal(DependencyObject element, bool value) => element.SetValue(FadeOnRevealProperty, value);
+
+    public static readonly DependencyProperty RotateOnToggleProperty = DependencyProperty.RegisterAttached(
+        "RotateOnToggle", typeof(bool), typeof(MotionBehavior), new PropertyMetadata(false, RotateOnToggleChanged));
+    public static bool GetRotateOnToggle(DependencyObject element) => (bool)element.GetValue(RotateOnToggleProperty);
+    public static void SetRotateOnToggle(DependencyObject element, bool value) => element.SetValue(RotateOnToggleProperty, value);
+
+    public static readonly DependencyProperty TextFeedbackProperty = DependencyProperty.RegisterAttached(
+        "TextFeedback", typeof(bool), typeof(MotionBehavior), new PropertyMetadata(false, TextFeedbackChanged));
+    public static bool GetTextFeedback(DependencyObject element) => (bool)element.GetValue(TextFeedbackProperty);
+    public static void SetTextFeedback(DependencyObject element, bool value) => element.SetValue(TextFeedbackProperty, value);
+
+    private static void ButtonFeedbackChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        if (sender is not ButtonBase button) return;
+        if ((bool)args.NewValue)
+        {
+            button.Loaded += ButtonLoaded;
+            button.Unloaded += ButtonUnloaded;
+            button.MouseEnter += ButtonMouseEnter;
+            button.MouseLeave += ButtonMouseLeave;
+            button.IsEnabledChanged += ButtonEnabledChanged;
+            if (button.IsLoaded) ButtonLoaded(button, new RoutedEventArgs());
+        }
+        else
+        {
+            ButtonUnloaded(button, new RoutedEventArgs());
+            button.Loaded -= ButtonLoaded;
+            button.Unloaded -= ButtonUnloaded;
+            button.MouseEnter -= ButtonMouseEnter;
+            button.MouseLeave -= ButtonMouseLeave;
+            button.IsEnabledChanged -= ButtonEnabledChanged;
+        }
+    }
+
+    private static void ButtonLoaded(object sender, RoutedEventArgs args)
+    {
+        var button = (ButtonBase)sender;
+        PressedDescriptor.RemoveValueChanged(button, ButtonPressedChanged);
+        PressedDescriptor.AddValueChanged(button, ButtonPressedChanged);
+    }
+
+    private static void ButtonUnloaded(object sender, RoutedEventArgs args)
+    {
+        var button = (ButtonBase)sender;
+        PressedDescriptor.RemoveValueChanged(button, ButtonPressedChanged);
+        button.BeginAnimation(UIElement.OpacityProperty, null);
+        button.SetValue(UIElement.OpacityProperty, 1d);
+    }
+
+    private static void ButtonMouseEnter(object sender, System.Windows.Input.MouseEventArgs args) => SetButtonState((ButtonBase)sender, true);
+    private static void ButtonMouseLeave(object sender, System.Windows.Input.MouseEventArgs args) => SetButtonState((ButtonBase)sender, false);
+    private static void ButtonPressedChanged(object? sender, EventArgs args)
+    {
+        if (sender is ButtonBase button) SetButtonState(button, button.IsMouseOver);
+    }
+    private static void ButtonEnabledChanged(object sender, DependencyPropertyChangedEventArgs args) =>
+        SetButtonState((ButtonBase)sender, ((ButtonBase)sender).IsMouseOver);
+
+    private static void SetButtonState(ButtonBase button, bool hovered)
+    {
+        double target = !button.IsEnabled ? 1 : button.IsPressed ? .82 : hovered ? .92 : 1;
+        double current = button.Opacity;
+        button.BeginAnimation(UIElement.OpacityProperty, null);
+        button.SetValue(UIElement.OpacityProperty, target);
+        if (MotionAllowed && button.IsLoaded && Math.Abs(target - current) > .001)
+            button.BeginAnimation(UIElement.OpacityProperty, Animation(current, target, FeedbackDuration));
+    }
+
+    private static void FadeOnRevealChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        if (sender is not FrameworkElement element) return;
+        if ((bool)args.NewValue)
+        {
+            element.SetValue(LastRevealVisibilityProperty, element.Visibility);
+            element.IsVisibleChanged += RevealVisibilityChanged;
+        }
+        else element.IsVisibleChanged -= RevealVisibilityChanged;
+    }
+
+    private static void RevealVisibilityChanged(object sender, DependencyPropertyChangedEventArgs args)
+    {
+        var element = (FrameworkElement)sender;
+        var previous = (Visibility)element.GetValue(LastRevealVisibilityProperty);
+        element.SetValue(LastRevealVisibilityProperty, element.Visibility);
+        element.BeginAnimation(UIElement.OpacityProperty, null);
+        if ((bool)args.NewValue && previous != Visibility.Visible && element.Visibility == Visibility.Visible
+            && element.IsLoaded && MotionAllowed)
+            element.BeginAnimation(UIElement.OpacityProperty, Animation(.82, 1, TransitionDuration));
+    }
+
+    private static void TextFeedbackChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        if (sender is not TextBlock text) return;
+        if ((bool)args.NewValue)
+        {
+            text.Loaded += TextLoaded;
+            text.Unloaded += TextUnloaded;
+            if (text.IsLoaded) TextLoaded(text, new RoutedEventArgs());
+        }
+        else
+        {
+            TextUnloaded(text, new RoutedEventArgs());
+            text.Loaded -= TextLoaded;
+            text.Unloaded -= TextUnloaded;
+        }
+    }
+
+    private static void TextLoaded(object sender, RoutedEventArgs args)
+    {
+        TextDescriptor.RemoveValueChanged(sender, TextChanged);
+        TextDescriptor.AddValueChanged(sender, TextChanged);
+    }
+
+    private static void TextUnloaded(object sender, RoutedEventArgs args)
+    {
+        TextDescriptor.RemoveValueChanged(sender, TextChanged);
+        ((TextBlock)sender).BeginAnimation(UIElement.OpacityProperty, null);
+    }
+
+    private static void TextChanged(object? sender, EventArgs args)
+    {
+        if (sender is TextBlock text) Acknowledge(text);
+    }
+
+    private static void RotateOnToggleChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        if (sender is not Path path) return;
+        if ((bool)args.NewValue) { path.Loaded += ChevronLoaded; path.Unloaded += ChevronUnloaded; }
+        else { ChevronUnloaded(path, new RoutedEventArgs()); path.Loaded -= ChevronLoaded; path.Unloaded -= ChevronUnloaded; }
+    }
+
+    private static void ChevronLoaded(object sender, RoutedEventArgs args)
+    {
+        var path = (Path)sender;
+        if (path.TemplatedParent is not ToggleButton toggle) return;
+        toggle.Checked -= ChevronChanged;
+        toggle.Unchecked -= ChevronChanged;
+        toggle.Checked += ChevronChanged;
+        toggle.Unchecked += ChevronChanged;
+        path.RenderTransform = new RotateTransform(toggle.IsChecked == true ? 180 : 0);
+    }
+
+    private static void ChevronUnloaded(object sender, RoutedEventArgs args)
+    {
+        if (((Path)sender).TemplatedParent is not ToggleButton toggle) return;
+        toggle.Checked -= ChevronChanged;
+        toggle.Unchecked -= ChevronChanged;
+    }
+
+    private static void ChevronChanged(object sender, RoutedEventArgs args)
+    {
+        var toggle = (ToggleButton)sender;
+        if (toggle.Template.FindName("Chevron", toggle) is not Path { RenderTransform: RotateTransform transform }) return;
+        double target = toggle.IsChecked == true ? 180 : 0;
+        double current = transform.Angle;
+        transform.BeginAnimation(RotateTransform.AngleProperty, null);
+        transform.SetValue(RotateTransform.AngleProperty, target);
+        if (MotionAllowed && toggle.IsLoaded && Math.Abs(target - current) > .001)
+            transform.BeginAnimation(RotateTransform.AngleProperty, Animation(current, target, TransitionDuration));
+    }
+
+    public static void Acknowledge(FrameworkElement element)
+    {
+        element.BeginAnimation(UIElement.OpacityProperty, null);
+        if (element.IsLoaded && MotionAllowed)
+            element.BeginAnimation(UIElement.OpacityProperty, Animation(.85, 1, TransitionDuration));
+    }
+
+    internal static void DrawCheck(Path path)
+    {
+        path.BeginAnimation(System.Windows.Shapes.Shape.StrokeDashOffsetProperty, null);
+        path.StrokeDashOffset = 0;
+        if (path.IsLoaded && MotionAllowed)
+            path.BeginAnimation(System.Windows.Shapes.Shape.StrokeDashOffsetProperty,
+                Animation(12, 0, TransitionDuration));
+    }
+
+    internal static async Task FadeOutAsync(FrameworkElement element, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        // Cancel a pending entrance before owning the surface's exit opacity.
+        TransitionUnloaded(element, new RoutedEventArgs());
+        if (!element.IsLoaded || !element.IsVisible || !MotionAllowed) return;
+        double opacity = element.Opacity;
+        element.Opacity = 0;
+        element.BeginAnimation(UIElement.OpacityProperty, Animation(opacity, 0, TransitionDuration));
+        try { await Task.Delay(TransitionDuration.TimeSpan, cancellationToken); }
+        finally
+        {
+            element.BeginAnimation(UIElement.OpacityProperty, null);
+        }
+    }
+
+    private static DoubleAnimation Animation(double from, double to, Duration duration) => new(from, to, duration)
+    {
+        EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        FillBehavior = FillBehavior.Stop
+    };
+}

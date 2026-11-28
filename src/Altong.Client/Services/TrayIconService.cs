@@ -1,0 +1,122 @@
+using System.Drawing;
+using System.Windows.Forms;
+
+namespace Altong.Client.Services;
+
+/// <summary>
+/// 메인 창이 숨겨진 동안 앱을 다시 열거나 종료할 수 있는 시스템 트레이 UI.
+/// </summary>
+public sealed class TrayIconService : IDisposable
+{
+    internal const string IdleIconResource = "Altong.Client.Assets.TrayIdle.ico";
+    internal const string FocusIconResource = "Altong.Client.Assets.TrayFocus.ico";
+
+    private readonly NotifyIcon _notifyIcon;
+    private readonly Icon _idleIcon;
+    private readonly Icon _focusIcon;
+    private readonly ContextMenuStrip _contextMenu;
+    private readonly ToolStripItem _exitApplicationItem;
+    private Action? _openDashboard;
+    private Action? _exitApplication;
+    private bool _isDisposed;
+
+    public TrayIconService(
+        Action openApplication)
+    {
+        _contextMenu = new ContextMenuStrip();
+        _contextMenu.Items.Add("열기", null, (_, _) => openApplication());
+        _exitApplicationItem = _contextMenu.Items.Add("종료", null, (_, _) => _exitApplication?.Invoke());
+        _exitApplicationItem.Enabled = false;
+
+        _idleIcon = LoadTrayIcon(IdleIconResource);
+        _focusIcon = LoadTrayIcon(FocusIconResource);
+        _notifyIcon = new NotifyIcon
+        {
+            ContextMenuStrip = _contextMenu,
+            Icon = _idleIcon,
+            Text = "Altong",
+            Visible = true,
+        };
+        _notifyIcon.MouseClick += NotifyIcon_MouseClick;
+        _notifyIcon.DoubleClick += (_, _) => openApplication();
+    }
+
+    /// <summary>
+    /// 트레이 아이콘을 왼쪽 클릭했을 때 열 대시보드 동작을 연결한다.
+    /// 기존 생성자 계약은 유지하여 다른 호출부와의 호환성을 보존한다.
+    /// </summary>
+    public void SetDashboardAction(Action openDashboard)
+    {
+        _openDashboard = openDashboard ?? throw new ArgumentNullException(nameof(openDashboard));
+    }
+
+    /// <summary>집중 상태 저장과 알림 설정 복구를 거쳐 앱 전체를 종료하는 동작을 연결한다.</summary>
+    public void SetExitAction(Action exitApplication)
+    {
+        _exitApplication = exitApplication ?? throw new ArgumentNullException(nameof(exitApplication));
+        _exitApplicationItem.Enabled = true;
+    }
+
+    /// <summary>
+    /// 집중 시간과 차단 알림 수가 준비되면 트레이 hover 툴팁을 갱신한다.
+    /// </summary>
+    public void UpdateSessionSummary(TimeSpan elapsed, int blockedNotificationCount)
+    {
+        int totalMinutes = Math.Max(0, (int)elapsed.TotalMinutes);
+        int safeBlockedCount = Math.Max(0, blockedNotificationCount);
+        _notifyIcon.Text = $"Altong - 집중 {totalMinutes}분 | 차단 {safeBlockedCount}건";
+    }
+
+    private void NotifyIcon_MouseClick(object? sender, MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left)
+        {
+            _openDashboard?.Invoke();
+        }
+    }
+
+    public void UpdateFocusModeState(bool isEnabled)
+    {
+        _notifyIcon.Icon = isEnabled ? _focusIcon : _idleIcon;
+        _notifyIcon.Text = isEnabled
+            ? "Altong - 집중 모드 진행 중"
+            : "Altong";
+    }
+
+    public void UpdateRoutineStatus(string status)
+    {
+        _notifyIcon.Text = $"Altong - {status}";
+    }
+
+    public void ShowRoutineReminder(string title, string message)
+    {
+        _notifyIcon.ShowBalloonTip(5000, title, message, ToolTipIcon.Info);
+    }
+
+    public void Dispose()
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        _isDisposed = true;
+        _notifyIcon.MouseClick -= NotifyIcon_MouseClick;
+        _notifyIcon.Visible = false;
+        _notifyIcon.Dispose();
+        _idleIcon.Dispose();
+        _focusIcon.Dispose();
+        _contextMenu.Dispose();
+    }
+
+    /// <summary>
+    /// 트레이 아이콘을 지금 화면 배율에 맞는 크기로 읽는다(100%면 16px, 200%면 32px).
+    /// .ico 안에 16~64px이 들어 있어 Windows가 줄이거나 늘리지 않는다.
+    /// </summary>
+    internal static Icon LoadTrayIcon(string resourceName)
+    {
+        using var stream = typeof(TrayIconService).Assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException($"트레이 아이콘 리소스가 없습니다: {resourceName}");
+        return new Icon(stream, SystemInformation.SmallIconSize);
+    }
+}

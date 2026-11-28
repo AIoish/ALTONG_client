@@ -1,0 +1,57 @@
+<UserControl x:Class="Altong.Client.SummaryBlendView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False" IsHitTestVisible="False" AutomationProperties.Name="AI 알림 요약 중">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Altong.Client;component/Themes/BlackTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="NotificationShape" TargetType="Control">
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="Width" Value="56" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="VerticalAlignment" Value="Top" />
+                <Setter Property="Template"><Setter.Value>
+                    <ControlTemplate TargetType="Control">
+                        <Border CornerRadius="8" BorderThickness="1" BorderBrush="{StaticResource BlackRule}"
+                                Background="{StaticResource BlackSurface}" Padding="9,6">
+                            <StackPanel VerticalAlignment="Center">
+                                <Border Height="3" CornerRadius="1.5" Background="{StaticResource BlackAccentText}" />
+                                <Border Width="22" Height="3" CornerRadius="1.5" Margin="0,4,0,0" HorizontalAlignment="Left"
+                                        Background="{StaticResource BlackMuted}" />
+                            </StackPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value></Setter>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Grid Height="146" ClipToBounds="True">
+        <Control x:Name="LeftNotification" Style="{StaticResource NotificationShape}">
+            <Control.RenderTransform><TranslateTransform X="-72" /></Control.RenderTransform>
+        </Control>
+        <Control x:Name="MiddleNotification" Style="{StaticResource NotificationShape}">
+            <Control.RenderTransform><TranslateTransform /></Control.RenderTransform>
+        </Control>
+        <Control x:Name="RightNotification" Style="{StaticResource NotificationShape}">
+            <Control.RenderTransform><TranslateTransform X="72" /></Control.RenderTransform>
+        </Control>
+        <Border Width="236" Height="76" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,4"
+                CornerRadius="12" BorderThickness="1" Background="{StaticResource BlackSelection}" BorderBrush="{StaticResource BlackSelectionRule}">
+            <Grid Margin="14,12">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <Border Width="30" Height="30" CornerRadius="15" Background="{StaticResource BlackAction}" VerticalAlignment="Top" Margin="0,0,12,0">
+                    <TextBlock Text="AI" FontSize="11" FontWeight="Bold" Foreground="{StaticResource BlackActionText}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <Border x:Name="SkeletonLine1" Height="8" CornerRadius="4" Background="{StaticResource BlackAccentText}" Opacity=".55" HorizontalAlignment="Left" Width="150" />
+                    <Border x:Name="SkeletonLine2" Height="8" CornerRadius="4" Background="{StaticResource BlackAccentText}" Opacity=".4" HorizontalAlignment="Left" Width="120" Margin="0,8,0,0" />
+                    <Border x:Name="SkeletonLine3" Height="8" CornerRadius="4" Background="{StaticResource BlackAccentText}" Opacity=".3" HorizontalAlignment="Left" Width="84" Margin="0,8,0,0" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,42 @@
+{
+  "purpose": "Drop-in replacement model for this folder; app code and tokenizer.json unchanged",
+  "created_date": "2026-11-19",
+  "version": "klue-joint-app-2026-11-18-t00-s42",
+  "folder_name_kept_for_app_path": true,
+  "model_run": "2026-11-18-joint-app-klue-t00-s42",
+  "model_sha256": "c906a3f2a3517f810af59d7c8b4ec2f4002c0ac24ef2e06a7e96ca8ed00a1900",
+  "tokenizer_sha256": "cc02cedb56df2e4d3bb6b5478cef6aa0daa98930c96b46976c8acdd2432459a8",
+  "model_bytes": 440363725,
+  "onnxruntime": "1.31.0",
+  "inputs": {
+    "input_ids": "Int64 [batch,sequence]",
+    "attention_mask": "Int64 [batch,sequence]"
+  },
+  "output": "logits float [batch,2,5]",
+  "heads": [
+    "urgency",
+    "relevance"
+  ],
+  "max_tokens": 512,
+  "input_schema": "notification-app-develop-v1",
+  "relevance_classes_trained": 3,
+  "relevance_score_to_app": {
+    "1": 1,
+    "2": 2,
+    "3": 5
+  },
+  "policy": "urgency >= 4 OR relevance >= 4",
+  "development_relevance": {
+    "rows": 1032,
+    "correct": 1002,
+    "real_rows": 47,
+    "real_correct": 35
+  },
+  "urgency_validation_correct": "59/74",
+  "urgency_threshold_misses": {
+    "validation": 3,
+    "safety_development": 0
+  },
+  "real_notification_final_test_measured": false,
+  "deployment_approved": false
+}

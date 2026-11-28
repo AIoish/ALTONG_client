@@ -1,0 +1,58 @@
+<UserControl x:Class="Altong.Client.GlassBackdrop"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             IsHitTestVisible="False" Focusable="False" IsTabStop="False">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Altong.Client;component/Themes/BlackTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <!-- 흑연 유리 창 뒤의 번진 빛. 흐림 효과 대신 방사형 그라데이션으로 그려 가볍다. -->
+    <Grid Background="{StaticResource GlassBackdrop}" ClipToBounds="True">
+        <Ellipse Width="620" Height="620" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-220,-260,0,0">
+            <Ellipse.Fill>
+                <RadialGradientBrush>
+                    <GradientStop Color="#FF5A3E24" Offset="0" />
+                    <GradientStop Color="#995A3E24" Offset="0.45" />
+                    <GradientStop Color="#005A3E24" Offset="1" />
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+        <Ellipse Width="600" Height="540" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-200,-220">
+            <Ellipse.Fill>
+                <RadialGradientBrush>
+                    <GradientStop Color="#FF2C3B45" Offset="0" />
+                    <GradientStop Color="#992C3B45" Offset="0.45" />
+                    <GradientStop Color="#002C3B45" Offset="1" />
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+        <Ellipse Width="380" Height="380" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="260,-60,0,0">
+            <Ellipse.Fill>
+                <RadialGradientBrush>
+                    <GradientStop Color="#CC4A3426" Offset="0" />
+                    <GradientStop Color="#664A3426" Offset="0.5" />
+                    <GradientStop Color="#004A3426" Offset="1" />
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+        <!-- 집중 중에만 켜지는 불씨: 타이머가 있는 왼쪽 위에서 호박빛이 창 뒤로 번진다.
+             촛불처럼 은은하게: 가장 밝은 곳도 반쯤 비치는 깊은 호박색으로 두어 어두운 화면에서 눈이 부시지 않게 한다. -->
+        <Grid x:Name="EmberLayer" Opacity="0">
+            <Ellipse x:Name="EmberCore" Width="980" Height="860" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-300,-300,0,0"
+                     RenderTransformOrigin="0.35,0.35">
+                <Ellipse.RenderTransform><ScaleTransform x:Name="EmberScale" ScaleX="1" ScaleY="1" /></Ellipse.RenderTransform>
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#8CA2703E" Offset="0" />
+                        <GradientStop Color="#59885C32" Offset="0.38" />
+                        <GradientStop Color="#1F6E4826" Offset="0.72" />
+                        <GradientStop Color="#006E4826" Offset="1" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+        </Grid>
+    </Grid>
+</UserControl>

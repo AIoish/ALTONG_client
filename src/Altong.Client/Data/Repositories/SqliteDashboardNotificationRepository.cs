@@ -1,0 +1,194 @@
+using System.Globalization;
+using Altong.Client.Data.Models;
+
+namespace Altong.Client.Data.Repositories;
+
+public sealed record DashboardNotificationPage(IReadOnlyList<NotificationRecord> Records,
+    bool HasMoreBlocked, bool HasMorePassed)
+{
+    public bool HasMore => HasMoreBlocked || HasMorePassed;
+    public static DashboardNotificationPage Empty { get; } = new([], false, false);
+}
+
+public sealed record DashboardNotificationQuery(bool? IsPassed = null, string? AppName = null, string Search = "");
+public sealed record NotificationAppOption(string? AppName, string Label);
+public sealed record DashboardNotificationSnapshot(IReadOnlyList<string> Ids, int PassedCount, int BlockedCount,
+    IReadOnlyList<NotificationAppOption> Apps);
+
+/// <summary>대시보드 목록의 조회와 제거 상태만 관리한다. 리포트 원본 알림은 수정하지 않는다.</summary>
+public sealed class SqliteDashboardNotificationRepository(IAltongDatabase database)
+{
+    private const string Columns = """
+        n.id, n.app_name, n.sender, n.title, n.body, n.received_at,
+        n.is_passed, n.urgency_score, n.relevance_score, n.category,
+        n.ai_summary_reason, n.session_id, n.created_at
+        """;
+    private const string Visible = """
+        n.is_passed IN (0, 1) AND NOT EXISTS (
+            SELECT 1 FROM dashboard_notification_dismissals d WHERE d.notification_id = n.id
+        )
+        """;
+
+    // Snapshot only IDs, not every body. Page navigation keeps its order while new arrivals wait for an explicit refresh.
+    public async Task<DashboardNotificationSnapshot> ReadSnapshotAsync(DashboardNotificationQuery query)
+    {
+        using var connection = database.CreateOpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"""
+            SELECT n.id, n.is_passed FROM notifications n
+            WHERE {Visible}
+              AND ($app IS NULL OR n.app_name = $app COLLATE NOCASE)
+              AND ($search = '' OR instr(lower(n.app_name || char(10) || coalesce(n.sender, '') || char(10) || n.title || char(10) || n.body), lower($search)) > 0)
+            ORDER BY julianday(n.received_at) DESC, n.received_at DESC, n.id DESC;
+            """;
+        command.Parameters.AddWithValue("$app", (object?)query.AppName ?? DBNull.Value);
+        command.Parameters.AddWithValue("$search", query.Search.Trim());
+        var ids = new List<string>();
+        int passed = 0, blocked = 0;
+        using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync().ConfigureAwait(false))
+            {
+                bool isPassed = reader.GetInt32(1) == 1;
+                if (isPassed) passed++; else blocked++;
+                if (query.IsPassed is null || query.IsPassed == isPassed) ids.Add(reader.GetString(0));
+            }
+        }
+        command.Parameters.Clear();
+        command.CommandText = $"SELECT n.app_name, count(*) FROM notifications n WHERE {Visible} GROUP BY n.app_name COLLATE NOCASE ORDER BY n.app_name COLLATE NOCASE;";
+        var apps = new List<NotificationAppOption> { new(null, "모든 앱") };
+        using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync().ConfigureAwait(false))
+            {
+                string app = reader.GetString(0);
+                apps.Add(new(app, $"{(string.IsNullOrWhiteSpace(app) ? "알 수 없는 앱" : app)} ({reader.GetInt32(1)})"));
+            }
+        }
+        transaction.Commit();
+        return new(ids, passed, blocked, apps);
+    }
+
+    public async Task<IReadOnlyList<NotificationRecord>> ReadSnapshotPageAsync(DashboardNotificationSnapshot snapshot, int pageIndex, int pageSize = 30)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(pageIndex);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
+        var ids = snapshot.Ids.Skip(checked(pageIndex * pageSize)).Take(pageSize).ToArray();
+        if (ids.Length == 0) return [];
+        using var connection = database.CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        var names = ids.Select((_, index) => "$id" + index).ToArray();
+        command.CommandText = $"SELECT {Columns} FROM notifications n WHERE {Visible} AND n.id IN ({string.Join(",", names)});";
+        for (int i = 0; i < ids.Length; i++) command.Parameters.AddWithValue(names[i], ids[i]);
+        var records = (await ReadRecordsAsync(command).ConfigureAwait(false)).ToDictionary(record => record.Id);
+        return ids.Where(records.ContainsKey).Select(id => records[id]).ToArray();
+    }
+
+    public async Task<DashboardNotificationPage> ReadAsync(int limitPerSection = 50,
+        IEnumerable<string>? selectedIds = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limitPerSection);
+        var selection = (selectedIds ?? []).Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal).ToArray();
+        using var connection = database.CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {Columns}
+            FROM notifications n
+            WHERE {Visible} AND n.is_passed = $passed
+            ORDER BY julianday(n.received_at) DESC, n.received_at DESC, n.id DESC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$limit", checked(limitPerSection + selection.Length + 1));
+        var passedParameter = command.Parameters.Add("$passed", Microsoft.Data.Sqlite.SqliteType.Integer);
+        passedParameter.Value = 0;
+        var blocked = await ReadRecordsAsync(command).ConfigureAwait(false);
+        passedParameter.Value = 1;
+        var passed = await ReadRecordsAsync(command).ConfigureAwait(false);
+        var records = blocked.Take(limitPerSection).Concat(passed.Take(limitPerSection)).ToList();
+
+        // New arrivals can push a selected item past the visible limit. Keep those
+        // selected rows visible so a refresh never silently changes the selection.
+        var visibleIds = records.Select(record => record.Id).ToHashSet(StringComparer.Ordinal);
+        var retainedIds = selection.Where(id => !visibleIds.Contains(id));
+        foreach (var chunk in retainedIds.Chunk(100))
+        {
+            command.Parameters.Clear();
+            var names = chunk.Select((_, i) => "$id" + i).ToArray();
+            command.CommandText = $"SELECT {Columns} FROM notifications n WHERE {Visible} AND n.id IN ({string.Join(",", names)});";
+            for (int i = 0; i < chunk.Length; i++) command.Parameters.AddWithValue(names[i], chunk[i]);
+            var retained = await ReadRecordsAsync(command).ConfigureAwait(false);
+            records.AddRange(retained);
+            visibleIds.UnionWith(retained.Select(record => record.Id));
+        }
+        return new DashboardNotificationPage(records.OrderByDescending(record => AsUtc(record.ReceivedAt))
+            .ThenByDescending(record => record.Id, StringComparer.Ordinal).ToArray(),
+            blocked.Any(record => !visibleIds.Contains(record.Id)), passed.Any(record => !visibleIds.Contains(record.Id)));
+    }
+
+    private static async Task<List<NotificationRecord>> ReadRecordsAsync(Microsoft.Data.Sqlite.SqliteCommand command)
+    {
+        var records = new List<NotificationRecord>();
+        using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+        while (await reader.ReadAsync().ConfigureAwait(false))
+            records.Add(new NotificationRecord(reader.GetString(0), reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetString(3), reader.GetString(4),
+                DateTime.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                reader.GetInt32(6) == 1,
+                reader.IsDBNull(7) ? null : reader.GetInt32(7),
+                reader.IsDBNull(8) ? null : reader.GetInt32(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.IsDBNull(10) ? null : reader.GetString(10),
+                reader.IsDBNull(11) ? null : reader.GetString(11),
+                reader.IsDBNull(12) ? null : DateTime.Parse(reader.GetString(12), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)));
+        return records;
+    }
+
+    // Offset-free legacy timestamps have the same UTC interpretation as SQLite and TimeText.
+    private static DateTime AsUtc(DateTime at) => at.Kind == DateTimeKind.Unspecified
+        ? DateTime.SpecifyKind(at, DateTimeKind.Utc) : at.ToUniversalTime();
+
+    /// <summary>알림 목록의 세션 머리글("오늘 18:27 – 18:56 집중")에 쓸 집중 시작·끝 시각. 끝나지 않은 집중은 끝이 null이다.</summary>
+    public async Task<IReadOnlyDictionary<string, (DateTime StartedAt, DateTime? EndedAt)>> ReadSessionPeriodsAsync(IEnumerable<string> sessionIds)
+    {
+        var ids = sessionIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToArray();
+        var periods = new Dictionary<string, (DateTime, DateTime?)>(StringComparer.Ordinal);
+        if (ids.Length == 0) return periods;
+        using var connection = database.CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        var names = ids.Select((_, index) => "$id" + index).ToArray();
+        command.CommandText = $"SELECT session_id, started_at, ended_at FROM focus_sessions WHERE session_id IN ({string.Join(",", names)});";
+        for (int i = 0; i < ids.Length; i++) command.Parameters.AddWithValue(names[i], ids[i]);
+        using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+        while (await reader.ReadAsync().ConfigureAwait(false))
+            periods[reader.GetString(0)] = (
+                AsUtc(DateTime.Parse(reader.GetString(1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)),
+                reader.IsDBNull(2) ? null : AsUtc(DateTime.Parse(reader.GetString(2), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)));
+        return periods;
+    }
+
+    public async Task DismissAsync(IEnumerable<string> notificationIds)
+    {
+        ArgumentNullException.ThrowIfNull(notificationIds);
+        var ids = notificationIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToArray();
+        if (ids.Length == 0) return;
+        using var connection = database.CreateOpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT OR IGNORE INTO dashboard_notification_dismissals(notification_id, dismissed_at)
+            SELECT id, $at FROM notifications WHERE id = $id AND is_passed IN (0, 1);
+            """;
+        command.Parameters.AddWithValue("$at", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+        var idParameter = command.Parameters.Add("$id", Microsoft.Data.Sqlite.SqliteType.Text);
+        foreach (var id in ids)
+        {
+            idParameter.Value = id;
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+        transaction.Commit();
+    }
+}
