@@ -403,8 +403,8 @@ public partial class DashboardNotificationsView : System.Windows.Controls.UserCo
         SaveScheduleButton.Visibility = _foundSchedule is null || _calendar is null ? Visibility.Collapsed : Visibility.Visible;
         if (_foundSchedule is null || row is null) return;
         var culture = System.Globalization.CultureInfo.GetCultureInfo("ko-KR");
-        var start = _foundSchedule.Start!.Value.LocalDateTime;
-        var end = _foundSchedule.End!.Value.LocalDateTime;
+        var start = _foundSchedule.Start!.Value.DateTime;
+        var end = _foundSchedule.End!.Value.DateTime;
         string when = start.Date == end.Date ? $"{start.ToString("M월 d일 (ddd) HH:mm", culture)} – {end:HH:mm}"
             : $"{start.ToString("M월 d일 (ddd) HH:mm", culture)} – {end.ToString("M월 d일 HH:mm", culture)}";
         FoundScheduleText.Text = string.IsNullOrWhiteSpace(_foundSchedule.Location) ? when : $"{when} · {_foundSchedule.Location.Trim()}";
